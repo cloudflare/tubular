@@ -1,0 +1,5 @@
+github.com/cilium/ebpf v0.0.0-20200805084541-8485d8f0f752 h1:hn6J/EvrfbK6g62MUvh1vbhv3MnyZvmL0WWpXFgu5vY=
+github.com/cilium/ebpf v0.0.0-20200805084541-8485d8f0f752/go.mod h1:7cR51M8ViRLIdUjrmSXlK9pkrsDlLHbO8jiB8X8JnOc=
+golang.org/x/sys v0.0.0-20200124204421-9fbb57f87de9/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
+golang.org/x/sys v0.0.0-20200202164722-d101bd2416d5 h1:LfCXLvNmTYH9kEmVgqbnsWfruoXZIrh4YBgqVHtDvw0=
+golang.org/x/sys v0.0.0-20200202164722-d101bd2416d5/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
