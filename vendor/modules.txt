@@ -1,0 +1,16 @@
+# github.com/cilium/ebpf v0.0.0-20200807082230-6445519ef170
+## explicit
+github.com/cilium/ebpf
+github.com/cilium/ebpf/asm
+github.com/cilium/ebpf/cmd/bpf2go
+github.com/cilium/ebpf/internal
+github.com/cilium/ebpf/internal/btf
+github.com/cilium/ebpf/internal/unix
+github.com/cilium/ebpf/link
+# github.com/containernetworking/plugins v0.8.6
+## explicit
+github.com/containernetworking/plugins/pkg/ns
+# golang.org/x/sys v0.0.0-20200805065543-0cf7623e9dbd
+## explicit
+golang.org/x/sys/internal/unsafeheader
+golang.org/x/sys/unix
