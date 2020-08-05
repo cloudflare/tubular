@@ -1,6 +1,7 @@
 #include <stddef.h>
 
 #include <linux/bpf.h>
+
 #include <bpf/bpf_endian.h>
 #include <bpf/bpf_helpers.h>
 
@@ -10,9 +11,8 @@
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 
-enum
-{
-	AF_INET = 2,
+enum {
+	AF_INET  = 2,
 	AF_INET6 = 10,
 };
 
@@ -23,7 +23,7 @@ int dispatcher(struct bpf_sk_lookup *ctx)
 {
 	/* Force 32 bit loads from context, to avoid eBPF "ctx modified"
 	 * messages */
-	volatile __u32 protocol = ctx->protocol;
+	volatile __u32 protocol   = ctx->protocol;
 	volatile __u32 local_port = ctx->local_port;
 
 	/* /32 and /128 */
@@ -44,13 +44,13 @@ int dispatcher(struct bpf_sk_lookup *ctx)
 	struct addr lookup_keys[] = {
 		{
 			.protocol = protocol,
-			.port = local_port,
-			.addr = laddr_full,
+			.port     = local_port,
+			.addr     = laddr_full,
 		},
 		{
 			.protocol = protocol,
-			.port = 0,
-			.addr = laddr_full,
+			.port     = 0,
+			.addr     = laddr_full,
 		},
 	};
 
@@ -62,26 +62,24 @@ int dispatcher(struct bpf_sk_lookup *ctx)
 		 */
 		struct addr key = {
 			.protocol = lookup_keys[i].protocol,
-			.port = lookup_keys[i].port,
+			.port     = lookup_keys[i].port,
 		};
 		key.prefixlen = (sizeof(struct addr) - 4) * 8;
-		key.addr = lookup_keys[i].addr;
+		key.addr      = lookup_keys[i].addr;
 
-		srvname =
-			(struct srvname *)bpf_map_lookup_elem(&bind_map, &key);
+		srvname = (struct srvname *)bpf_map_lookup_elem(&bind_map, &key);
 		if (srvname != NULL) {
-			__u32 *index = (__u32 *)bpf_map_lookup_elem(
-				&srvname_map, srvname);
+			__u32 *index = (__u32 *)bpf_map_lookup_elem(&srvname_map, srvname);
 			if (index != NULL) {
 				struct bpf_sock *sk = bpf_map_lookup_elem(&redir_map, index);
 				if (!sk) {
-					 /* Service for the address registered,
-					  * but socket is missing (service
-					  * down?). Drop connections so they
-					  * don't end up in some other socket
-					  * bound to the address/port reserved
-					  * for this service.
-					  */
+					/* Service for the address registered,
+					 * but socket is missing (service
+					 * down?). Drop connections so they
+					 * don't end up in some other socket
+					 * bound to the address/port reserved
+					 * for this service.
+					 */
 					return BPF_DROP;
 				}
 				int err = bpf_sk_assign(ctx, sk, 0);

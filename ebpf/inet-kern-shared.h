@@ -14,7 +14,8 @@ struct srvname {
 	char name[255];
 };
 
-enum { REDIR_MAP,
-       BIND_MAP,
-       SRVNAME_MAP,
+enum {
+	REDIR_MAP,
+	BIND_MAP,
+	SRVNAME_MAP,
 };
