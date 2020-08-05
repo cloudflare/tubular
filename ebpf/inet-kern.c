@@ -1,19 +1,59 @@
 #include <stddef.h>
 
 #include <linux/bpf.h>
+#include <linux/types.h>
 
 #include <bpf/bpf_endian.h>
 #include <bpf/bpf_helpers.h>
-
-#include "inet-kern-shared.h"
-
-#include "inet-kern-shared.c"
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 
 enum {
 	AF_INET  = 2,
 	AF_INET6 = 10,
+};
+
+struct addr {
+	__u32 prefixlen;
+	__u8 protocol;
+	__u16 port;
+	struct ip {
+		__u32 ip_as_w[4];
+	} addr;
+};
+
+/* FD names passed by systemd can be 255 characters long. Match the limit. */
+struct srvname {
+	char name[255];
+};
+
+enum {
+	REDIR_MAP,
+	BIND_MAP,
+	SRVNAME_MAP,
+};
+
+struct bpf_map_def SEC("maps") redir_map = {
+	.type        = BPF_MAP_TYPE_SOCKMAP,
+	.max_entries = 512,
+	.key_size    = sizeof(__u32),
+	.value_size  = sizeof(__u64),
+};
+
+struct bpf_map_def SEC("maps") bind_map = {
+	.type        = BPF_MAP_TYPE_LPM_TRIE,
+	.max_entries = 4096,
+	.key_size    = sizeof(struct addr),
+	.value_size  = sizeof(struct srvname),
+	.map_flags   = BPF_F_NO_PREALLOC,
+};
+
+struct bpf_map_def SEC("maps") srvname_map = {
+	.type        = BPF_MAP_TYPE_HASH,
+	.max_entries = 512,
+	.key_size    = sizeof(struct srvname),
+	.value_size  = sizeof(__u32),
+	.map_flags   = BPF_F_NO_PREALLOC,
 };
 
 SEC("license") const char __license[] = "Proprietary";
