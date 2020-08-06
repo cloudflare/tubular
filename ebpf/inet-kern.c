@@ -120,7 +120,7 @@ int dispatcher(struct bpf_sk_lookup *ctx)
 					 * bound to the address/port reserved
 					 * for this service.
 					 */
-					return BPF_DROP;
+					return SK_DROP;
 				}
 				int err = bpf_sk_assign(ctx, sk, 0);
 				if (err) {
@@ -131,15 +131,15 @@ int dispatcher(struct bpf_sk_lookup *ctx)
 					 * to. Service misconfigured.
 					 */
 					bpf_sk_release(sk);
-					return BPF_DROP;
+					return SK_DROP;
 				}
 
 				/* Found and selected a suitable socket. Direct
 				 * the incoming connection to it. */
 				bpf_sk_release(sk);
-				return BPF_REDIRECT;
+				return SK_PASS;
 			}
 		}
 	}
-	return BPF_OK;
+	return SK_PASS;
 }
