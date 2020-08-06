@@ -1,0 +1,20 @@
+default-flavor: stretch
+
+stretch: &stretch
+  build: &build-stretch
+    builddeps:
+      - build-essential
+      - crossbuild-essential-arm64
+      - rubygem-fpm
+      - clang-9
+      - go
+    post-cache:
+      - CLANG=clang-9 CC=x86_64-linux-gnu-gcc ARCH=amd64 make package
+      - CLANG=clang-9 CC=aarch64-linux-gnu-gcc ARCH=arm64 make package
+  test:
+    <<: *build-stretch
+    post-cache:
+      - CC=x86_64-linux-gnu-gcc ARCH=amd64 make test
+
+buster:
+  <<: *stretch
