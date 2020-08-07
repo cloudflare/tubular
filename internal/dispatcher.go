@@ -59,8 +59,10 @@ func CreateDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 		pinPath = netns.DispatcherStatePath()
 	)
 
-	if err := os.Mkdir(pinPath, 0700); err != nil {
-		return nil, fmt.Errorf("state directory %s: %w", pinPath, ErrLoaded)
+	if err := os.Mkdir(pinPath, 0700); os.IsExist(err) {
+		return nil, fmt.Errorf("create state directory %s: %w", pinPath, ErrLoaded)
+	} else if err != nil {
+		return nil, fmt.Errorf("create state directory: %s", err)
 	}
 	defer onError(func() {
 		os.RemoveAll(pinPath)
@@ -108,8 +110,10 @@ func OpenDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 		pinPath = netns.DispatcherStatePath()
 	)
 
-	if _, err := os.Stat(pinPath); err != nil {
+	if _, err := os.Stat(pinPath); os.IsNotExist(err) {
 		return nil, fmt.Errorf("%s: %w", netnsPath, ErrNotLoaded)
+	} else if err != nil {
+		return nil, fmt.Errorf("%s: %s", netnsPath, err)
 	}
 
 	loadedMaps := make(map[string]*ebpf.Map)
