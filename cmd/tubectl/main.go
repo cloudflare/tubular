@@ -7,7 +7,7 @@ import (
 	"io"
 	"os"
 
-	"code.cfops.it/sys/tubular/internal"
+	"code.cfops.it/sys/tubular/internal/rlimit"
 )
 
 type env struct {
@@ -18,7 +18,7 @@ type env struct {
 }
 
 func (e *env) adjustMemlimit() error {
-	return internal.SetLockedMemoryLimits(e.memlimit)
+	return rlimit.SetLockedMemoryLimits(e.memlimit)
 }
 
 func tubectl(stdout, stderr io.Writer, args ...string) error {

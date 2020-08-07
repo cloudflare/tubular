@@ -10,10 +10,6 @@ import (
 
 func TestMain(m *testing.M) {
 	testutil.ExecuteInNetns()
-
-	if err := SetLockedMemoryLimits(10 * 1024 * 1024); err != nil {
-		fmt.Fprintln(os.Stderr, "Can't raise rlimit, tests may fail:", err)
-	}
 	os.Exit(m.Run())
 }
 
