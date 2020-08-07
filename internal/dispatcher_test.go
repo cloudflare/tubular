@@ -1,24 +1,16 @@
 package internal
 
 import (
-	"fmt"
 	"os"
 	"testing"
 
 	"code.cfops.it/sys/tubular/internal/testutil"
 )
 
-func TestMain(m *testing.M) {
-	testutil.ExecuteInNetns()
-	os.Exit(m.Run())
-}
-
 func TestLoadDispatcher(t *testing.T) {
-	dp, err := CreateDispatcher("/proc/self/ns/net", "/sys/fs/bpf")
-	if err != nil {
-		t.Fatal("Can't create dispatcher:", err)
-	}
+	netns := testutil.NewNetNS(t)
 
+	dp := mustCreateDispatcher(t, netns.Path())
 	if err := dp.Close(); err != nil {
 		t.Fatal("Can't close dispatcher:", err)
 	}
@@ -27,10 +19,7 @@ func TestLoadDispatcher(t *testing.T) {
 		t.Error("State directory doesn't exist:", err)
 	}
 
-	dp, err = OpenDispatcher("/proc/self/ns/net", "/sys/fs/bpf")
-	if err != nil {
-		t.Fatal("Can't open dispatcher:", err)
-	}
+	dp = mustOpenDispatcher(t, netns.Path())
 	defer dp.Close()
 
 	if err := dp.Unload(); err != nil {
@@ -42,4 +31,26 @@ func TestLoadDispatcher(t *testing.T) {
 	}
 
 	// TODO: Check that program is detached
+}
+
+func mustCreateDispatcher(tb testing.TB, netns string) *Dispatcher {
+	tb.Helper()
+
+	dp, err := CreateDispatcher(netns, "/sys/fs/bpf")
+	if err != nil {
+		tb.Fatal("Can't create dispatcher:", err)
+	}
+
+	return dp
+}
+
+func mustOpenDispatcher(tb testing.TB, netns string) *Dispatcher {
+	tb.Helper()
+
+	dp, err := OpenDispatcher(netns, "/sys/fs/bpf")
+	if err != nil {
+		tb.Fatal("Can't open dispatcher:", err)
+	}
+
+	return dp
 }

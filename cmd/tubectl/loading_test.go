@@ -1,8 +1,14 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"code.cfops.it/sys/tubular/internal/testutil"
+)
 
 func TestLoadUnload(t *testing.T) {
-	mustTestTubectl(t, "load")
-	mustTestTubectl(t, "unload")
+	netns := testutil.NewNetNS(t)
+
+	mustTestTubectl(t, netns, "load")
+	mustTestTubectl(t, netns, "unload")
 }

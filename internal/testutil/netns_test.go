@@ -1,33 +1,45 @@
 package testutil
 
 import (
-	"fmt"
 	"os"
 	"syscall"
 	"testing"
+
+	"github.com/containernetworking/plugins/pkg/ns"
 )
 
-func TestExecuteInNetns(t *testing.T) {
-	old := os.Getenv("OLD_NETNS_INODE")
-	current := fmt.Sprint(currentNetNSInode())
-
-	if current == old {
-		t.Errorf("Didn't switch into new namespace, %s == %s", current, old)
+func TestNetNS(t *testing.T) {
+	rootInode := getInode(t, "/proc/self/ns/")
+	newNs := NewNetNS(t)
+	if getInode(t, "/proc/self/ns/") != rootInode {
+		t.Fatal("Call to NewNetNS changed network namespace")
 	}
+
+	newInode := getInode(t, newNs.Path())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+
+		JoinNetNS(t, newNs)
+
+		current, err := ns.GetCurrentNS()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+
+		if getInode(t, current.Path()) != newInode {
+			t.Errorf("join() doesn't change network namespace")
+		}
+	}()
+
+	<-done
 }
 
-func TestMain(m *testing.M) {
-	if os.Getenv("OLD_NETNS_INODE") == "" {
-		os.Setenv("OLD_NETNS_INODE", fmt.Sprint(currentNetNSInode()))
-	}
-	ExecuteInNetns()
-	os.Exit(m.Run())
-}
-
-func currentNetNSInode() uint64 {
-	stat, err := os.Stat("/proc/self/ns/net")
+func getInode(t *testing.T, path string) uint64 {
+	stat, err := os.Stat(path)
 	if err != nil {
-		panic("Can't stat:" + err.Error())
+		t.Fatal("Can't stat:", err.Error())
 	}
 	return stat.Sys().(*syscall.Stat_t).Ino
 }

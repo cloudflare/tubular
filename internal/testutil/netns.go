@@ -2,49 +2,82 @@ package testutil
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
-	"syscall"
+	"runtime"
+	"testing"
+
+	"github.com/containernetworking/plugins/pkg/ns"
+	"golang.org/x/sys/unix"
 )
 
-// ExecuteInNetns executes the current binary in a new network namespace.
-//
-// Must be called from main or TestMain. The new namespace has lo configured.
-// The function aborts the process when encountering an error.
-func ExecuteInNetns() {
-	const key = "IN_NEW_NETNS"
-	// We want to run these tests in a separate network namespace.
-	// To do that reliably, we want to have the process and all its threads
-	// to be executed in that namespace. So we execute ourselves and set an
-	// environment variable so the nested execution knows not to re-execute.
-	if os.Getenv(key) == "" {
-		cmd := exec.Cmd{
-			Path:   os.Args[0],
-			Args:   os.Args,
-			Env:    append(os.Environ(), key+"=true"),
-			Stdin:  os.Stdin,
-			Stdout: os.Stdout,
-			Stderr: os.Stderr,
-			SysProcAttr: &syscall.SysProcAttr{
-				Cloneflags: syscall.CLONE_NEWNET,
-			},
+// NewNetNS creates a pristine network namespace.
+func NewNetNS(tb testing.TB) ns.NetNS {
+	tb.Helper()
+
+	quit := make(chan struct{})
+	result := make(chan ns.NetNS, 1)
+	errs := make(chan error, 1)
+	go func() {
+		// We never unlock the OS thread, which has the effect
+		// of terminating the thread after the current goroutine
+		// exits. This is desirable to avoid other goroutines
+		// executing in the wrong namespace.
+		runtime.LockOSThread()
+
+		if err := unix.Unshare(unix.CLONE_NEWNET); err != nil {
+			errs <- fmt.Errorf("unshare: %s", err)
+			return
 		}
 
-		if err := cmd.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: can't execute in new netns: %s\n", err)
-			os.Exit(1)
+		ip := exec.Command("ip", "link", "set", "dev", "lo", "up")
+		if out, err := ip.CombinedOutput(); err != nil {
+			if len(out) > 0 {
+				tb.Log(string(out))
+			}
+			errs <- fmt.Errorf("set up loopback: %s", err)
+			return
 		}
 
-		os.Exit(0)
+		netns, err := ns.GetCurrentNS()
+		if err != nil {
+			errs <- fmt.Errorf("get current network namespace: %s", err)
+			return
+		}
+
+		result <- netns
+
+		// Block the goroutine (and the thread) until the
+		// network namespace isn't needed anymore.
+		<-quit
+	}()
+
+	select {
+	case err := <-errs:
+		tb.Fatal(err)
+		return nil
+
+	case netns := <-result:
+		tb.Cleanup(func() {
+			close(quit)
+			netns.Close()
+		})
+
+		return netns
 	}
+}
 
-	os.Setenv(key, "")
+// JoinNetNS moves the current goroutine to a different network namespace.
+//
+// Any goroutines invoked from the moved goroutine will still execute in the
+// parent network namespace.
+func JoinNetNS(tb testing.TB, netns ns.NetNS) {
+	tb.Helper()
 
-	// Make sure we have loopback configured
-	cmd := exec.Command("ip", "link", "set", "dev", "lo", "up")
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: can't bring up lo: %s\n", err)
-		os.Exit(1)
+	runtime.LockOSThread()
+	if err := netns.Set(); err != nil {
+		// tb.Fatal mustn't be called from a different goroutine,
+		// so we call Goexit explicitly after flagging an error.
+		tb.Error("Can't join netns:", err)
+		runtime.Goexit()
 	}
 }

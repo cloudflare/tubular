@@ -2,20 +2,17 @@ package main
 
 import (
 	"bytes"
-	"fmt"
-	"os"
 	"testing"
 
-	"code.cfops.it/sys/tubular/internal"
-	"code.cfops.it/sys/tubular/internal/testutil"
+	_ "code.cfops.it/sys/tubular/internal/testutil"
+	"github.com/containernetworking/plugins/pkg/ns"
 )
 
-func TestMain(m *testing.M) {
-	testutil.ExecuteInNetns()
-	os.Exit(m.Run())
-}
+func testTubectl(tb testing.TB, netns ns.NetNS, args ...string) error {
+	args = append([]string{
+		"-netns", netns.Path(),
+	}, args...)
 
-func testTubectl(tb testing.TB, args ...string) error {
 	stdio := new(bytes.Buffer)
 	if err := tubectl(stdio, stdio, args...); err != nil {
 		tb.Helper()
@@ -25,8 +22,8 @@ func testTubectl(tb testing.TB, args ...string) error {
 	return nil
 }
 
-func mustTestTubectl(tb testing.TB, args ...string) {
-	if err := testTubectl(tb, args...); err != nil {
+func mustTestTubectl(tb testing.TB, netns ns.NetNS, args ...string) {
+	if err := testTubectl(tb, netns, args...); err != nil {
 		tb.Helper()
 		tb.Fatal("Can't execute tubectl:", err)
 	}
