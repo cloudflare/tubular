@@ -21,6 +21,8 @@ func (e *env) adjustMemlimit() error {
 	return rlimit.SetLockedMemoryLimits(e.memlimit)
 }
 
+type cmdFunc func(env, ...string) error
+
 func tubectl(stdout, stderr io.Writer, args ...string) error {
 	e := env{
 		stdout: stdout,
@@ -32,9 +34,10 @@ func tubectl(stdout, stderr io.Writer, args ...string) error {
 	set.StringVar(&e.bpfFs, "bpffs", "/sys/fs/bpf", "`path` to a BPF filesystem for state")
 	set.Uint64Var(&e.memlimit, "memlimit", 10*1024*1024, "maximum locked memory in `bytes`")
 
-	cmds := map[string]func(env, ...string) error{
-		"load":   load,
-		"unload": unload,
+	cmds := map[string]cmdFunc{
+		"version": version,
+		"load":    load,
+		"unload":  unload,
 	}
 
 	set.Usage = func() {
