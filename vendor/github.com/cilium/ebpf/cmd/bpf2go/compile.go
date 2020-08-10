@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 type compileArgs struct {
@@ -79,16 +82,96 @@ func compile(args compileArgs) error {
 	return nil
 }
 
-func writeDepFile(mainFile string, dep []byte, out io.Writer) error {
-	trimmed := bytes.TrimPrefix(dep, []byte("-: "))
-	if len(trimmed) == len(dep) {
-		return fmt.Errorf("can't replace main file name")
+func adjustDependencies(baseDir string, deps []dependency) ([]byte, error) {
+	var buf bytes.Buffer
+	for _, dep := range deps {
+		relativeFile, err := filepath.Rel(baseDir, dep.file)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(dep.prerequisites) == 0 {
+			_, err := fmt.Fprintf(&buf, "%s:\n\n", relativeFile)
+			if err != nil {
+				return nil, err
+			}
+			continue
+		}
+
+		var prereqs []string
+		for _, prereq := range dep.prerequisites {
+			relativePrereq, err := filepath.Rel(baseDir, prereq)
+			if err != nil {
+				return nil, err
+			}
+
+			prereqs = append(prereqs, relativePrereq)
+		}
+
+		_, err = fmt.Fprintf(&buf, "%s: \\\n %s\n\n", relativeFile, strings.Join(prereqs, " \\\n "))
+		if err != nil {
+			return nil, err
+		}
+	}
+	return buf.Bytes(), nil
+}
+
+type dependency struct {
+	file          string
+	prerequisites []string
+}
+
+func parseDependencies(baseDir string, in io.Reader) ([]dependency, error) {
+	abs := func(path string) string {
+		if filepath.IsAbs(path) {
+			return path
+		}
+		return filepath.Join(baseDir, path)
 	}
 
-	if _, err := io.WriteString(out, mainFile+": "); err != nil {
-		return err
-	}
+	scanner := bufio.NewScanner(in)
+	var line strings.Builder
+	var deps []dependency
+	for scanner.Scan() {
+		buf := scanner.Bytes()
+		if line.Len()+len(buf) > 1024*1024 {
+			return nil, errors.New("line too long")
+		}
 
-	_, err := out.Write(trimmed)
-	return err
+		if bytes.HasSuffix(buf, []byte{'\\'}) {
+			line.Write(buf[:len(buf)-1])
+			continue
+		}
+
+		line.Write(buf)
+		if line.Len() == 0 {
+			// Skip empty lines
+			continue
+		}
+
+		parts := strings.SplitN(line.String(), ":", 2)
+		if len(parts) < 2 {
+			return nil, fmt.Errorf("invalid line without ':'")
+		}
+
+		// NB: This doesn't handle filenames with spaces in them.
+		// It seems like make doesn't do that either, so oh well.
+		var prereqs []string
+		for _, prereq := range strings.Fields(parts[1]) {
+			prereqs = append(prereqs, abs(prereq))
+		}
+
+		deps = append(deps, dependency{
+			abs(string(parts[0])),
+			prereqs,
+		})
+		line.Reset()
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	if len(deps) == 0 {
+		return nil, fmt.Errorf("empty dependency file")
+	}
+	return deps, nil
 }

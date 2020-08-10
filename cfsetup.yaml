@@ -9,12 +9,14 @@ stretch: &stretch
       - clang-9
       - go
     post-cache:
-      - CLANG=clang-9 CC=x86_64-linux-gnu-gcc ARCH=amd64 make package
-      - CLANG=clang-9 CC=aarch64-linux-gnu-gcc ARCH=arm64 make package
+      - CC=x86_64-linux-gnu-gcc ARCH=amd64 make package
+      - CC=aarch64-linux-gnu-gcc ARCH=arm64 make package
+      - git diff-files --quiet || { echo "unstaged changes present" >&2; false; }
   test:
     <<: *build-stretch
     post-cache:
-      - CC=x86_64-linux-gnu-gcc ARCH=amd64 make test
+      - CC=x86_64-linux-gnu-gcc ARCH=amd64 make all test
+      - git diff-files --quiet || { echo "unstaged changes present" >&2; false; }
 
 buster:
   <<: *stretch

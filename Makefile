@@ -4,17 +4,25 @@ GO      ?= go
 
 export GOFLAGS ?= -mod=vendor -ldflags=-X=main.Version=$(VERSION)
 export CLANG   ?= clang-9
+export MAKEDIR  = $(CURDIR)
+
+.SUFFIXES:
+MAKEFLAGS+=-r
+
+generated := internal/dispatcher_bpfel.go internal/dispatcher_bpfeb.go
 
 .PHONY: all
-all:
+all: $(generated) $(addsuffix .d,$(generated))
 	@mkdir -p "bin/$(ARCH)"
-	$(GO) generate ./...
 	GOARCH="$(ARCH)" $(GO) build -v -o "bin/$(ARCH)" ./cmd/...
+
+internal/%_bpfel.go internal/%_bpfeb.go internal/%.go.d:
+	$(GO) generate ./internal
 
 .PHONY: package
 package: tubular_$(VERSION)_$(ARCH).deb
 
-tubular_$(VERSION)_%.deb: all
+tubular_$(VERSION)_%.deb: clean all
 	mkdir -p deb/$*/usr/local/bin
 	cp -f bin/$*/* deb/$*/usr/local/bin
 	fpm --name tubular --version $(VERSION) --architecture $* \
@@ -31,3 +39,7 @@ lint:
 .PHONY: clean
 clean:
 	$(RM) -r bin deb *.deb
+
+ifneq ($(MAKECMDGOALS),clean)
+-include $(wildcard internal/*.d)
+endif

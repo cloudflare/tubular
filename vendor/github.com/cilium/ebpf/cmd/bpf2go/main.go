@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"go/token"
 	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -124,6 +125,11 @@ func run(stdout io.Writer, pkg, outputDir string, args []string) (err error) {
 		targets = []string{"bpfel", "bpfeb"}
 	}
 
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+
 	cFlags = cFlags[:len(cFlags):len(cFlags)]
 	for _, target := range targets {
 		var obj, dep bytes.Buffer
@@ -188,20 +194,20 @@ func run(stdout io.Writer, pkg, outputDir string, args []string) (err error) {
 			continue
 		}
 
+		deps, err := parseDependencies(cwd, &dep)
+		if err != nil {
+			return fmt.Errorf("can't read dependency information: %s", err)
+		}
+
+		deps[0].file = goFileName
+		depFile, err := adjustDependencies(makeBase, deps)
+		if err != nil {
+			return fmt.Errorf("can't adjust dependency information: %s", err)
+		}
+
 		depFileName := goFileName + ".d"
-		depFile, err := os.Create(depFileName)
-		if err != nil {
-			return err
-		}
-		defer removeOnError(depFile)
-
-		mainFile, err := filepath.Rel(makeBase, goFileName)
-		if err != nil {
-			return err
-		}
-
-		if err := writeDepFile(mainFile, dep.Bytes(), depFile); err != nil {
-			return fmt.Errorf("can't write %s: %s", depFileName, err)
+		if err := ioutil.WriteFile(depFileName, depFile, 0666); err != nil {
+			return fmt.Errorf("can't write dependency file: %s", err)
 		}
 
 		fmt.Fprintln(stdout, "Wrote", depFileName)
