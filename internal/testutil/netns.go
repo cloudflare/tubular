@@ -66,18 +66,31 @@ func NewNetNS(tb testing.TB) ns.NetNS {
 	}
 }
 
-// JoinNetNS moves the current goroutine to a different network namespace.
+// JoinNetNS executes a function in a different network namespace.
 //
-// Any goroutines invoked from the moved goroutine will still execute in the
+// Any goroutines invoked from the function will still execute in the
 // parent network namespace.
-func JoinNetNS(tb testing.TB, netns ns.NetNS) {
+func JoinNetNS(tb testing.TB, netns ns.NetNS, fn func()) {
 	tb.Helper()
 
-	runtime.LockOSThread()
-	if err := netns.Set(); err != nil {
-		// tb.Fatal mustn't be called from a different goroutine,
-		// so we call Goexit explicitly after flagging an error.
-		tb.Error("Can't join netns:", err)
-		runtime.Goexit()
+	current, err := ns.GetCurrentNS()
+	if err != nil {
+		tb.Fatal(err)
 	}
+	defer current.Close()
+
+	runtime.LockOSThread()
+
+	if err := netns.Set(); err != nil {
+		tb.Fatal("Can't join namespace:", err)
+	}
+
+	defer func() {
+		if err := current.Set(); err != nil {
+			tb.Fatal("Can't switch to original namespace:", err)
+		}
+		runtime.UnlockOSThread()
+	}()
+
+	fn()
 }

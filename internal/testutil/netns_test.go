@@ -16,24 +16,20 @@ func TestNetNS(t *testing.T) {
 	}
 
 	newInode := getInode(t, newNs.Path())
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
+	if newInode == rootInode {
+		t.Fatal("NewNetNS doesn't create a new network namespace")
+	}
 
-		JoinNetNS(t, newNs)
-
+	JoinNetNS(t, newNs, func() {
 		current, err := ns.GetCurrentNS()
 		if err != nil {
-			t.Error(err)
-			return
+			t.Fatal(err)
 		}
 
 		if getInode(t, current.Path()) != newInode {
-			t.Errorf("join() doesn't change network namespace")
+			t.Fatal("JoinNetNS() doesn't change network namespace")
 		}
-	}()
-
-	<-done
+	})
 }
 
 func getInode(t *testing.T, path string) uint64 {
