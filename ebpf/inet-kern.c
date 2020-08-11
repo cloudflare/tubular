@@ -20,7 +20,7 @@ struct addr {
 	struct ip {
 		__u32 ip_as_w[4];
 	} addr;
-};
+} __attribute__((packed));
 
 /* FD names passed by systemd can be 255 characters long. Match the limit. */
 struct srvname {

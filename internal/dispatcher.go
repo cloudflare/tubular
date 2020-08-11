@@ -1,14 +1,17 @@
 package internal
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
+	"golang.org/x/sys/unix"
 )
 
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc "$CLANG" -makebase "$MAKEDIR" dispatcher ../ebpf/inet-kern.c -- -mcpu=v2 -O2 -g -nostdinc -Wall -Werror -I../ebpf/include
@@ -201,6 +204,82 @@ func (d *Dispatcher) Unload() error {
 	}
 
 	return d.Close()
+}
+
+type Protocol uint8
+
+const (
+	tcpProto Protocol = unix.IPPROTO_TCP
+	udpProto Protocol = unix.IPPROTO_UDP
+)
+
+func (p Protocol) network() string {
+	switch p {
+	case tcpProto:
+		return "tcp"
+	case udpProto:
+		return "udp"
+	default:
+		return "unknown"
+	}
+}
+
+type srvname [255]byte
+
+func newSrvname(name string) (*srvname, error) {
+	var res srvname
+	if n := copy(res[:], name); n != len(name) {
+		return nil, fmt.Errorf("name truncated to %d bytes", n)
+	}
+	return &res, nil
+}
+
+func (sn *srvname) String() string {
+	inLen := bytes.IndexByte([]byte(sn[:]), 0)
+	if inLen == -1 {
+		return ""
+	}
+	return string(sn[:inLen])
+}
+
+func (d *Dispatcher) AddBinding(service string, proto Protocol, prefix *net.IPNet, port uint16) error {
+	key, err := newBindingKey(prefix, proto, port)
+	if err != nil {
+		return err
+	}
+
+	existingSrvname := new(srvname)
+	if err := d.bpf.MapBindMap.Lookup(key, existingSrvname); err == nil {
+		if service == existingSrvname.String() {
+			// TODO: We could also turn this into a no-op?
+			return fmt.Errorf("create binding: already bound to %q", service)
+		}
+	}
+
+	srvname, err := newSrvname(service)
+	if err != nil {
+		return err
+	}
+
+	err = d.bpf.MapBindMap.Update(key, srvname, 0)
+	if err != nil {
+		return fmt.Errorf("create binding: %s", err)
+	}
+
+	return nil
+}
+
+func (d *Dispatcher) RemoveBinding(proto Protocol, prefix *net.IPNet, port uint16) error {
+	key, err := newBindingKey(prefix, proto, port)
+	if err != nil {
+		return err
+	}
+
+	if err := d.bpf.MapBindMap.Delete(key); err != nil {
+		return fmt.Errorf("remove binding: %s", err)
+	}
+
+	return nil
 }
 
 func checkMap(spec *ebpf.MapSpec, m *ebpf.Map) error {
