@@ -101,38 +101,45 @@ int dispatcher(struct bpf_sk_lookup *ctx)
 		key.addr      = lookup_keys[i].addr;
 
 		srvname = (struct srvname *)bpf_map_lookup_elem(&bind_map, &key);
-		if (srvname != NULL) {
-			__u32 *index = (__u32 *)bpf_map_lookup_elem(&srvname_map, srvname);
-			if (index != NULL) {
-				struct bpf_sock *sk = bpf_map_lookup_elem(&redir_map, index);
-				if (!sk) {
-					/* Service for the address registered,
-					 * but socket is missing (service
-					 * down?). Drop connections so they
-					 * don't end up in some other socket
-					 * bound to the address/port reserved
-					 * for this service.
-					 */
-					return SK_DROP;
-				}
-				int err = bpf_sk_assign(ctx, sk, 0);
-				if (err) {
-					/* Same as for no socket case above,
-					 * except here socket is not compatible
-					 * with the IP family or L4 transport
-					 * for the address/port it is mapped
-					 * to. Service misconfigured.
-					 */
-					bpf_sk_release(sk);
-					return SK_DROP;
-				}
-
-				/* Found and selected a suitable socket. Direct
-				 * the incoming connection to it. */
-				bpf_sk_release(sk);
-				return SK_PASS;
-			}
+		if (!srvname) {
+			continue;
 		}
+
+		__u32 *index = (__u32 *)bpf_map_lookup_elem(&srvname_map, srvname);
+		if (!index) {
+			/* We know there is a valid binding, so from now on we drop on error. */
+			return SK_DROP;
+		}
+
+		struct bpf_sock *sk = bpf_map_lookup_elem(&redir_map, index);
+		if (!sk) {
+			/* Service for the address registered,
+			 * but socket is missing (service
+			 * down?). Drop connections so they
+			 * don't end up in some other socket
+			 * bound to the address/port reserved
+			 * for this service.
+			 */
+			return SK_DROP;
+		}
+
+		int err = bpf_sk_assign(ctx, sk, 0);
+		if (err) {
+			/* Same as for no socket case above,
+			 * except here socket is not compatible
+			 * with the IP family or L4 transport
+			 * for the address/port it is mapped
+			 * to. Service misconfigured.
+			 */
+			bpf_sk_release(sk);
+			return SK_DROP;
+		}
+
+		/* Found and selected a suitable socket. Direct
+		 * the incoming connection to it. */
+		bpf_sk_release(sk);
+		return SK_PASS;
 	}
+
 	return SK_PASS;
 }
