@@ -1,5 +1,6 @@
 VERSION := $(shell git describe --tags --always --dirty="-dev")
 ARCH    ?= amd64
+GO      ?= go
 
 export GOFLAGS ?= -mod=vendor -ldflags=-X=main.Version=$(VERSION)
 export CLANG   ?= clang-9
@@ -7,8 +8,8 @@ export CLANG   ?= clang-9
 .PHONY: all
 all:
 	@mkdir -p "bin/$(ARCH)"
-	go generate ./...
-	GOARCH="$(ARCH)" go build -v -o "bin/$(ARCH)" ./cmd/...
+	$(GO) generate ./...
+	GOARCH="$(ARCH)" $(GO) build -v -o "bin/$(ARCH)" ./cmd/...
 
 .PHONY: package
 package: tubular_$(VERSION)_$(ARCH).deb
@@ -21,7 +22,7 @@ tubular_$(VERSION)_%.deb: all
 
 .PHONY: test
 test:
-	go test -race -short -v ./...
+	$(GO) test -race -short -v ./...
 
 .PHONY: lint
 lint:
