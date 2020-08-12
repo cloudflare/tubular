@@ -61,11 +61,6 @@ SEC("license") const char __license[] = "Proprietary";
 SEC("sk_lookup/dispatcher")
 int dispatcher(struct bpf_sk_lookup *ctx)
 {
-	/* Force 32 bit loads from context, to avoid eBPF "ctx modified"
-	 * messages */
-	volatile __u32 protocol   = ctx->protocol;
-	volatile __u32 local_port = ctx->local_port;
-
 	/* /32 and /128 */
 	struct ip laddr_full = {};
 	if (ctx->family == AF_INET) {
@@ -73,22 +68,20 @@ int dispatcher(struct bpf_sk_lookup *ctx)
 		laddr_full.ip_as_w[3] = ctx->local_ip4;
 	}
 	if (ctx->family == AF_INET6) {
-		/* eBPF voodoo. Must be unordered otherwise some
-		 * optimization breaks the generated bpf. */
-		laddr_full.ip_as_w[3] = ctx->local_ip6[3];
 		laddr_full.ip_as_w[0] = ctx->local_ip6[0];
 		laddr_full.ip_as_w[1] = ctx->local_ip6[1];
 		laddr_full.ip_as_w[2] = ctx->local_ip6[2];
+		laddr_full.ip_as_w[3] = ctx->local_ip6[3];
 	}
 
 	struct addr lookup_keys[] = {
 		{
-			.protocol = protocol,
-			.port     = local_port,
+			.protocol = ctx->protocol,
+			.port     = ctx->local_port,
 			.addr     = laddr_full,
 		},
 		{
-			.protocol = protocol,
+			.protocol = ctx->protocol,
 			.port     = 0,
 			.addr     = laddr_full,
 		},
