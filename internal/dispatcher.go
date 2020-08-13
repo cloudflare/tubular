@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -24,10 +23,11 @@ var (
 
 // Dispatcher manipulates the socket dispatch data plane.
 type Dispatcher struct {
-	netns *netns
-	link  link.Link
-	Path  string
-	bpf   dispatcherObjects
+	netns  *netns
+	link   link.Link
+	Path   string
+	bpf    dispatcherObjects
+	labels *labels
 }
 
 // CreateDispatcher loads the dispatcher into a network namespace.
@@ -71,6 +71,12 @@ func CreateDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 		os.RemoveAll(pinPath)
 	})
 
+	labels, err := createLabels(filepath.Join(pinPath, "labels"))
+	if err != nil {
+		return nil, err
+	}
+	defer closeOnError(labels)
+
 	coll, err = ebpf.NewCollection(spec)
 	if err != nil {
 		return nil, fmt.Errorf("can't load BPF: %s", err)
@@ -83,7 +89,7 @@ func CreateDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 		}
 	}
 
-	return newDispatcher(netns, coll, pinPath)
+	return newDispatcher(netns, coll, labels, pinPath)
 }
 
 // OpenDispatcher loads an existing dispatcher from a namespace.
@@ -119,21 +125,28 @@ func OpenDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 		return nil, fmt.Errorf("%s: %s", netnsPath, err)
 	}
 
-	loadedMaps := make(map[string]*ebpf.Map)
+	labels, err := openLabels(filepath.Join(pinPath, "labels"))
+	if err != nil {
+		return nil, err
+	}
+	defer closeOnError(labels)
+
+	pinnedMaps := make(map[string]*ebpf.Map)
 	for name, mapSpec := range spec.Maps {
 		m, err := ebpf.LoadPinnedMap(filepath.Join(pinPath, name))
 		if err != nil {
 			return nil, fmt.Errorf("can't load pinned map %s: %s", name, err)
 		}
+		defer closeOnError(m)
 
 		if err := checkMap(mapSpec, m); err != nil {
 			return nil, fmt.Errorf("pinned map %s is incompatible: %s", name, err)
 		}
 
-		loadedMaps[name] = m
+		pinnedMaps[name] = m
 	}
 
-	if err := spec.RewriteMaps(loadedMaps); err != nil {
+	if err := spec.RewriteMaps(pinnedMaps); err != nil {
 		return nil, fmt.Errorf("can't use pinned maps: %s", err)
 	}
 
@@ -144,12 +157,12 @@ func OpenDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 
 	// RewriteMaps removes maps from spec, so we have to
 	// add them back here.
-	coll.Maps = loadedMaps
+	coll.Maps = pinnedMaps
 
-	return newDispatcher(netns, coll, pinPath)
+	return newDispatcher(netns, coll, labels, pinPath)
 }
 
-func newDispatcher(netns *netns, coll *ebpf.Collection, bpfPath string) (_ *Dispatcher, err error) {
+func newDispatcher(netns *netns, coll *ebpf.Collection, labels *labels, bpfPath string) (_ *Dispatcher, err error) {
 	closeOnError := func(c io.Closer) {
 		if err != nil {
 			c.Close()
@@ -176,7 +189,7 @@ func newDispatcher(netns *netns, coll *ebpf.Collection, bpfPath string) (_ *Disp
 		}
 	}
 
-	return &Dispatcher{netns, attach, bpfPath, bpf}, nil
+	return &Dispatcher{netns, attach, bpfPath, bpf, labels}, nil
 }
 
 // Close frees associated resources.
@@ -188,6 +201,9 @@ func (d *Dispatcher) Close() error {
 	}
 	if err := d.bpf.Close(); err != nil {
 		return fmt.Errorf("can't close BPF objects: %s", err)
+	}
+	if err := d.labels.Close(); err != nil {
+		return fmt.Errorf("can't close labels: %x", err)
 	}
 	if err := d.netns.Close(); err != nil {
 		return fmt.Errorf("can't close netns handle: %s", err)
@@ -224,44 +240,38 @@ func (p Protocol) network() string {
 	}
 }
 
-type srvname [255]byte
-
-func newSrvname(name string) (*srvname, error) {
-	var res srvname
-	if n := copy(res[:], name); n != len(name) {
-		return nil, fmt.Errorf("name truncated to %d bytes", n)
-	}
-	return &res, nil
-}
-
-func (sn *srvname) String() string {
-	inLen := bytes.IndexByte([]byte(sn[:]), 0)
-	if inLen == -1 {
-		return ""
-	}
-	return string(sn[:inLen])
-}
-
-func (d *Dispatcher) AddBinding(service string, proto Protocol, prefix *net.IPNet, port uint16) error {
+// AddBinding redirects traffic for a given protocol, prefix and port to a label.
+//
+// Traffic for the binding is dropped by the data plane if no matching
+// destination exists.
+//
+// Returns an error if the binding is already pointing at the specified label.
+func (d *Dispatcher) AddBinding(label string, proto Protocol, prefix *net.IPNet, port uint16) (err error) {
 	key, err := newBindingKey(prefix, proto, port)
 	if err != nil {
 		return err
 	}
 
-	existingSrvname := new(srvname)
-	if err := d.bpf.MapBindMap.Lookup(key, existingSrvname); err == nil {
-		if service == existingSrvname.String() {
+	id, err := d.labels.FindID(label)
+	if id == 0 {
+		// TODO: We don't deallocate this on error, maybe we need to to this.
+		id, err = d.labels.AllocateID(label)
+		if err != nil {
+			return fmt.Errorf("can't allocate ID for label %q: %s", label, err)
+		}
+	} else if err != nil {
+		return fmt.Errorf("add binding: %s", err)
+	}
+
+	var existingID labelID
+	if err := d.bpf.MapBindings.Lookup(key, &existingID); err == nil {
+		if existingID == id {
 			// TODO: We could also turn this into a no-op?
-			return fmt.Errorf("create binding: already bound to %q", service)
+			return fmt.Errorf("add binding: already bound to %q", label)
 		}
 	}
 
-	srvname, err := newSrvname(service)
-	if err != nil {
-		return err
-	}
-
-	err = d.bpf.MapBindMap.Update(key, srvname, 0)
+	err = d.bpf.MapBindings.Update(key, id, 0)
 	if err != nil {
 		return fmt.Errorf("create binding: %s", err)
 	}
@@ -269,13 +279,17 @@ func (d *Dispatcher) AddBinding(service string, proto Protocol, prefix *net.IPNe
 	return nil
 }
 
+// RemoveBinding stops redirecting traffic for a given protocol, prefix and port.
+//
+// Returns an error if the binding doesn't exist.
 func (d *Dispatcher) RemoveBinding(proto Protocol, prefix *net.IPNet, port uint16) error {
 	key, err := newBindingKey(prefix, proto, port)
 	if err != nil {
 		return err
 	}
 
-	if err := d.bpf.MapBindMap.Delete(key); err != nil {
+	// TODO: This doesn't remove labels once they are unused.
+	if err := d.bpf.MapBindings.Delete(key); err != nil {
 		return fmt.Errorf("remove binding: %s", err)
 	}
 

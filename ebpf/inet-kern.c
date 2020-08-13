@@ -22,36 +22,17 @@ struct addr {
 	} addr;
 } __attribute__((packed));
 
-/* FD names passed by systemd can be 255 characters long. Match the limit. */
-struct srvname {
-	char name[255];
-};
-
-enum {
-	REDIR_MAP,
-	BIND_MAP,
-	SRVNAME_MAP,
-};
-
-struct bpf_map_def SEC("maps") redir_map = {
-	.type        = BPF_MAP_TYPE_SOCKMAP,
+struct bpf_map_def SEC("maps") destinations = {
+	.type        = BPF_MAP_TYPE_SOCKHASH,
 	.max_entries = 512,
 	.key_size    = sizeof(__u32),
 	.value_size  = sizeof(__u64),
 };
 
-struct bpf_map_def SEC("maps") bind_map = {
+struct bpf_map_def SEC("maps") bindings = {
 	.type        = BPF_MAP_TYPE_LPM_TRIE,
 	.max_entries = 4096,
 	.key_size    = sizeof(struct addr),
-	.value_size  = sizeof(struct srvname),
-	.map_flags   = BPF_F_NO_PREALLOC,
-};
-
-struct bpf_map_def SEC("maps") srvname_map = {
-	.type        = BPF_MAP_TYPE_HASH,
-	.max_entries = 512,
-	.key_size    = sizeof(struct srvname),
 	.value_size  = sizeof(__u32),
 	.map_flags   = BPF_F_NO_PREALLOC,
 };
@@ -90,7 +71,6 @@ int dispatcher(struct bpf_sk_lookup *ctx)
 	int i = 0;
 #pragma clang loop unroll(full)
 	for (i = 0; i < (int)ARRAY_SIZE(lookup_keys); i++) {
-		struct srvname *srvname = NULL;
 		/* eBPF voodoo. For some reason key = lookup_keys[i] aint work.
 		 */
 		struct addr key = {
@@ -100,18 +80,12 @@ int dispatcher(struct bpf_sk_lookup *ctx)
 		key.prefixlen = (sizeof(struct addr) - 4) * 8;
 		key.addr      = lookup_keys[i].addr;
 
-		srvname = (struct srvname *)bpf_map_lookup_elem(&bind_map, &key);
-		if (!srvname) {
+		__u32 *index = bpf_map_lookup_elem(&bindings, &key);
+		if (!index) {
 			continue;
 		}
 
-		__u32 *index = (__u32 *)bpf_map_lookup_elem(&srvname_map, srvname);
-		if (!index) {
-			/* We know there is a valid binding, so from now on we drop on error. */
-			return SK_DROP;
-		}
-
-		struct bpf_sock *sk = bpf_map_lookup_elem(&redir_map, index);
+		struct bpf_sock *sk = bpf_map_lookup_elem(&destinations, index);
 		if (!sk) {
 			/* Service for the address registered,
 			 * but socket is missing (service
