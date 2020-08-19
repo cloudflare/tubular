@@ -33,8 +33,11 @@ func compile(args compileArgs) error {
 	cmd.Args = append(cmd.Args,
 		"-c", args.file,
 		"-o", "-",
+		// Don't include clang version
+		"-fno-ident",
 		// Don't output inputDir into debug info
 		"-fdebug-prefix-map="+inputDir+"=.",
+		"-fdebug-compilation-dir", ".",
 		// We always want BTF to be generated, so enforce debug symbols
 		"-g",
 	)
@@ -170,6 +173,8 @@ func parseDependencies(baseDir string, in io.Reader) ([]dependency, error) {
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
+
+	// There is always at least a dependency for the main file.
 	if len(deps) == 0 {
 		return nil, fmt.Errorf("empty dependency file")
 	}

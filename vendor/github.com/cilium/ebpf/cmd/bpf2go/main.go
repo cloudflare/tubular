@@ -83,6 +83,12 @@ func run(stdout io.Writer, pkg, outputDir string, args []string) (err error) {
 		cFlags = append(splitCFlags, cFlags...)
 	}
 
+	for _, cFlag := range cFlags {
+		if strings.HasPrefix(cFlag, "-M") {
+			return fmt.Errorf("use -makebase instead of %q", cFlag)
+		}
+	}
+
 	if len(args) < 2 {
 		return errors.New("expected at least two arguments")
 	}
@@ -115,14 +121,12 @@ func run(stdout io.Writer, pkg, outputDir string, args []string) (err error) {
 		"bpfeb": "armbe arm64be mips mips64 mips64p32 ppc64 s390 s390x sparc sparc64",
 	}
 
-	var targets []string
+	targets := []string{"bpfel", "bpfeb"}
 	if *flagTarget != "" {
 		if _, ok := tagsByTarget[*flagTarget]; !ok {
 			return fmt.Errorf("unsupported target %q", *flagTarget)
 		}
 		targets = []string{*flagTarget}
-	} else {
-		targets = []string{"bpfel", "bpfeb"}
 	}
 
 	cwd, err := os.Getwd()
@@ -199,6 +203,7 @@ func run(stdout io.Writer, pkg, outputDir string, args []string) (err error) {
 			return fmt.Errorf("can't read dependency information: %s", err)
 		}
 
+		// There is always at least a dependency for the main file.
 		deps[0].file = goFileName
 		depFile, err := adjustDependencies(makeBase, deps)
 		if err != nil {

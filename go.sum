@@ -2,10 +2,10 @@ github.com/Microsoft/go-winio v0.4.11/go.mod h1:VhR8bwka0BXejwEJY73c50VrPtXAaKcy
 github.com/Microsoft/hcsshim v0.8.6/go.mod h1:Op3hHsoHPAvb6lceZHDtd9OkTew38wNoXnJs8iY7rUg=
 github.com/alexflint/go-filemutex v0.0.0-20171022225611-72bdc8eae2ae/go.mod h1:CgnQgUtFrFz9mxFNtED3jI5tLDjKlOM+oUF/sTk6ps0=
 github.com/buger/jsonparser v0.0.0-20180808090653-f4dd9f5a6b44/go.mod h1:bbYlZJ7hK1yFx9hf58LP0zeX7UjIGs20ufpu3evjr+s=
-github.com/cilium/ebpf v0.0.0-20200807082230-6445519ef170 h1:TNKSQUTR5z7Mhgl6eKqTIg+wenLedvA5IaF3H/DDakI=
-github.com/cilium/ebpf v0.0.0-20200807082230-6445519ef170/go.mod h1:7cR51M8ViRLIdUjrmSXlK9pkrsDlLHbO8jiB8X8JnOc=
-github.com/cilium/ebpf v0.0.0-20200811142721-26d58479e93b h1:bgkAQmCDEmto9s3lK20TuNKD6M2S6jevi0lJSRL0vQY=
-github.com/cilium/ebpf v0.0.0-20200811142721-26d58479e93b/go.mod h1:7cR51M8ViRLIdUjrmSXlK9pkrsDlLHbO8jiB8X8JnOc=
+github.com/cilium/ebpf v0.0.0-20200819103327-99f43a593a94 h1:5xoJgYLFIxKMZoPmJasbfXLTgwyqXz4z0PgMq/3x69w=
+github.com/cilium/ebpf v0.0.0-20200819103327-99f43a593a94/go.mod h1:7cR51M8ViRLIdUjrmSXlK9pkrsDlLHbO8jiB8X8JnOc=
+github.com/cilium/ebpf v0.0.0-20200819111102-c55ea4b184d8 h1:TXFTRRwNRxRVL9zbgUEfA8Cr9lqIH5hrLrE/kJL3kyk=
+github.com/cilium/ebpf v0.0.0-20200819111102-c55ea4b184d8/go.mod h1:7cR51M8ViRLIdUjrmSXlK9pkrsDlLHbO8jiB8X8JnOc=
 github.com/containernetworking/cni v0.7.1 h1:fE3r16wpSEyaqY4Z4oFrLMmIGfBYIKpPrHK31EJ9FzE=
 github.com/containernetworking/cni v0.7.1/go.mod h1:LGwApLUm2FpoOfxTDEeq8T9ipbpZ61X79hmU3w8FmsY=
 github.com/containernetworking/plugins v0.8.6 h1:npZTLiMa4CRn6m5P9+1Dz4O1j0UeFbm8VYN6dlsw568=
