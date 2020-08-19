@@ -11,12 +11,24 @@ stretch: &stretch
     post-cache:
       - CC=x86_64-linux-gnu-gcc ARCH=amd64 make package
       - CC=aarch64-linux-gnu-gcc ARCH=arm64 make package
-      - git diff-files --quiet || { echo "unstaged changes present" >&2; false; }
+      - git diff --exit-code || { echo "generated files are not up to date" >&2; false; }
   test:
-    <<: *build-stretch
+    privileged:
+      - true
+    builddeps:
+      - build-essential
+      - clang-9
+      - go
+      - qemu-system-x86
+      - python3-virtme=0.0.3-4
+      - wget
     post-cache:
-      - CC=x86_64-linux-gnu-gcc ARCH=amd64 make all test
-      - git diff-files --quiet || { echo "unstaged changes present" >&2; false; }
+      - CC=x86_64-linux-gnu-gcc ARCH=amd64 make all
+      - git diff --exit-code || { echo "generated files are not up to date" >&2; false; }
+      # Redirect stdin to prevent a weird interaction between QEMU
+      # and Docker redirecting stdin to /dev/null.
+      - sudo chgrp $(id -g) /dev/kvm
+      - ./run-tests.sh < /dev/zero
 
 buster:
   <<: *stretch

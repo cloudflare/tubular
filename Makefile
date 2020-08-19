@@ -10,9 +10,10 @@ export MAKEDIR  = $(CURDIR)
 MAKEFLAGS+=-r
 
 generated := internal/dispatcher_bpfel.go internal/dispatcher_bpfeb.go
+deps := $(addsuffix .d,$(generated))
 
 .PHONY: all
-all: $(generated) $(addsuffix .d,$(generated))
+all: $(generated) $(deps)
 	@mkdir -p "bin/$(ARCH)"
 	GOARCH="$(ARCH)" $(GO) build -v -o "bin/$(ARCH)" ./cmd/...
 
@@ -38,8 +39,8 @@ lint:
 
 .PHONY: clean
 clean:
-	$(RM) -r bin deb *.deb
+	$(RM) -r bin deb *.deb $(deps)
 
 ifneq ($(MAKECMDGOALS),clean)
--include $(wildcard internal/*.d)
+-include $(deps)
 endif
