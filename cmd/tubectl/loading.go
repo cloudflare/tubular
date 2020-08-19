@@ -34,11 +34,7 @@ func unload(e env, args ...string) error {
 		return fmt.Errorf("invalid arguments")
 	}
 
-	if err := e.adjustMemlimit(); err != nil {
-		return err
-	}
-
-	dp, err := internal.OpenDispatcher(e.netns, e.bpfFs)
+	dp, err := e.openDispatcher()
 	if errors.Is(err, internal.ErrNotLoaded) {
 		fmt.Fprintln(e.stderr, "dispatcher is not loaded in", e.netns)
 		return nil

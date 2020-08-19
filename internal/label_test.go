@@ -19,12 +19,35 @@ func TestLabels(t *testing.T) {
 		t.Errorf("Expected first ID to be 1, got %d", id)
 	}
 
+	idBar, err := lbls.AllocateID("bar")
+	if err != nil {
+		t.Fatal("Can't allocate ID:", err)
+	}
+	if idBar != 2 {
+		t.Errorf("Expected first ID to be 2, got %d", idBar)
+	}
+
 	foundID, err := lbls.FindID("foo")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if id != foundID {
 		t.Fatalf("Expected ids for existing label to match, got %d and %d", id, foundID)
+	}
+
+	labels, err := lbls.List()
+	if err != nil {
+		t.Fatal("List returns an error:", err)
+	}
+
+	if n := len(labels); n != 2 {
+		t.Error("Expected two labels, got", n)
+	}
+	if labels[id] != "foo" {
+		t.Errorf("Expected id 1 to have label foo, got %q", labels[id])
+	}
+	if labels[idBar] != "bar" {
+		t.Errorf("Expected id 2 to have label bar, got %q", labels[idBar])
 	}
 
 	if err := lbls.Delete("foo"); err != nil {

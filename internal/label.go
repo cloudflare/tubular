@@ -24,8 +24,11 @@ type label string
 var _ encoding.BinaryMarshaler = label("")
 
 func (lbl label) MarshalBinary() ([]byte, error) {
-	if strings.IndexByte(string(lbl), 0) != -1 {
-		return nil, fmt.Errorf("label cotains null byte")
+	if lbl == "" {
+		return nil, fmt.Errorf("label is empty")
+	}
+	if strings.ContainsRune(string(lbl), 0) {
+		return nil, fmt.Errorf("label contains null byte")
 	}
 	buf := make([]byte, maxLabelLength)
 	if copy(buf, lbl) != len(lbl) {
@@ -143,4 +146,20 @@ func (lbls *labels) Delete(lbl string) error {
 		return fmt.Errorf("delete label: %s", err)
 	}
 	return nil
+}
+
+func (lbls *labels) List() (map[labelID]string, error) {
+	var (
+		lbl    label
+		id     labelID
+		labels = make(map[labelID]string)
+		iter   = lbls.m.Iterate()
+	)
+	for iter.Next(&lbl, &id) {
+		labels[id] = string(lbl)
+	}
+	if err := iter.Err(); err != nil {
+		return nil, fmt.Errorf("can't iterate labels: %s", err)
+	}
+	return labels, nil
 }

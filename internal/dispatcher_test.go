@@ -2,7 +2,6 @@ package internal
 
 import (
 	"fmt"
-	"net"
 	"os"
 	"testing"
 
@@ -39,17 +38,17 @@ func TestOverlappingBindings(t *testing.T) {
 	netns := testutil.NewNetNS(t)
 	dp := mustCreateDispatcher(t, netns.Path())
 
-	prefixA := mustParseIPNet(t, "127.0.0.1/32")
-	if err := dp.AddBinding("foo", tcpProto, prefixA, 8080); err != nil {
+	bindA := mustNewBinding(t, TCP, "127.0.0.1/32", 8080)
+	if err := dp.AddBinding("foo", bindA); err != nil {
 		t.Fatal("can't add /32:", err)
 	}
 
-	prefixB := mustParseIPNet(t, "127.0.0.1/24")
-	if err := dp.AddBinding("bar", tcpProto, prefixB, 8080); err != nil {
+	bindB := mustNewBinding(t, TCP, "127.0.0.1/24", 8080)
+	if err := dp.AddBinding("bar", bindB); err != nil {
 		t.Fatal("can't add /24:", err)
 	}
 
-	if err := dp.AddBinding("bar", tcpProto, prefixB, 8080); err == nil {
+	if err := dp.AddBinding("bar", bindB); err == nil {
 		t.Error("Bindings can be added multiple times")
 	}
 
@@ -61,28 +60,26 @@ func TestAddAndRemoveBindings(t *testing.T) {
 	dp := mustCreateDispatcher(t, netns.Path())
 
 	testcases := []struct {
-		proto  Protocol
-		ip     string
-		prefix string
+		ip string
+		*Binding
 	}{
-		{tcpProto, "127.0.0.1", "127.0.0.1/8"},
-		{udpProto, "127.0.0.1", "127.0.0.1/8"},
-		{tcpProto, "[::1]", "::1/128"},
-		{udpProto, "[::1]", "::1/128"},
+		{"127.0.0.1", mustNewBinding(t, TCP, "127.0.0.0/8", 8080)},
+		{"127.0.0.1", mustNewBinding(t, UDP, "127.0.0.0/8", 8080)},
+		{"[::1]", mustNewBinding(t, TCP, "::1", 8080)},
+		{"[::1]", mustNewBinding(t, UDP, "::1", 8080)},
 	}
 
 	for _, tc := range testcases {
-		name := fmt.Sprintf("%v %s", tc.proto, tc.ip)
+		name := fmt.Sprintf("%v %s", tc.Protocol, tc.Prefix)
 		t.Run(name, func(t *testing.T) {
-			network := tc.proto.network()
+			network := tc.Protocol.network()
 			testutil.ListenNetNS(t, netns, network, tc.ip+":8080")
 
 			if !testutil.CanDialNetNS(t, netns, network, tc.ip+":8080") {
 				t.Fatal("Can't dial before creating the binding")
 			}
 
-			prefix := mustParseIPNet(t, tc.prefix)
-			err := dp.AddBinding("foo", tc.proto, prefix, 8080)
+			err := dp.AddBinding("foo", tc.Binding)
 			if err != nil {
 				t.Fatal("Can't create binding:", err)
 			}
@@ -91,7 +88,7 @@ func TestAddAndRemoveBindings(t *testing.T) {
 				t.Fatal("Binding without registered service doesn't refuse connections")
 			}
 
-			err = dp.RemoveBinding(tc.proto, prefix, 8080)
+			err = dp.RemoveBinding(tc.Binding)
 			if err != nil {
 				t.Fatal("Can't remove binding:", err)
 			}
@@ -103,15 +100,15 @@ func TestAddAndRemoveBindings(t *testing.T) {
 	}
 }
 
-func mustParseIPNet(tb testing.TB, cidr string) *net.IPNet {
+func mustNewBinding(tb testing.TB, proto Protocol, prefix string, port uint16) *Binding {
 	tb.Helper()
 
-	_, ipn, err := net.ParseCIDR(cidr)
+	bdg, err := NewBinding(proto, prefix, port)
 	if err != nil {
-		tb.Fatal("Can't parse CIDR:", err)
+		tb.Fatal("Can't create binding:", err)
 	}
 
-	return ipn
+	return bdg
 }
 
 func mustCreateDispatcher(tb testing.TB, netns string) *Dispatcher {

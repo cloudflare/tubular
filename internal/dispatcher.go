@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"path/filepath"
 
@@ -224,16 +223,17 @@ func (d *Dispatcher) Unload() error {
 
 type Protocol uint8
 
+// Valid protocols.
 const (
-	tcpProto Protocol = unix.IPPROTO_TCP
-	udpProto Protocol = unix.IPPROTO_UDP
+	TCP Protocol = unix.IPPROTO_TCP
+	UDP Protocol = unix.IPPROTO_UDP
 )
 
 func (p Protocol) network() string {
 	switch p {
-	case tcpProto:
+	case TCP:
 		return "tcp"
-	case udpProto:
+	case UDP:
 		return "udp"
 	default:
 		return "unknown"
@@ -246,12 +246,7 @@ func (p Protocol) network() string {
 // destination exists.
 //
 // Returns an error if the binding is already pointing at the specified label.
-func (d *Dispatcher) AddBinding(label string, proto Protocol, prefix *net.IPNet, port uint16) (err error) {
-	key, err := newBindingKey(prefix, proto, port)
-	if err != nil {
-		return err
-	}
-
+func (d *Dispatcher) AddBinding(label string, bind *Binding) (err error) {
 	id, err := d.labels.FindID(label)
 	if id == 0 {
 		// TODO: We don't deallocate this on error, maybe we need to to this.
@@ -264,14 +259,14 @@ func (d *Dispatcher) AddBinding(label string, proto Protocol, prefix *net.IPNet,
 	}
 
 	var existingID labelID
-	if err := d.bpf.MapBindings.Lookup(key, &existingID); err == nil {
+	if err := d.bpf.MapBindings.Lookup(bind, &existingID); err == nil {
 		if existingID == id {
 			// TODO: We could also turn this into a no-op?
 			return fmt.Errorf("add binding: already bound to %q", label)
 		}
 	}
 
-	err = d.bpf.MapBindings.Update(key, id, 0)
+	err = d.bpf.MapBindings.Update(bind, id, 0)
 	if err != nil {
 		return fmt.Errorf("create binding: %s", err)
 	}
@@ -282,18 +277,40 @@ func (d *Dispatcher) AddBinding(label string, proto Protocol, prefix *net.IPNet,
 // RemoveBinding stops redirecting traffic for a given protocol, prefix and port.
 //
 // Returns an error if the binding doesn't exist.
-func (d *Dispatcher) RemoveBinding(proto Protocol, prefix *net.IPNet, port uint16) error {
-	key, err := newBindingKey(prefix, proto, port)
-	if err != nil {
-		return err
-	}
-
+func (d *Dispatcher) RemoveBinding(bind *Binding) error {
 	// TODO: This doesn't remove labels once they are unused.
-	if err := d.bpf.MapBindings.Delete(key); err != nil {
+	if err := d.bpf.MapBindings.Delete(bind); err != nil {
 		return fmt.Errorf("remove binding: %s", err)
 	}
 
 	return nil
+}
+
+func (d *Dispatcher) Bindings() (map[string][]*Binding, error) {
+	labels, err := d.labels.List()
+	if err != nil {
+		return nil, fmt.Errorf("list labels: %s", err)
+	}
+
+	var (
+		bind     Binding
+		id       labelID
+		bindings = make(map[string][]*Binding)
+		iter     = d.bpf.MapBindings.Iterate()
+	)
+	for iter.Next(&bind, &id) {
+		label := labels[id]
+		if label == "" {
+			fmt.Printf("%+v", labels)
+			return nil, fmt.Errorf("no label for id %d", id)
+		}
+
+		bindings[label] = append(bindings[label], bind.copy())
+	}
+	if err := iter.Err(); err != nil {
+		return nil, fmt.Errorf("can't iterate bindings: %s", err)
+	}
+	return bindings, nil
 }
 
 func checkMap(spec *ebpf.MapSpec, m *ebpf.Map) error {

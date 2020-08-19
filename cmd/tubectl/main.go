@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 
+	"code.cfops.it/sys/tubular/internal"
 	"code.cfops.it/sys/tubular/internal/rlimit"
 )
 
@@ -21,6 +22,25 @@ func (e *env) adjustMemlimit() error {
 	return rlimit.SetLockedMemoryLimits(e.memlimit)
 }
 
+func (e *env) openDispatcher() (*internal.Dispatcher, error) {
+	if err := e.adjustMemlimit(); err != nil {
+		return nil, err
+	}
+
+	dp, err := internal.OpenDispatcher(e.netns, e.bpfFs)
+	if err != nil {
+		return nil, fmt.Errorf("can't open dispatcher: %w", err)
+	}
+
+	return dp, nil
+}
+
+func (e *env) newFlagSet(name string) *flag.FlagSet {
+	set := flag.NewFlagSet("bind", flag.ContinueOnError)
+	set.SetOutput(e.stderr)
+	return set
+}
+
 type cmdFunc func(env, ...string) error
 
 func tubectl(stdout, stderr io.Writer, args ...string) error {
@@ -29,7 +49,7 @@ func tubectl(stdout, stderr io.Writer, args ...string) error {
 		stderr: stderr,
 	}
 
-	set := flag.NewFlagSet("tubectl", flag.ContinueOnError)
+	set := e.newFlagSet("tubectl")
 	set.StringVar(&e.netns, "netns", "/proc/self/ns/net", "`path` to the network namespace")
 	set.StringVar(&e.bpfFs, "bpffs", "/sys/fs/bpf", "`path` to a BPF filesystem for state")
 	set.Uint64Var(&e.memlimit, "memlimit", 10*1024*1024, "maximum locked memory in `bytes`")
@@ -38,6 +58,7 @@ func tubectl(stdout, stderr io.Writer, args ...string) error {
 		"version": version,
 		"load":    load,
 		"unload":  unload,
+		"bind":    bind,
 	}
 
 	set.Usage = func() {
