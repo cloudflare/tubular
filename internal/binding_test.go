@@ -2,8 +2,9 @@ package internal
 
 import (
 	"net"
-	"reflect"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestBinding(t *testing.T) {
@@ -81,10 +82,8 @@ func TestBinding(t *testing.T) {
 		t.Fatal("Can't unmarshal binding: err")
 	}
 
-	if !reflect.DeepEqual(in, out) {
-		t.Logf("Have: %+v", out)
-		t.Logf("Want: %+v", in)
-		t.Error("Decoded binding doesn't match input")
+	if diff := cmp.Diff(in, out); diff != "" {
+		t.Errorf("Decoded binding doesn't match input (-want +got):\n%s", diff)
 	}
 }
 
