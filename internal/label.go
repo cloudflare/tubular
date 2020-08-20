@@ -5,6 +5,7 @@ import (
 	"encoding"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"unsafe"
 
@@ -114,24 +115,37 @@ func (lbls *labels) FindID(lbl string) (labelID, error) {
 	return id, nil
 }
 
+// AllocateID finds a unique identifier for a label.
 func (lbls *labels) AllocateID(lbl string) (labelID, error) {
 	var (
-		key       label
-		id, maxID labelID
-		iter      = lbls.m.Iterate()
+		key  label
+		id   labelID
+		ids  []labelID
+		iter = lbls.m.Iterate()
 	)
 	for iter.Next(&key, &id) {
-		if id > maxID {
-			maxID = id
-		}
+		ids = append(ids, id)
 	}
 	if err := iter.Err(); err != nil {
-		return 0, fmt.Errorf("can't find highest ID: %s", err)
+		return 0, fmt.Errorf("iterate labels: %s", err)
 	}
 
-	id = maxID + 1
-	if id < maxID {
-		return 0, fmt.Errorf("allocate label: ran out of ids")
+	id = 1
+	if len(ids) > 0 {
+		sort.Slice(ids, func(i, j int) bool {
+			return ids[i] < ids[j]
+		})
+
+		for _, allocatedID := range ids {
+			if id < allocatedID {
+				break
+			}
+
+			id = allocatedID + 1
+			if id < allocatedID {
+				return 0, fmt.Errorf("allocate label: ran out of ids")
+			}
+		}
 	}
 
 	if err := lbls.m.Update(label(lbl), id, ebpf.UpdateNoExist); err != nil {

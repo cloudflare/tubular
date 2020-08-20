@@ -16,7 +16,7 @@ func TestLabels(t *testing.T) {
 		t.Fatal("Can't allocate ID:", err)
 	}
 	if id != 1 {
-		t.Errorf("Expected first ID to be 1, got %d", id)
+		t.Fatal("Expected ID for foo to be 1, got", id)
 	}
 
 	idBar, err := lbls.AllocateID("bar")
@@ -31,8 +31,8 @@ func TestLabels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if id != foundID {
-		t.Fatalf("Expected ids for existing label to match, got %d and %d", id, foundID)
+	if foundID != 1 {
+		t.Fatal("Expected id for foo to be 1, got", foundID)
 	}
 
 	labels, err := lbls.List()
@@ -61,6 +61,47 @@ func TestLabels(t *testing.T) {
 	if foundID != 0 {
 		t.Fatal("Delete doesn't remove labels")
 	}
+}
+
+func TestLabelIDAllocation(t *testing.T) {
+	lbls := mustNewLabels(t)
+
+	allocate := func(label string, expectedID labelID) {
+		t.Helper()
+
+		id, err := lbls.AllocateID(label)
+		if err != nil {
+			t.Fatal("Can't allocate ID:", err)
+		}
+		if id != expectedID {
+			t.Fatalf("Expected ID for label %q to be %d, got %d", label, expectedID, id)
+		}
+	}
+
+	del := func(label string) {
+		t.Helper()
+
+		if err := lbls.Delete(label); err != nil {
+			t.Fatalf("Can't delete label %q: %s", label, err)
+		}
+	}
+
+	allocate("foo", 1)
+
+	del("foo")
+	allocate("foo", 1)
+	allocate("bar", 2)
+	allocate("baz", 3)
+
+	del("bar")
+	allocate("frob", 2)
+
+	del("frob")
+	del("foo")
+
+	allocate("bingo", 1)
+	allocate("quux", 2)
+	allocate("frood", 4)
 }
 
 func mustNewLabels(tb testing.TB) *labels {
