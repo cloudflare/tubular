@@ -12,6 +12,11 @@ github.com/cilium/ebpf/link
 github.com/containernetworking/plugins/pkg/ns
 # github.com/google/go-cmp v0.5.1
 ## explicit
+github.com/google/go-cmp/cmp
+github.com/google/go-cmp/cmp/internal/diff
+github.com/google/go-cmp/cmp/internal/flags
+github.com/google/go-cmp/cmp/internal/function
+github.com/google/go-cmp/cmp/internal/value
 # golang.org/x/sys v0.0.0-20200805065543-0cf7623e9dbd
 ## explicit
 golang.org/x/sys/internal/unsafeheader
