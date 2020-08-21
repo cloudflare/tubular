@@ -1,9 +1,6 @@
 package internal
 
 import (
-	"bytes"
-	"encoding"
-	"encoding/binary"
 	"fmt"
 	"net"
 	"strings"
@@ -14,6 +11,7 @@ import (
 //
 // You have to add a Binding to a Dispatcher for it to take effect.
 type Binding struct {
+	Label    string
 	Protocol Protocol
 	Prefix   *net.IPNet
 	Port     uint16
@@ -23,7 +21,7 @@ type Binding struct {
 //
 // prefix may either be in CIDR notation (::1/128) or a plain IP address.
 // Specifying ::1 is equivalent to passing ::1/128.
-func NewBinding(proto Protocol, prefix string, port uint16) (*Binding, error) {
+func NewBinding(label string, proto Protocol, prefix string, port uint16) (*Binding, error) {
 	var ipn *net.IPNet
 	if strings.Index(prefix, "/") != -1 {
 		var err error
@@ -49,10 +47,41 @@ func NewBinding(proto Protocol, prefix string, port uint16) (*Binding, error) {
 	}
 
 	return &Binding{
+		label,
 		proto,
 		ipn,
 		port,
 	}, nil
+}
+
+func newBindingFromBPF(label string, key *bindingKey) *Binding {
+	ones := int(key.PrefixLen) - bindingKeyHeaderBits
+	ip := make(net.IP, len(key.IP))
+	copy(ip, key.IP[:])
+
+	var prefix *net.IPNet
+	if v4 := ip.To4(); v4 != nil {
+		prefix = &net.IPNet{
+			IP:   v4,
+			Mask: net.CIDRMask(ones-(128-32), 32),
+		}
+	} else {
+		prefix = &net.IPNet{
+			IP:   ip,
+			Mask: net.CIDRMask(ones, 128),
+		}
+	}
+
+	return &Binding{
+		label,
+		key.Protocol,
+		prefix,
+		key.Port,
+	}
+}
+
+func (b *Binding) String() string {
+	return fmt.Sprintf("%s#%v:[%s]:%d", b.Label, b.Protocol, b.Prefix, b.Port)
 }
 
 // bindingKey mirrors struct addr
@@ -65,10 +94,7 @@ type bindingKey struct {
 
 const bindingKeyHeaderBits = int(unsafe.Sizeof(bindingKey{}.Protocol)+unsafe.Sizeof(bindingKey{}.Port)) * 8
 
-var _ encoding.BinaryMarshaler = (*Binding)(nil)
-
-// MarshalBinary implements encoding.BinaryMarshaler.
-func (b *Binding) MarshalBinary() ([]byte, error) {
+func (b *Binding) key() (*bindingKey, error) {
 	ones, bits := b.Prefix.Mask.Size()
 	if ones == 0 && bits == 0 {
 		return nil, fmt.Errorf("invalid prefix: %s", b.Prefix)
@@ -88,59 +114,5 @@ func (b *Binding) MarshalBinary() ([]byte, error) {
 		return nil, fmt.Errorf("invalid IP address: expected 16 bytes, got %d", n)
 	}
 
-	var buf bytes.Buffer
-	if err := binary.Write(&buf, nativeEndian, &key); err != nil {
-		return nil, fmt.Errorf("can't encode bindingKey: %s", err)
-	}
-
-	return buf.Bytes(), nil
-}
-
-var _ encoding.BinaryUnmarshaler = (*Binding)(nil)
-
-// UnmarshalBinary implements encoding.BinaryUnmarshaler.
-func (b *Binding) UnmarshalBinary(buf []byte) error {
-	var key bindingKey
-	rd := bytes.NewReader(buf)
-	if err := binary.Read(rd, nativeEndian, &key); err != nil {
-		return fmt.Errorf("can't decode bindingKey: %s", err)
-	}
-
-	b.Protocol = key.Protocol
-	b.Port = key.Port
-
-	ones := int(key.PrefixLen) - bindingKeyHeaderBits
-	ip := make(net.IP, len(key.IP))
-	copy(ip, key.IP[:])
-
-	if v4 := ip.To4(); v4 != nil {
-		b.Prefix = &net.IPNet{
-			IP:   v4,
-			Mask: net.CIDRMask(ones-(128-32), 32),
-		}
-	} else {
-		b.Prefix = &net.IPNet{
-			IP:   ip,
-			Mask: net.CIDRMask(ones, 128),
-		}
-	}
-
-	return nil
-}
-
-func (b *Binding) copy() *Binding {
-	ip := make(net.IP, len(b.Prefix.IP))
-	copy(ip, b.Prefix.IP)
-
-	mask := make(net.IPMask, len(b.Prefix.Mask))
-	copy(mask, b.Prefix.Mask)
-
-	return &Binding{
-		b.Protocol,
-		&net.IPNet{
-			IP:   ip,
-			Mask: mask,
-		},
-		b.Port,
-	}
+	return &key, nil
 }

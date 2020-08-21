@@ -1,11 +1,13 @@
 package internal
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
@@ -246,7 +248,8 @@ func (p Protocol) network() string {
 // destination exists.
 //
 // Returns an error if the binding is already pointing at the specified label.
-func (d *Dispatcher) AddBinding(label string, bind *Binding) (err error) {
+func (d *Dispatcher) AddBinding(bind *Binding) (err error) {
+	label := bind.Label
 	id, err := d.labels.FindID(label)
 	if id == 0 {
 		// TODO: We don't deallocate this on error, maybe we need to to this.
@@ -258,15 +261,20 @@ func (d *Dispatcher) AddBinding(label string, bind *Binding) (err error) {
 		return fmt.Errorf("add binding: %s", err)
 	}
 
+	key, err := bind.key()
+	if err != nil {
+		return err
+	}
+
 	var existingID labelID
-	if err := d.bpf.MapBindings.Lookup(bind, &existingID); err == nil {
+	if err := d.bpf.MapBindings.Lookup(key, &existingID); err == nil {
 		if existingID == id {
 			// TODO: We could also turn this into a no-op?
 			return fmt.Errorf("add binding: already bound to %q", label)
 		}
 	}
 
-	err = d.bpf.MapBindings.Update(bind, id, 0)
+	err = d.bpf.MapBindings.Update(key, id, 0)
 	if err != nil {
 		return fmt.Errorf("create binding: %s", err)
 	}
@@ -278,38 +286,85 @@ func (d *Dispatcher) AddBinding(label string, bind *Binding) (err error) {
 //
 // Returns an error if the binding doesn't exist.
 func (d *Dispatcher) RemoveBinding(bind *Binding) error {
+	id, err := d.labels.FindID(bind.Label)
+	if err != nil {
+		return err
+	}
+
+	key, err := bind.key()
+	if err != nil {
+		return err
+	}
+
+	var existingID labelID
+	if err := d.bpf.MapBindings.Lookup(key, &existingID); err != nil {
+		return fmt.Errorf("remove binding: lookup label: %s", err)
+	}
+
+	if id != existingID {
+		return fmt.Errorf("remove binding: label mismatch")
+	}
+
 	// TODO: This doesn't remove labels once they are unused.
-	if err := d.bpf.MapBindings.Delete(bind); err != nil {
+	if err := d.bpf.MapBindings.Delete(key); err != nil {
 		return fmt.Errorf("remove binding: %s", err)
 	}
 
 	return nil
 }
 
-func (d *Dispatcher) Bindings() (map[string][]*Binding, error) {
+// Bindings lists known bindings.
+//
+// The returned slice is sorted.
+func (d *Dispatcher) Bindings() ([]*Binding, error) {
 	labels, err := d.labels.List()
 	if err != nil {
 		return nil, fmt.Errorf("list labels: %s", err)
 	}
 
 	var (
-		bind     Binding
+		key      bindingKey
 		id       labelID
-		bindings = make(map[string][]*Binding)
+		bindings []*Binding
 		iter     = d.bpf.MapBindings.Iterate()
 	)
-	for iter.Next(&bind, &id) {
+	for iter.Next(&key, &id) {
 		label := labels[id]
 		if label == "" {
 			fmt.Printf("%+v", labels)
 			return nil, fmt.Errorf("no label for id %d", id)
 		}
 
-		bindings[label] = append(bindings[label], bind.copy())
+		bindings = append(bindings, newBindingFromBPF(label, &key))
 	}
 	if err := iter.Err(); err != nil {
 		return nil, fmt.Errorf("can't iterate bindings: %s", err)
 	}
+
+	sort.Slice(bindings, func(i, j int) bool {
+		a, b := bindings[i], bindings[j]
+
+		if a.Label != b.Label {
+			return a.Label < b.Label
+		}
+
+		if a.Protocol != b.Protocol {
+			return a.Protocol < b.Protocol
+		}
+
+		if a.Port != b.Port {
+			return a.Port < b.Port
+		}
+
+		if c := bytes.Compare(a.Prefix.IP.To16(), b.Prefix.IP.To16()); c != 0 {
+			return c < 0
+		}
+
+		aBits, _ := a.Prefix.Mask.Size()
+		bBits, _ := b.Prefix.Mask.Size()
+		return aBits < bBits
+	})
+
 	return bindings, nil
 }
 

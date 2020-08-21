@@ -32,7 +32,7 @@ func TestBinding(t *testing.T) {
 		t.Run(tc.prefix, func(t *testing.T) {
 			ip := net.ParseIP(tc.ip)
 
-			bind, err := NewBinding(UDP, tc.prefix, 80)
+			bind, err := NewBinding("foo", UDP, tc.prefix, 80)
 			if err != nil {
 				t.Fatal("Can't create binding:", tc.prefix, err)
 			}
@@ -59,7 +59,7 @@ func TestBinding(t *testing.T) {
 
 	for _, tc := range invalid {
 		t.Run(tc, func(t *testing.T) {
-			bind, err := NewBinding(TCP, tc, 8080)
+			bind, err := NewBinding("bar", TCP, tc, 8080)
 			if err == nil {
 				t.Logf("%+v", bind)
 				t.Error("Accepted invalid prefix")
@@ -67,34 +67,18 @@ func TestBinding(t *testing.T) {
 		})
 	}
 
-	in, err := NewBinding(TCP, "127.0.0.1", 80)
+	in, err := NewBinding("baz", TCP, "127.0.0.1", 80)
 	if err != nil {
 		t.Fatal("Can't create binding:", err)
 	}
 
-	buf, err := in.MarshalBinary()
+	key, err := in.key()
 	if err != nil {
-		t.Fatal("Can't marshal binding:", err)
+		t.Fatal("Can't create bindingKey:", err)
 	}
 
-	out := &Binding{}
-	if err := out.UnmarshalBinary(buf); err != nil {
-		t.Fatal("Can't unmarshal binding: err")
-	}
-
+	out := newBindingFromBPF(in.Label, key)
 	if diff := cmp.Diff(in, out); diff != "" {
 		t.Errorf("Decoded binding doesn't match input (-want +got):\n%s", diff)
-	}
-}
-
-func TestCopyBinding(t *testing.T) {
-	bind, err := NewBinding(UDP, "127.0.0.1", 80)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	cpy := bind.copy()
-	if cpy.Prefix == bind.Prefix {
-		t.Error("copy should create a new Prefix")
 	}
 }

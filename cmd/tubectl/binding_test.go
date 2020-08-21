@@ -30,14 +30,14 @@ func TestBind(t *testing.T) {
 		t.Fatal("Can't get bindings:", err)
 	}
 
-	if n := len(bindings["foo"]); n != 2 {
-		t.Error("Expected 2 bindings for label foo, got", n)
-	}
-	if n := len(bindings["bar"]); n != 1 {
-		t.Error("Expected one binding for label bar, got", n)
+	if n := len(bindings); n != 3 {
+		t.Error("Expected three bindings, got", n)
 	}
 
-	bind := bindings["bar"][0]
+	bind := bindings[0]
+	if bind.Label != "bar" {
+		t.Error("Binding should have label bar, got", bind.Label)
+	}
 	if bind.Port != 443 {
 		t.Error("Binding should have port 443, got", bind.Port)
 	}

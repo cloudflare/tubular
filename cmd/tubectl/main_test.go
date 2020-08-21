@@ -20,7 +20,9 @@ func testTubectl(tb testing.TB, netns ns.NetNS, cmd string, args ...string) erro
 	stdio := new(bytes.Buffer)
 	if err := tubectl(stdio, stdio, args...); err != nil {
 		tb.Helper()
-		tb.Logf("Output:\n%s", stdio.String())
+		if stdio.Len() > 0 {
+			tb.Logf("Output:\n%s", stdio.String())
+		}
 		return err
 	}
 	return nil

@@ -38,17 +38,17 @@ func TestOverlappingBindings(t *testing.T) {
 	netns := testutil.NewNetNS(t)
 	dp := mustCreateDispatcher(t, netns.Path())
 
-	bindA := mustNewBinding(t, TCP, "127.0.0.1/32", 8080)
-	if err := dp.AddBinding("foo", bindA); err != nil {
+	bindA := mustNewBinding(t, "foo", TCP, "127.0.0.1/32", 8080)
+	if err := dp.AddBinding(bindA); err != nil {
 		t.Fatal("can't add /32:", err)
 	}
 
-	bindB := mustNewBinding(t, TCP, "127.0.0.1/24", 8080)
-	if err := dp.AddBinding("bar", bindB); err != nil {
+	bindB := mustNewBinding(t, "foo", TCP, "127.0.0.1/24", 8080)
+	if err := dp.AddBinding(bindB); err != nil {
 		t.Fatal("can't add /24:", err)
 	}
 
-	if err := dp.AddBinding("bar", bindB); err == nil {
+	if err := dp.AddBinding(bindB); err == nil {
 		t.Error("Bindings can be added multiple times")
 	}
 
@@ -63,10 +63,10 @@ func TestAddAndRemoveBindings(t *testing.T) {
 		ip string
 		*Binding
 	}{
-		{"127.0.0.1", mustNewBinding(t, TCP, "127.0.0.0/8", 8080)},
-		{"127.0.0.1", mustNewBinding(t, UDP, "127.0.0.0/8", 8080)},
-		{"[::1]", mustNewBinding(t, TCP, "::1", 8080)},
-		{"[::1]", mustNewBinding(t, UDP, "::1", 8080)},
+		{"127.0.0.1", mustNewBinding(t, "foo", TCP, "127.0.0.0/8", 8080)},
+		{"127.0.0.1", mustNewBinding(t, "foo", UDP, "127.0.0.0/8", 8080)},
+		{"[::1]", mustNewBinding(t, "foo", TCP, "::1", 8080)},
+		{"[::1]", mustNewBinding(t, "foo", UDP, "::1", 8080)},
 	}
 
 	for _, tc := range testcases {
@@ -79,7 +79,7 @@ func TestAddAndRemoveBindings(t *testing.T) {
 				t.Fatal("Can't dial before creating the binding")
 			}
 
-			err := dp.AddBinding("foo", tc.Binding)
+			err := dp.AddBinding(tc.Binding)
 			if err != nil {
 				t.Fatal("Can't create binding:", err)
 			}
@@ -100,10 +100,10 @@ func TestAddAndRemoveBindings(t *testing.T) {
 	}
 }
 
-func mustNewBinding(tb testing.TB, proto Protocol, prefix string, port uint16) *Binding {
+func mustNewBinding(tb testing.TB, label string, proto Protocol, prefix string, port uint16) *Binding {
 	tb.Helper()
 
-	bdg, err := NewBinding(proto, prefix, port)
+	bdg, err := NewBinding(label, proto, prefix, port)
 	if err != nil {
 		tb.Fatal("Can't create binding:", err)
 	}

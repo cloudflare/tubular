@@ -17,12 +17,7 @@ func bind(e env, args ...string) error {
 		return err
 	}
 
-	if set.NArg() < 4 {
-		set.Usage()
-		return fmt.Errorf("missing arguments")
-	}
-
-	bdg, err := bindingFromArgs(set.Arg(1), set.Arg(2), set.Arg(3))
+	bind, err := bindingFromArgs(set.Args())
 	if err != nil {
 		return err
 	}
@@ -33,22 +28,26 @@ func bind(e env, args ...string) error {
 	}
 	defer dp.Close()
 
-	return dp.AddBinding(set.Arg(0), bdg)
+	return dp.AddBinding(bind)
 }
 
-func bindingFromArgs(protoStr, prefixStr, portStr string) (*internal.Binding, error) {
+func bindingFromArgs(args []string) (*internal.Binding, error) {
+	if n := len(args); n != 4 {
+		return nil, fmt.Errorf("expected label, protocol, ip and port but got %d arguments", n)
+	}
+
 	var proto internal.Protocol
-	switch protoStr {
+	switch args[1] {
 	case "udp":
 		proto = internal.UDP
 	case "tcp":
 		proto = internal.TCP
 	}
 
-	port, err := strconv.ParseUint(portStr, 10, 16)
+	port, err := strconv.ParseUint(args[3], 10, 16)
 	if err != nil {
 		return nil, fmt.Errorf("invalid port: %s", err)
 	}
 
-	return internal.NewBinding(proto, prefixStr, uint16(port))
+	return internal.NewBinding(args[0], proto, args[2], uint16(port))
 }
