@@ -9,7 +9,7 @@ import (
 func TestBind(t *testing.T) {
 	netns := mustReadyNetNS(t)
 
-	if err := testTubectl(t, netns, "bind"); err == nil {
+	if _, err := testTubectl(t, netns, "bind"); err == nil {
 		t.Error("bind without arguments should return an error")
 	}
 
@@ -18,7 +18,7 @@ func TestBind(t *testing.T) {
 		{"foo", "udp", "::1", "443"},
 		{"bar", "tcp", "fd00::/64", "443"},
 	} {
-		err := testTubectl(t, netns, "bind", args...)
+		_, err := testTubectl(t, netns, "bind", args...)
 		if err != nil {
 			t.Errorf("Can't bind with args %q: %s", args, err)
 		}

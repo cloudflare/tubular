@@ -59,6 +59,7 @@ func tubectl(stdout, stderr io.Writer, args ...string) error {
 		"load":    load,
 		"unload":  unload,
 		"bind":    bind,
+		"list":    list,
 	}
 
 	set.Usage = func() {

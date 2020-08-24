@@ -11,26 +11,29 @@ import (
 	"github.com/containernetworking/plugins/pkg/ns"
 )
 
-func testTubectl(tb testing.TB, netns ns.NetNS, cmd string, args ...string) error {
+func testTubectl(tb testing.TB, netns ns.NetNS, cmd string, args ...string) (*bytes.Buffer, error) {
+	tb.Helper()
+
 	args = append([]string{
 		"-netns", netns.Path(),
 		cmd,
 	}, args...)
 
-	stdio := new(bytes.Buffer)
-	if err := tubectl(stdio, stdio, args...); err != nil {
-		tb.Helper()
-		if stdio.Len() > 0 {
-			tb.Logf("Output:\n%s", stdio.String())
-		}
-		return err
+	output := new(bytes.Buffer)
+	if err := tubectl(output, output, args...); err != nil {
+
+		return output, err
 	}
-	return nil
+	return output, nil
 }
 
 func mustTestTubectl(tb testing.TB, netns ns.NetNS, cmd string, args ...string) {
-	if err := testTubectl(tb, netns, cmd, args...); err != nil {
-		tb.Helper()
+	tb.Helper()
+
+	if output, err := testTubectl(tb, netns, cmd, args...); err != nil {
+		if output.Len() > 0 {
+			tb.Logf("Output:\n%s", output.String())
+		}
 		tb.Fatal("Can't execute tubectl:", err)
 	}
 }
@@ -59,4 +62,18 @@ func mustOpenDispatcher(tb testing.TB, netns ns.NetNS) *internal.Dispatcher {
 	}
 	tb.Cleanup(func() { dp.Close() })
 	return dp
+}
+
+func mustAddBinding(tb testing.TB, dp *internal.Dispatcher, label string, proto internal.Protocol, prefix string, port uint16) {
+	tb.Helper()
+
+	bind, err := internal.NewBinding(label, proto, prefix, port)
+	if err != nil {
+		tb.Fatal(err)
+	}
+
+	err = dp.AddBinding(bind)
+	if err != nil {
+		tb.Fatal("Can't add binding:", err)
+	}
 }
