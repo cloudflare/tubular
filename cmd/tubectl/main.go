@@ -55,11 +55,12 @@ func tubectl(stdout, stderr io.Writer, args ...string) error {
 	set.Uint64Var(&e.memlimit, "memlimit", 10*1024*1024, "maximum locked memory in `bytes`")
 
 	cmds := map[string]cmdFunc{
-		"version": version,
-		"load":    load,
-		"unload":  unload,
-		"bind":    bind,
-		"list":    list,
+		"version":  version,
+		"load":     load,
+		"unload":   unload,
+		"bind":     bind,
+		"list":     list,
+		"register": register,
 	}
 
 	set.Usage = func() {
