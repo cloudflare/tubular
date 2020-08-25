@@ -36,7 +36,7 @@ test:
 
 .PHONY: lint
 lint:
-	test -z $$(gofmt -l $$(find . -name *.go | grep -v './vendor'))
+	test -z $$(gofmt -l $$(find . -name '*.go' ! -path './vendor/*'))
 
 .PHONY: clean
 clean:
