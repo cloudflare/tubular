@@ -34,6 +34,10 @@ tubular_$(VERSION)_%.deb: clean all
 test:
 	$(GO) test -race -short -v ./...
 
+.PHONY: build-tests
+build-tests:
+	$(GO) list ./... | while read pkg; do $(GO) test -c $${pkg} || exit; done
+
 .PHONY: lint
 lint:
 	test -z $$(gofmt -l $$(find . -name '*.go' ! -path './vendor/*'))
