@@ -90,7 +90,24 @@ func CreateDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 		}
 	}
 
-	return newDispatcher(netns, coll, labels, pinPath)
+	var bpf dispatcherObjects
+	if err := coll.Assign(&bpf); err != nil {
+		return nil, fmt.Errorf("can't assign objects: %s", err)
+	}
+	defer closeOnError(&bpf)
+
+	attach, err := netns.AttachProgram(bpf.ProgramDispatcher)
+	if err != nil {
+		return nil, err
+	}
+	defer closeOnError(attach)
+
+	linkPath := filepath.Join(pinPath, "link")
+	if err := attach.Pin(linkPath); err != nil {
+		return nil, fmt.Errorf("can't pin link: %s", err)
+	}
+
+	return &Dispatcher{netns, attach, pinPath, bpf, labels}, nil
 }
 
 // OpenDispatcher loads an existing dispatcher from a namespace.
@@ -160,37 +177,21 @@ func OpenDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 	// add them back here.
 	coll.Maps = pinnedMaps
 
-	return newDispatcher(netns, coll, labels, pinPath)
-}
-
-func newDispatcher(netns *netns, coll *ebpf.Collection, labels *labels, bpfPath string) (_ *Dispatcher, err error) {
-	closeOnError := func(c io.Closer) {
-		if err != nil {
-			c.Close()
-		}
-	}
-
 	var bpf dispatcherObjects
 	if err := coll.Assign(&bpf); err != nil {
 		return nil, fmt.Errorf("can't assign objects: %s", err)
 	}
 	defer closeOnError(&bpf)
 
-	linkPath := filepath.Join(bpfPath, "link")
+	linkPath := filepath.Join(pinPath, "link")
 	attach, err := link.LoadPinnedRawLink(linkPath)
 	if err != nil {
-		attach, err = netns.AttachProgram(bpf.ProgramDispatcher)
-		if err != nil {
-			return nil, err
-		}
-		defer closeOnError(attach)
-
-		if err := attach.Pin(linkPath); err != nil {
-			return nil, fmt.Errorf("can't pin link: %s", err)
-		}
+		return nil, fmt.Errorf("load dispatcher: %s", err)
 	}
 
-	return &Dispatcher{netns, attach, bpfPath, bpf, labels}, nil
+	// TODO: We should verify that the attached program tag (aka truncated sha1)
+	// matches bpf.ProgramDispatcher.
+	return &Dispatcher{netns, attach, pinPath, bpf, labels}, nil
 }
 
 // Close frees associated resources.
