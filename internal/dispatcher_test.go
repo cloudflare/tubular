@@ -100,6 +100,47 @@ func TestAddAndRemoveBindings(t *testing.T) {
 	}
 }
 
+func TestRemoveBinding(t *testing.T) {
+	netns := testutil.NewNetNS(t)
+	dp := mustCreateDispatcher(t, netns.Path())
+	bindA := mustNewBinding(t, "foo", TCP, "::1", 80)
+	bindB := mustNewBinding(t, "bar", TCP, "::1", 80)
+
+	if err := dp.RemoveBinding(bindA); err == nil {
+		t.Error("Removing a non-existing binding doesn't return an error")
+	}
+
+	if err := dp.AddBinding(bindA); err != nil {
+		t.Fatal(err)
+	}
+
+	labels, err := dp.labels.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if n := len(labels); n != 1 {
+		t.Fatal("Expected one label, got", n)
+	}
+
+	if err := dp.RemoveBinding(bindB); err == nil {
+		t.Fatal("Removed a binding where the label doesn't match")
+	}
+
+	if err := dp.RemoveBinding(bindA); err != nil {
+		t.Fatal("Can't remove binding:", err)
+	}
+
+	labels, err = dp.labels.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if n := len(labels); n != 0 {
+		t.Fatal("Expected no labels, got", n)
+	}
+}
+
 func mustNewBinding(tb testing.TB, label string, proto Protocol, prefix string, port uint16) *Binding {
 	tb.Helper()
 

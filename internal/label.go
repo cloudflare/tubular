@@ -55,11 +55,16 @@ type labels struct {
 	m *ebpf.Map
 }
 
+type labelValue struct {
+	ID    labelID
+	Count uint32
+}
+
 var labelsSpec = &ebpf.MapSpec{
 	Name:       "labels",
 	Type:       ebpf.Hash,
 	KeySize:    maxLabelLength,
-	ValueSize:  uint32(unsafe.Sizeof(labelID(0))),
+	ValueSize:  uint32(unsafe.Sizeof(labelValue{})),
 	MaxEntries: 512,
 }
 
@@ -103,34 +108,56 @@ func (lbls *labels) Close() error {
 	return lbls.m.Close()
 }
 
-func (lbls *labels) FindID(lbl string) (labelID, error) {
-	var id labelID
-	err := lbls.m.Lookup(label(lbl), &id)
+func (lbls *labels) ID(lbl string) (labelID, error) {
+	var value labelValue
+	err := lbls.m.Lookup(label(lbl), &value)
+	if err != nil {
+		return 0, fmt.Errorf("id for label %q: %s", lbl, err)
+	}
+	return value.ID, nil
+}
+
+func (lbls *labels) Acquire(lbl string) (labelID, error) {
+	var value labelValue
+	err := lbls.m.Lookup(label(lbl), &value)
 	if errors.Is(err, ebpf.ErrKeyNotExist) {
-		return 0, nil
+		return lbls.allocateID(lbl)
 	}
 	if err != nil {
 		return 0, fmt.Errorf("find id for label %s: %s", lbl, err)
 	}
-	return id, nil
+
+	count := value.Count + 1
+	if count < value.Count {
+		return 0, fmt.Errorf("acquire label %q: counter overflow", lbl)
+	}
+
+	value.Count = count
+	if err := lbls.m.Update(label(lbl), &value, ebpf.UpdateExist); err != nil {
+		return 0, fmt.Errorf("acquire label %q: %s", lbl, err)
+	}
+
+	return value.ID, nil
 }
 
-// AllocateID finds a unique identifier for a label.
-func (lbls *labels) AllocateID(lbl string) (labelID, error) {
+// allocateID finds a unique identifier for a label.
+//
+// You must Release the label when no longer using it.
+func (lbls *labels) allocateID(lbl string) (labelID, error) {
 	var (
-		key  label
-		id   labelID
-		ids  []labelID
-		iter = lbls.m.Iterate()
+		key   label
+		value labelValue
+		ids   []labelID
+		iter  = lbls.m.Iterate()
 	)
-	for iter.Next(&key, &id) {
-		ids = append(ids, id)
+	for iter.Next(&key, &value) {
+		ids = append(ids, value.ID)
 	}
 	if err := iter.Err(); err != nil {
 		return 0, fmt.Errorf("iterate labels: %s", err)
 	}
 
-	id = 1
+	id := labelID(1)
 	if len(ids) > 0 {
 		sort.Slice(ids, func(i, j int) bool {
 			return ids[i] < ids[j]
@@ -148,29 +175,43 @@ func (lbls *labels) AllocateID(lbl string) (labelID, error) {
 		}
 	}
 
-	if err := lbls.m.Update(label(lbl), id, ebpf.UpdateNoExist); err != nil {
+	value = labelValue{ID: id, Count: 1}
+	if err := lbls.m.Update(label(lbl), &value, ebpf.UpdateNoExist); err != nil {
 		return 0, fmt.Errorf("allocate label: %s", err)
 	}
 
 	return id, nil
 }
 
-func (lbls *labels) Delete(lbl string) error {
-	if err := lbls.m.Delete(label(lbl)); err != nil {
-		return fmt.Errorf("delete label: %s", err)
+func (lbls *labels) Release(lbl string) error {
+	var value labelValue
+	err := lbls.m.Lookup(label(lbl), &value)
+	if err != nil {
+		return fmt.Errorf("release label %q: %s", lbl, err)
 	}
+
+	if value.Count == 1 {
+		err = lbls.m.Delete(label(lbl))
+	} else {
+		value.Count--
+		err = lbls.m.Update(label(lbl), &value, ebpf.UpdateExist)
+	}
+	if err != nil {
+		return fmt.Errorf("release label %q: %s", lbl, err)
+	}
+
 	return nil
 }
 
 func (lbls *labels) List() (map[labelID]string, error) {
 	var (
 		lbl    label
-		id     labelID
+		value  labelValue
 		labels = make(map[labelID]string)
 		iter   = lbls.m.Iterate()
 	)
-	for iter.Next(&lbl, &id) {
-		labels[id] = string(lbl)
+	for iter.Next(&lbl, &value) {
+		labels[value.ID] = string(lbl)
 	}
 	if err := iter.Err(); err != nil {
 		return nil, fmt.Errorf("can't iterate labels: %s", err)

@@ -2,16 +2,14 @@ package internal
 
 import "testing"
 
-func TestLabels(t *testing.T) {
+func TestLabelID(t *testing.T) {
 	lbls := mustNewLabels(t)
 
-	if id, err := lbls.FindID("foo"); err != nil {
-		t.Fatal("Can't look up non-existing ID")
-	} else if id != 0 {
-		t.Error("FindID doesn't return 0 for non-existing ID")
+	if _, err := lbls.ID("foo"); err == nil {
+		t.Fatal("No error when looking up non-existing label")
 	}
 
-	id, err := lbls.AllocateID("foo")
+	id, err := lbls.allocateID("foo")
 	if err != nil {
 		t.Fatal("Can't allocate ID:", err)
 	}
@@ -19,89 +17,106 @@ func TestLabels(t *testing.T) {
 		t.Fatal("Expected ID for foo to be 1, got", id)
 	}
 
-	idBar, err := lbls.AllocateID("bar")
+	foundID, err := lbls.ID("foo")
 	if err != nil {
-		t.Fatal("Can't allocate ID:", err)
-	}
-	if idBar != 2 {
-		t.Errorf("Expected first ID to be 2, got %d", idBar)
+		t.Fatal("Can't lookup foo:", err)
 	}
 
-	foundID, err := lbls.FindID("foo")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if foundID != 1 {
-		t.Fatal("Expected id for foo to be 1, got", foundID)
-	}
-
-	labels, err := lbls.List()
-	if err != nil {
-		t.Fatal("List returns an error:", err)
-	}
-
-	if n := len(labels); n != 2 {
-		t.Error("Expected two labels, got", n)
-	}
-	if labels[id] != "foo" {
-		t.Errorf("Expected id 1 to have label foo, got %q", labels[id])
-	}
-	if labels[idBar] != "bar" {
-		t.Errorf("Expected id 2 to have label bar, got %q", labels[idBar])
-	}
-
-	if err := lbls.Delete("foo"); err != nil {
-		t.Fatal("Can't delete label:", err)
-	}
-
-	foundID, err = lbls.FindID("foo")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if foundID != 0 {
-		t.Fatal("Delete doesn't remove labels")
+	if foundID != id {
+		t.Errorf("Expected id %d for label foo, got %d", id, foundID)
 	}
 }
 
 func TestLabelIDAllocation(t *testing.T) {
-	lbls := mustNewLabels(t)
-
-	allocate := func(label string, expectedID labelID) {
+	acquire := func(t *testing.T, lbls *labels, label string, expectedID labelID) {
 		t.Helper()
 
-		id, err := lbls.AllocateID(label)
+		id, err := lbls.Acquire(label)
 		if err != nil {
-			t.Fatal("Can't allocate ID:", err)
+			t.Fatal(err)
 		}
 		if id != expectedID {
 			t.Fatalf("Expected ID for label %q to be %d, got %d", label, expectedID, id)
 		}
 	}
 
-	del := func(label string) {
+	release := func(t *testing.T, lbls *labels, label string) {
 		t.Helper()
 
-		if err := lbls.Delete(label); err != nil {
-			t.Fatalf("Can't delete label %q: %s", label, err)
+		if err := lbls.Release(label); err != nil {
+			t.Fatal(err)
 		}
 	}
 
-	allocate("foo", 1)
+	check := func(t *testing.T, lbls *labels, want ...string) {
+		t.Helper()
 
-	del("foo")
-	allocate("foo", 1)
-	allocate("bar", 2)
-	allocate("baz", 3)
+		set := make(map[string]bool)
+		for _, label := range want {
+			set[label] = true
+		}
 
-	del("bar")
-	allocate("frob", 2)
+		labels, err := lbls.List()
+		if err != nil {
+			t.Fatal("Can't get labels:", err)
+		}
 
-	del("frob")
-	del("foo")
+		for _, label := range labels {
+			if set[label] {
+				delete(set, label)
+			} else {
+				t.Error("Extraneous label:", label)
+			}
+		}
 
-	allocate("bingo", 1)
-	allocate("quux", 2)
-	allocate("frood", 4)
+		for label := range set {
+			t.Error("Missing label:", label)
+		}
+	}
+
+	t.Run("release non-existing", func(t *testing.T) {
+		lbls := mustNewLabels(t)
+		if err := lbls.Release("foobar"); err == nil {
+			t.Error("Release doesn't return an error for non-existing labels")
+		}
+	})
+
+	t.Run("sequential allocation", func(t *testing.T) {
+		lbls := mustNewLabels(t)
+		acquire(t, lbls, "foo", 1)
+		acquire(t, lbls, "bar", 2)
+		acquire(t, lbls, "baz", 3)
+		check(t, lbls, "foo", "bar", "baz")
+	})
+
+	t.Run("usage counting", func(t *testing.T) {
+		lbls := mustNewLabels(t)
+		acquire(t, lbls, "foo", 1)
+		acquire(t, lbls, "foo", 1)
+		release(t, lbls, "foo")
+		check(t, lbls, "foo")
+		acquire(t, lbls, "foo", 1)
+		release(t, lbls, "foo")
+		check(t, lbls, "foo")
+		release(t, lbls, "foo")
+		check(t, lbls)
+	})
+
+	t.Run("allocate unused ids", func(t *testing.T) {
+		lbls := mustNewLabels(t)
+		acquire(t, lbls, "foo", 1)
+		acquire(t, lbls, "bar", 2)
+		acquire(t, lbls, "baz", 3)
+		check(t, lbls, "foo", "bar", "baz")
+		release(t, lbls, "foo")
+		check(t, lbls, "bar", "baz")
+		release(t, lbls, "bar")
+		check(t, lbls, "baz")
+		acquire(t, lbls, "bingo", 1)
+		acquire(t, lbls, "quux", 2)
+		acquire(t, lbls, "frood", 4)
+		check(t, lbls, "baz", "bingo", "quux", "frood")
+	})
 }
 
 func mustNewLabels(tb testing.TB) *labels {

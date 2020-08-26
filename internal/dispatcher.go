@@ -249,17 +249,18 @@ func (p Protocol) network() string {
 //
 // Returns an error if the binding is already pointing at the specified label.
 func (d *Dispatcher) AddBinding(bind *Binding) (err error) {
-	label := bind.Label
-	id, err := d.labels.FindID(label)
-	if id == 0 {
-		// TODO: We don't deallocate this on error, maybe we need to to this.
-		id, err = d.labels.AllocateID(label)
+	onError := func(fn func()) {
 		if err != nil {
-			return fmt.Errorf("can't allocate ID for label %q: %s", label, err)
+			fn()
 		}
-	} else if err != nil {
+	}
+
+	label := bind.Label
+	id, err := d.labels.Acquire(label)
+	if err != nil {
 		return fmt.Errorf("add binding: %s", err)
 	}
+	defer onError(func() { _ = d.labels.Release(label) })
 
 	key, err := bind.key()
 	if err != nil {
@@ -286,7 +287,7 @@ func (d *Dispatcher) AddBinding(bind *Binding) (err error) {
 //
 // Returns an error if the binding doesn't exist.
 func (d *Dispatcher) RemoveBinding(bind *Binding) error {
-	id, err := d.labels.FindID(bind.Label)
+	id, err := d.labels.ID(bind.Label)
 	if err != nil {
 		return err
 	}
@@ -305,8 +306,13 @@ func (d *Dispatcher) RemoveBinding(bind *Binding) error {
 		return fmt.Errorf("remove binding: label mismatch")
 	}
 
-	// TODO: This doesn't remove labels once they are unused.
 	if err := d.bpf.MapBindings.Delete(key); err != nil {
+		return fmt.Errorf("remove binding: %s", err)
+	}
+
+	// We err on the side of caution here: if this release fails
+	// we can have unused labels, but we can't have re-used IDs.
+	if err := d.labels.Release(bind.Label); err != nil {
 		return fmt.Errorf("remove binding: %s", err)
 	}
 
