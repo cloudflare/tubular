@@ -36,7 +36,7 @@ func (e *env) openDispatcher() (*internal.Dispatcher, error) {
 }
 
 func (e *env) newFlagSet(name string) *flag.FlagSet {
-	set := flag.NewFlagSet("bind", flag.ContinueOnError)
+	set := flag.NewFlagSet(name, flag.ContinueOnError)
 	set.SetOutput(e.stderr)
 	return set
 }
