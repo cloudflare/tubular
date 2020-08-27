@@ -34,6 +34,16 @@ func TestLoadDispatcher(t *testing.T) {
 	// TODO: Check that program is detached
 }
 
+func TestDispatcherLocking(t *testing.T) {
+	netns := testutil.NewNetNS(t)
+	mustCreateDispatcher(t, netns.Path())
+
+	_, err := OpenDispatcher(netns.Path(), "/sys/fs/bpf")
+	if err == nil {
+		t.Fatal("Dispatcher doesn't lock the state")
+	}
+}
+
 func TestOverlappingBindings(t *testing.T) {
 	netns := testutil.NewNetNS(t)
 	dp := mustCreateDispatcher(t, netns.Path())

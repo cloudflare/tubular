@@ -1,4 +1,4 @@
-# github.com/cilium/ebpf v0.0.0-20200819111102-c55ea4b184d8
+# github.com/cilium/ebpf v0.0.0-20200825101210-df046db7294d
 ## explicit
 github.com/cilium/ebpf
 github.com/cilium/ebpf/asm

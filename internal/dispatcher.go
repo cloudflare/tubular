@@ -12,6 +12,8 @@ import (
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"golang.org/x/sys/unix"
+
+	"code.cfops.it/sys/tubular/internal/lock"
 )
 
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc "$CLANG" -makebase "$MAKEDIR" dispatcher ../ebpf/inet-kern.c -- -mcpu=v2 -O2 -g -nostdinc -Wall -Werror -I../ebpf/include
@@ -25,10 +27,11 @@ var (
 // Dispatcher manipulates the socket dispatch data plane.
 type Dispatcher struct {
 	netns  *netns
-	link   link.Link
+	link   *link.RawLink
 	Path   string
 	bpf    dispatcherObjects
 	labels *labels
+	dir    *os.File
 }
 
 // CreateDispatcher loads the dispatcher into a network namespace.
@@ -72,6 +75,16 @@ func CreateDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 		os.RemoveAll(pinPath)
 	})
 
+	dir, err := os.Open(pinPath)
+	if err != nil {
+		return nil, fmt.Errorf("can't open state directory: %s", err)
+	}
+	defer closeOnError(dir)
+
+	if err := lock.TryLockExclusive(dir); err != nil {
+		return nil, err
+	}
+
 	labels, err := createLabels(filepath.Join(pinPath, "labels"))
 	if err != nil {
 		return nil, err
@@ -107,7 +120,7 @@ func CreateDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 		return nil, fmt.Errorf("can't pin link: %s", err)
 	}
 
-	return &Dispatcher{netns, attach, pinPath, bpf, labels}, nil
+	return &Dispatcher{netns, attach, pinPath, bpf, labels, dir}, nil
 }
 
 // OpenDispatcher loads an existing dispatcher from a namespace.
@@ -137,10 +150,16 @@ func OpenDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 		pinPath = netns.DispatcherStatePath()
 	)
 
-	if _, err := os.Stat(pinPath); os.IsNotExist(err) {
+	dir, err := os.Open(pinPath)
+	if os.IsNotExist(err) {
 		return nil, fmt.Errorf("%s: %w", netnsPath, ErrNotLoaded)
 	} else if err != nil {
 		return nil, fmt.Errorf("%s: %s", netnsPath, err)
+	}
+	defer closeOnError(dir)
+
+	if err := lock.TryLockExclusive(dir); err != nil {
+		return nil, err
 	}
 
 	labels, err := openLabels(filepath.Join(pinPath, "labels"))
@@ -191,7 +210,7 @@ func OpenDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 
 	// TODO: We should verify that the attached program tag (aka truncated sha1)
 	// matches bpf.ProgramDispatcher.
-	return &Dispatcher{netns, attach, pinPath, bpf, labels}, nil
+	return &Dispatcher{netns, attach, pinPath, bpf, labels, dir}, nil
 }
 
 // Close frees associated resources.
@@ -209,6 +228,10 @@ func (d *Dispatcher) Close() error {
 	}
 	if err := d.netns.Close(); err != nil {
 		return fmt.Errorf("can't close netns handle: %s", err)
+	}
+	// Close the directory as the last step, since it releases the lock.
+	if err := d.dir.Close(); err != nil {
+		return fmt.Errorf("can't close state directory handle: %s", err)
 	}
 	return nil
 }
