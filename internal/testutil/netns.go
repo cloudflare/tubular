@@ -8,6 +8,7 @@ import (
 	"net"
 	"os/exec"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -113,9 +114,7 @@ func ListenNetNS(tb testing.TB, netns ns.NetNS, network, address string) {
 				tb.Fatal("Can't listen:", err)
 			}
 
-			quit := make(chan struct{})
 			tb.Cleanup(func() {
-				close(quit)
 				ln.Close()
 			})
 
@@ -123,13 +122,9 @@ func ListenNetNS(tb testing.TB, netns ns.NetNS, network, address string) {
 				for {
 					conn, err := ln.Accept()
 					if err != nil {
-						select {
-						case <-quit:
-							return
-						default:
+						if !isErrNetClosing(err) {
+							tb.Error("Can't accept:", err)
 						}
-
-						tb.Error("Can't accept:", err)
 						return
 					}
 
@@ -149,9 +144,7 @@ func ListenNetNS(tb testing.TB, netns ns.NetNS, network, address string) {
 				tb.Fatal("Can't listen:", err)
 			}
 
-			quit := make(chan struct{})
 			tb.Cleanup(func() {
-				close(quit)
 				conn.Close()
 			})
 
@@ -160,12 +153,10 @@ func ListenNetNS(tb testing.TB, netns ns.NetNS, network, address string) {
 					var buf [1]byte
 					_, from, err := conn.ReadFrom(buf[:])
 					if err != nil {
-						select {
-						case <-quit:
-							return
-						default:
+						if !isErrNetClosing(err) {
+							tb.Error("Can't read UDP packets:", err)
 						}
-						tb.Error("Can't read UDP packets:", err)
+						return
 					}
 					conn.WriteTo([]byte("b"), from)
 				}
@@ -175,6 +166,16 @@ func ListenNetNS(tb testing.TB, netns ns.NetNS, network, address string) {
 			tb.Fatal("Unsupported network:", network)
 		}
 	})
+}
+
+// Check if error is net.ErrNetClosing.
+//
+// Until net.ErrNetClosing gets exported (Go 1.16), match on the error message
+// which is guaranteed to stay consistent.
+//
+// See https://github.com/golang/go/issues/4373
+func isErrNetClosing(err error) bool {
+	return strings.Contains(err.Error(), "use of closed network connection")
 }
 
 // CanDialNetNS returns true if an address can be dialled in a specific network namespace.
