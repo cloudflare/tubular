@@ -10,7 +10,6 @@ import (
 	"unsafe"
 
 	"github.com/cilium/ebpf"
-	"golang.org/x/sys/unix"
 )
 
 // labelID is a numeric identifier for a label.
@@ -18,7 +17,7 @@ import (
 type labelID uint32
 
 // systemd supports names of up to this length. Match the limit.
-const maxLabelLength = unix.NAME_MAX
+const maxLabelLength = 255
 
 type label string
 
