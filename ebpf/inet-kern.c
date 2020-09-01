@@ -13,6 +13,8 @@ enum {
 	AF_INET6 = 10,
 };
 
+typedef __u64 label_id_t;
+
 struct addr {
 	__u32 prefixlen;
 	__u8 protocol;
@@ -25,7 +27,7 @@ struct addr {
 struct bpf_map_def SEC("maps") destinations = {
 	.type        = BPF_MAP_TYPE_SOCKHASH,
 	.max_entries = 512,
-	.key_size    = sizeof(__u32),
+	.key_size    = sizeof(label_id_t),
 	.value_size  = sizeof(__u64),
 };
 
@@ -33,7 +35,7 @@ struct bpf_map_def SEC("maps") bindings = {
 	.type        = BPF_MAP_TYPE_LPM_TRIE,
 	.max_entries = 4096,
 	.key_size    = sizeof(struct addr),
-	.value_size  = sizeof(__u32),
+	.value_size  = sizeof(label_id_t),
 	.map_flags   = BPF_F_NO_PREALLOC,
 };
 
@@ -80,12 +82,12 @@ int dispatcher(struct bpf_sk_lookup *ctx)
 		key.prefixlen = (sizeof(struct addr) - 4) * 8;
 		key.addr      = lookup_keys[i].addr;
 
-		__u32 *index = bpf_map_lookup_elem(&bindings, &key);
-		if (!index) {
+		label_id_t *label_id = bpf_map_lookup_elem(&bindings, &key);
+		if (!label_id) {
 			continue;
 		}
 
-		struct bpf_sock *sk = bpf_map_lookup_elem(&destinations, index);
+		struct bpf_sock *sk = bpf_map_lookup_elem(&destinations, label_id);
 		if (!sk) {
 			/* Service for the address registered,
 			 * but socket is missing (service

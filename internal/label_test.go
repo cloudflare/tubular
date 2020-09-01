@@ -102,20 +102,19 @@ func TestLabelIDAllocation(t *testing.T) {
 		check(t, lbls)
 	})
 
-	t.Run("allocate unused ids", func(t *testing.T) {
+	t.Run("ids are not reused", func(t *testing.T) {
 		lbls := mustNewLabels(t)
 		acquire(t, lbls, "foo", 1)
 		acquire(t, lbls, "bar", 2)
 		acquire(t, lbls, "baz", 3)
 		check(t, lbls, "foo", "bar", "baz")
 		release(t, lbls, "foo")
-		check(t, lbls, "bar", "baz")
+		acquire(t, lbls, "bingo", 4)
+		check(t, lbls, "bar", "baz", "bingo")
 		release(t, lbls, "bar")
-		check(t, lbls, "baz")
-		acquire(t, lbls, "bingo", 1)
-		acquire(t, lbls, "quux", 2)
-		acquire(t, lbls, "frood", 4)
-		check(t, lbls, "baz", "bingo", "quux", "frood")
+		check(t, lbls, "baz", "bingo")
+		acquire(t, lbls, "quux", 5)
+		check(t, lbls, "baz", "bingo", "quux")
 	})
 }
 
