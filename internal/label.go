@@ -3,6 +3,7 @@ package internal
 import (
 	"bytes"
 	"encoding"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"sort"
@@ -63,7 +64,7 @@ var labelsSpec = &ebpf.MapSpec{
 	Name:       "labels",
 	Type:       ebpf.Hash,
 	KeySize:    maxLabelLength,
-	ValueSize:  uint32(unsafe.Sizeof(labelValue{})),
+	ValueSize:  uint32(binary.Size(labelValue{})),
 	MaxEntries: 512,
 }
 
