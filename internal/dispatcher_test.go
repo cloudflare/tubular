@@ -82,7 +82,7 @@ func TestAddAndRemoveBindings(t *testing.T) {
 	for _, tc := range testcases {
 		name := fmt.Sprintf("%v %s", tc.Protocol, tc.Prefix)
 		t.Run(name, func(t *testing.T) {
-			network := tc.Protocol.network()
+			network := tc.Protocol.String()
 			testutil.ListenNetNS(t, netns, network, tc.ip+":8080")
 
 			if !testutil.CanDialNetNS(t, netns, network, tc.ip+":8080") {

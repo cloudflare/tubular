@@ -255,14 +255,14 @@ const (
 	UDP Protocol = unix.IPPROTO_UDP
 )
 
-func (p Protocol) network() string {
+func (p Protocol) String() string {
 	switch p {
 	case TCP:
 		return "tcp"
 	case UDP:
 		return "udp"
 	default:
-		return "unknown"
+		return fmt.Sprintf("unknown(%d)", uint8(p))
 	}
 }
 
