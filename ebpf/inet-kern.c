@@ -24,10 +24,16 @@ struct addr {
 	} addr;
 } __attribute__((packed));
 
+struct destination_key {
+	__u8 l3_proto;
+	__u8 l4_proto;
+	label_id_t label_id;
+} __attribute__((packed));
+
 struct bpf_map_def SEC("maps") destinations = {
 	.type        = BPF_MAP_TYPE_SOCKHASH,
 	.max_entries = 512,
-	.key_size    = sizeof(label_id_t),
+	.key_size    = sizeof(struct destination_key),
 	.value_size  = sizeof(__u64),
 };
 
@@ -87,7 +93,12 @@ int dispatcher(struct bpf_sk_lookup *ctx)
 			continue;
 		}
 
-		struct bpf_sock *sk = bpf_map_lookup_elem(&destinations, label_id);
+		struct destination_key dst_key = {
+			.l3_proto = ctx->family,
+			.l4_proto = ctx->protocol,
+			.label_id = *label_id,
+		};
+		struct bpf_sock *sk = bpf_map_lookup_elem(&destinations, &dst_key);
 		if (!sk) {
 			/* Service for the address registered,
 			 * but socket is missing (service

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"syscall"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
@@ -247,6 +248,24 @@ func (d *Dispatcher) Unload() error {
 	return d.Close()
 }
 
+type Domain uint8
+
+const (
+	AF_INET  Domain = unix.AF_INET
+	AF_INET6 Domain = unix.AF_INET6
+)
+
+func (d Domain) String() string {
+	switch d {
+	case AF_INET:
+		return "ipv4"
+	case AF_INET6:
+		return "ipv6"
+	default:
+		return fmt.Sprintf("unknown(%d)", uint8(d))
+	}
+}
+
 type Protocol uint8
 
 // Valid protocols.
@@ -411,5 +430,126 @@ func checkMap(spec *ebpf.MapSpec, m *ebpf.Map) error {
 	}
 
 	// TODO: Check for flags?
+	return nil
+}
+
+type SocketCookie uint64
+
+func (c SocketCookie) String() string {
+	return fmt.Sprintf("sk:%x", uint64(c))
+}
+
+func (d *Dispatcher) RegisterSocket(label string, conn syscall.RawConn) error {
+	var (
+		domain      int
+		sotype      int
+		proto       int
+		listening   bool
+		unconnected bool
+		cookie      uint64
+		opErr       error
+	)
+	err := conn.Control(func(s uintptr) {
+		domain, opErr = unix.GetsockoptInt(int(s), unix.SOL_SOCKET, unix.SO_DOMAIN)
+		if opErr != nil {
+			return
+		}
+		sotype, opErr = unix.GetsockoptInt(int(s), unix.SOL_SOCKET, unix.SO_TYPE)
+		if opErr != nil {
+			return
+		}
+		proto, opErr = unix.GetsockoptInt(int(s), unix.SOL_SOCKET, unix.SO_PROTOCOL)
+		if opErr != nil {
+			return
+		}
+
+		acceptConn, opErr := unix.GetsockoptInt(int(s), unix.SOL_SOCKET, unix.SO_ACCEPTCONN)
+		if opErr != nil {
+			return
+		}
+		listening = (acceptConn == 1)
+
+		_, opErr = unix.Getpeername(int(s))
+		if opErr != nil {
+			if !errors.Is(opErr, unix.ENOTCONN) {
+				return
+			}
+			unconnected = true
+		}
+
+		cookie, opErr = unix.GetsockoptUint64(int(s), unix.SOL_SOCKET, unix.SO_COOKIE)
+	})
+	if err != nil {
+		return fmt.Errorf("RawConn.Control/getsockopt failed: %v", err)
+	}
+	if opErr != nil {
+		return fmt.Errorf("getsockopt failed: %v", opErr)
+	}
+
+	if domain != unix.AF_INET && domain != unix.AF_INET6 {
+		return fmt.Errorf("Unsupported socket domain %v", domain)
+	}
+	if sotype != unix.SOCK_STREAM && sotype != unix.SOCK_DGRAM {
+		return fmt.Errorf("Unsupported socket type %v", sotype)
+	}
+	if sotype == unix.SOCK_STREAM && proto != unix.IPPROTO_TCP {
+		return fmt.Errorf("Unsupported stream socket protocol %v", proto)
+	}
+	if sotype == unix.SOCK_DGRAM && proto != unix.IPPROTO_UDP {
+		return fmt.Errorf("Unsupported packet socket protocol %v", proto)
+	}
+	if sotype == unix.SOCK_STREAM && !listening {
+		return fmt.Errorf("Stream socket not listening")
+	}
+	if sotype == unix.SOCK_DGRAM && !unconnected {
+		return fmt.Errorf("Packet socket not unconnected")
+	}
+
+	id, err := d.labels.Acquire(label)
+	if err != nil {
+		return fmt.Errorf("Can't acquire label %s: %v", label, err)
+	}
+	defer func() {
+		if err != nil {
+			_ = d.labels.Release(label)
+		}
+	}()
+
+	// TODO: Extract printable destination key?
+	type destinationKey struct {
+		l3Proto Domain
+		l4Proto Protocol
+		labelID labelID
+	}
+	key := &destinationKey{
+		l3Proto: Domain(domain),
+		l4Proto: Protocol(proto),
+		labelID: id,
+	}
+
+	var existingCookie SocketCookie
+	err = d.bpf.MapDestinations.Lookup(key, &existingCookie)
+	if err != nil && !errors.Is(err, ebpf.ErrKeyNotExist) {
+		return fmt.Errorf("Can't lookup destination %+v: %v", key, err)
+	}
+
+	err = conn.Control(func(s uintptr) {
+		opErr = d.bpf.MapDestinations.Update(key, uint64(s), 0)
+	})
+	if err != nil {
+		return fmt.Errorf("RawConn.Control/map update failed: %v", err)
+	}
+	if opErr != nil {
+		return fmt.Errorf("Map update failed: %v", err)
+	}
+
+	// TODO: Log and timestamp info messages
+	if existingCookie != 0 {
+		fmt.Printf("Updated destination (%s, %s, %s) -> %s to %s\n",
+			key.l3Proto, key.l4Proto, label, existingCookie, SocketCookie(cookie))
+	} else {
+		fmt.Printf("Created destination (%s, %s, %s) -> %s\n",
+			key.l3Proto, key.l4Proto, label, SocketCookie(cookie))
+	}
 	return nil
 }
