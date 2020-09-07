@@ -6,15 +6,15 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/cilium/ebpf"
 )
 
 // labelID is a numeric identifier for a label.
-// 0 is not a valid ID. IDs don't get reused.
-// 64-bit value to prevent the wraparound.
-type labelID uint64
+// 0 is not a valid ID.
+type labelID uint32
 
 // systemd supports names of up to this length. Match the limit.
 const maxLabelLength = 255
@@ -156,18 +156,21 @@ func (lbls *labels) allocateID(lbl string) (labelID, error) {
 		return 0, fmt.Errorf("iterate labels: %s", err)
 	}
 
-	// Pick next free ID
 	id := labelID(1)
 	if len(ids) > 0 {
-		maxID := ids[0]
-		for _, v := range ids[1:] {
-			if v > maxID {
-				maxID = v
+		sort.Slice(ids, func(i, j int) bool {
+			return ids[i] < ids[j]
+		})
+
+		for _, allocatedID := range ids {
+			if id < allocatedID {
+				break
 			}
-		}
-		id = maxID + 1
-		if id < maxID {
-			return 0, fmt.Errorf("allocate label: ran out of ids")
+
+			id = allocatedID + 1
+			if id < allocatedID {
+				return 0, fmt.Errorf("allocate label: ran out of ids")
+			}
 		}
 	}
 

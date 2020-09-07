@@ -13,7 +13,7 @@ enum {
 	AF_INET6 = 10,
 };
 
-typedef __u64 label_id_t;
+typedef __u32 label_id_t;
 
 struct addr {
 	__u32 prefixlen;
@@ -88,7 +88,7 @@ int dispatcher(struct bpf_sk_lookup *ctx)
 		key.prefixlen = (sizeof(struct addr) - 4) * 8;
 		key.addr      = lookup_keys[i].addr;
 
-		label_id_t *label_id = bpf_map_lookup_elem(&bindings, &key);
+		__u32 *label_id = bpf_map_lookup_elem(&bindings, &key);
 		if (!label_id) {
 			continue;
 		}
