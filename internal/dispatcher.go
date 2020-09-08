@@ -380,7 +380,6 @@ func (d *Dispatcher) Bindings() ([]*Binding, error) {
 	for iter.Next(&key, &id) {
 		label := labels[id]
 		if label == "" {
-			fmt.Printf("%+v", labels)
 			return nil, fmt.Errorf("no label for id %d", id)
 		}
 
