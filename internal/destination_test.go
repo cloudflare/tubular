@@ -18,8 +18,8 @@ func TestDestinationsHasID(t *testing.T) {
 	if err != nil {
 		t.Fatal("Can't allocate ID:", err)
 	}
-	if id != 1 {
-		t.Fatal("Expected ID for foo to be 1, got", id)
+	if id != 0 {
+		t.Fatal("Expected ID for foo to be 0, got", id)
 	}
 
 	if !dests.HasID(foo, id) {
@@ -66,19 +66,19 @@ func TestDestinationIDAllocation(t *testing.T) {
 
 	t.Run("sequential allocation", func(t *testing.T) {
 		lbls := mustNewDestinations(t)
-		acquire(t, lbls, foo, 1)
-		acquire(t, lbls, bar, 2)
-		acquire(t, lbls, baz, 3)
+		acquire(t, lbls, foo, 0)
+		acquire(t, lbls, bar, 1)
+		acquire(t, lbls, baz, 2)
 		checkDestinations(t, lbls, foo, bar, baz)
 	})
 
 	t.Run("usage counting", func(t *testing.T) {
 		lbls := mustNewDestinations(t)
-		acquire(t, lbls, foo, 1)
-		acquire(t, lbls, foo, 1)
+		acquire(t, lbls, foo, 0)
+		acquire(t, lbls, foo, 0)
 		release(t, lbls, foo)
 		checkDestinations(t, lbls, foo)
-		acquire(t, lbls, foo, 1)
+		acquire(t, lbls, foo, 0)
 		release(t, lbls, foo)
 		checkDestinations(t, lbls, foo)
 		release(t, lbls, foo)
@@ -87,17 +87,17 @@ func TestDestinationIDAllocation(t *testing.T) {
 
 	t.Run("allocate unused ids", func(t *testing.T) {
 		lbls := mustNewDestinations(t)
-		acquire(t, lbls, foo, 1)
-		acquire(t, lbls, bar, 2)
-		acquire(t, lbls, baz, 3)
+		acquire(t, lbls, foo, 0)
+		acquire(t, lbls, bar, 1)
+		acquire(t, lbls, baz, 2)
 		checkDestinations(t, lbls, foo, bar, baz)
 		release(t, lbls, foo)
 		checkDestinations(t, lbls, bar, baz)
 		release(t, lbls, bar)
 		checkDestinations(t, lbls, baz)
-		acquire(t, lbls, bingo, 1)
-		acquire(t, lbls, quux, 2)
-		acquire(t, lbls, frood, 4)
+		acquire(t, lbls, bingo, 0)
+		acquire(t, lbls, quux, 1)
+		acquire(t, lbls, frood, 3)
 		checkDestinations(t, lbls, baz, bingo, quux, frood)
 	})
 }

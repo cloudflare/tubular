@@ -14,7 +14,6 @@ import (
 )
 
 // destinationID is a numeric identifier for a destination.
-// 0 is not a valid ID.
 type destinationID uint32
 
 // systemd supports names of up to 255 bytes, match the limit.
@@ -325,7 +324,7 @@ func (dests *destinations) getAllocation(key *destinationKey) (*destinationAlloc
 		return nil, fmt.Errorf("iterate allocations: %s", err)
 	}
 
-	id := destinationID(1)
+	id := destinationID(0)
 	if len(ids) > 0 {
 		sort.Slice(ids, func(i, j int) bool {
 			return ids[i] < ids[j]
