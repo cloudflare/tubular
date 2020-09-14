@@ -164,9 +164,13 @@ func TestRegisterSupportedSocketKind(t *testing.T) {
 	for _, network := range networks {
 		t.Run(network, func(t *testing.T) {
 			conn := testutil.Listen(t, netns, network, "")
-			err := dp.RegisterSocket("service-name", conn)
+			created, err := dp.RegisterSocket("service-name", conn)
 			if err != nil {
 				t.Fatal("RegisterSocket failed:", err)
+			}
+
+			if !created {
+				t.Error("RegisterSocket doesn't return true for new sockets")
 			}
 
 			// TODO: Lookup registered socket
@@ -180,9 +184,13 @@ func TestUpdateRegisteredSocket(t *testing.T) {
 
 	for i := 0; i < 3; i++ {
 		conn := testutil.Listen(t, netns, "tcp4", "")
-		err := dp.RegisterSocket("service-name", conn)
+		created, err := dp.RegisterSocket("service-name", conn)
 		if err != nil {
 			t.Fatalf("Can't RegisterSocket try #%d: %v", i+1, err)
+		}
+
+		if i > 0 && created {
+			t.Errorf("Created is true on trd #%d", i+1)
 		}
 	}
 }
@@ -199,7 +207,7 @@ func TestRegisterUnixSocket(t *testing.T) {
 	for _, network := range networks {
 		t.Run(network, func(t *testing.T) {
 			conn := testutil.Listen(t, netns, network, "")
-			err := dp.RegisterSocket("service-name", conn)
+			_, err := dp.RegisterSocket("service-name", conn)
 			if err == nil {
 				t.Fatal("RegisterSocket didn't fail")
 			}
@@ -221,7 +229,7 @@ func TestRegisterConnectedSocket(t *testing.T) {
 			testutil.Listen(t, netns, network, "127.0.0.1:1234")
 			conn := testutil.Dial(t, netns, network, "127.0.0.1:1234")
 
-			err := dp.RegisterSocket("service-name", conn)
+			_, err := dp.RegisterSocket("service-name", conn)
 			if err == nil {
 				t.Fatal("RegisterSocket didn't fail")
 			}

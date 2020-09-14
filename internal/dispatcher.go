@@ -435,27 +435,27 @@ func (c SocketCookie) String() string {
 	return fmt.Sprintf("sk:%x", uint64(c))
 }
 
-func (d *Dispatcher) RegisterSocket(label string, conn syscall.Conn) error {
+// RegisterSocket adds a socket with the given label.
+//
+// The socket receives traffic for all Bindings that share the same label,
+// L3 and L4 protocol.
+//
+// Returns a boolean indicating whether a destination was created or updated, or an error.
+func (d *Dispatcher) RegisterSocket(label string, conn syscall.Conn) (created bool, _ error) {
 	raw, err := conn.SyscallConn()
 	if err != nil {
-		return fmt.Errorf("raw conn: %s", err)
+		return false, fmt.Errorf("raw conn: %s", err)
 	}
 
 	dest, err := newDestinationFromConn(label, raw)
 	if err != nil {
-		return err
+		return false, err
 	}
 
-	created, err := d.destinations.AddSocket(dest, raw)
+	created, err = d.destinations.AddSocket(dest, raw)
 	if err != nil {
-		return fmt.Errorf("add socket: %s", err)
+		return false, fmt.Errorf("add socket: %s", err)
 	}
 
-	// TODO: Log and timestamp info messages
-	if !created {
-		fmt.Printf("Updated destination %s\n", dest)
-	} else {
-		fmt.Printf("Created destination %s\n", dest)
-	}
-	return nil
+	return
 }
