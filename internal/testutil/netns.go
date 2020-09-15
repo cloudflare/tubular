@@ -7,8 +7,10 @@ import (
 	"io/ioutil"
 	"net"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -101,18 +103,32 @@ func JoinNetNS(tb testing.TB, netns ns.NetNS, fn func()) {
 	fn()
 }
 
-// ListenNetNS listens on a given address in a specific network namespace.
+// Listen listens on a given address in a specific network namespace.
 //
-// Connections are accepted / packets read until
-// the test ends.
-func ListenNetNS(tb testing.TB, netns ns.NetNS, network, address string) {
+// Uses a local address if address is empty.
+//
+// Connections are accepted / packets read until the test ends.
+func Listen(tb testing.TB, netns ns.NetNS, network, address string) (sys syscall.Conn) {
+	if address == "" {
+		switch network {
+		case "tcp", "tcp4", "udp", "udp4":
+			address = "127.0.0.1:0"
+		case "tcp6", "udp6":
+			address = "[::1]:0"
+		case "unix", "unixpacket", "unixgram":
+			address = filepath.Join(tb.TempDir(), "sock")
+		default:
+			tb.Fatal("Don't know how to make address for", network)
+		}
+	}
 	JoinNetNS(tb, netns, func() {
 		switch network {
-		case "tcp", "tcp4", "tcp6":
+		case "tcp", "tcp4", "tcp6", "unix", "unixpacket":
 			ln, err := net.Listen(network, address)
 			if err != nil {
 				tb.Fatal("Can't listen:", err)
 			}
+			sys = ln.(syscall.Conn)
 
 			tb.Cleanup(func() {
 				ln.Close()
@@ -138,11 +154,12 @@ func ListenNetNS(tb testing.TB, netns ns.NetNS, network, address string) {
 				}
 			}()
 
-		case "udp", "udp4", "udp6":
+		case "udp", "udp4", "udp6", "unixgram":
 			conn, err := net.ListenPacket(network, address)
 			if err != nil {
 				tb.Fatal("Can't listen:", err)
 			}
+			sys = conn.(syscall.Conn)
 
 			tb.Cleanup(func() {
 				conn.Close()
@@ -166,6 +183,8 @@ func ListenNetNS(tb testing.TB, netns ns.NetNS, network, address string) {
 			tb.Fatal("Unsupported network:", network)
 		}
 	})
+
+	return
 }
 
 // Check if error is net.ErrNetClosing.
@@ -178,55 +197,83 @@ func isErrNetClosing(err error) bool {
 	return strings.Contains(err.Error(), "use of closed network connection")
 }
 
-// CanDialNetNS returns true if an address can be dialled in a specific network namespace.
-func CanDialNetNS(tb testing.TB, netns ns.NetNS, network, address string) (ok bool) {
+// CanDial returns true if an address can be dialled in a specific network namespace.
+func CanDial(tb testing.TB, netns ns.NetNS, network, address string) (ok bool) {
+	tb.Helper()
+
+	JoinNetNS(tb, netns, func() {
+		conn := dial(tb, network, address)
+		if conn != nil {
+			ok = true
+			conn.(io.Closer).Close()
+		}
+	})
+
+	return
+}
+
+func Dial(tb testing.TB, netns ns.NetNS, network, address string) (conn syscall.Conn) {
+	tb.Helper()
+
+	JoinNetNS(tb, netns, func() {
+		conn = dial(tb, network, address)
+		if conn == nil {
+			tb.Fatal("Can't dial", network, address)
+		}
+	})
+
+	return
+}
+
+func dial(tb testing.TB, network, address string) syscall.Conn {
+	tb.Helper()
+
 	dialer := net.Dialer{
 		Timeout: 100 * time.Millisecond,
 	}
 
-	JoinNetNS(tb, netns, func() {
-		switch network {
-		case "tcp", "tcp4", "tcp6":
-			conn, err := dialer.Dial(network, address)
-			if err == nil {
-				conn.Close()
-				ok = true
-				return
-			}
-			if !errors.Is(err, unix.ECONNREFUSED) {
-				tb.Fatal("Can't dial:", err)
-			}
-
-		case "udp", "udp4", "udp6":
-			conn, err := dialer.Dial(network, address)
-			if err != nil {
-				tb.Fatal("Can't dial:", err)
-			}
-			defer conn.Close()
-
-			message := []byte("a")
-			_, err = conn.Write(message)
-			if err != nil {
-				tb.Fatal("Can't write:", err)
-			}
-
-			conn.SetReadDeadline(time.Now().Add(time.Second))
-
-			var buf [1]byte
-			_, err = conn.Read(buf[:])
-			if errors.Is(err, unix.ECONNREFUSED) {
-				ok = false
-				return
-			}
-			if err != nil {
-				tb.Fatal("Can't read:", err)
-			}
-
-			ok = true
-
-		default:
-			tb.Fatal("Unsupported network:", network)
+	switch network {
+	case "tcp", "tcp4", "tcp6":
+		conn, err := dialer.Dial(network, address)
+		if errors.Is(err, unix.ECONNREFUSED) {
+			return nil
 		}
-	})
-	return
+		if err != nil {
+			tb.Fatal("Can't dial:", err)
+		}
+		tb.Cleanup(func() { conn.Close() })
+
+		return conn.(syscall.Conn)
+
+	case "udp", "udp4", "udp6":
+		conn, err := dialer.Dial(network, address)
+		if err != nil {
+			tb.Fatal("Can't dial:", err)
+		}
+		tb.Cleanup(func() { conn.Close() })
+
+		message := []byte("a")
+		_, err = conn.Write(message)
+		if err != nil {
+			tb.Fatal("Can't write:", err)
+		}
+
+		conn.SetReadDeadline(time.Now().Add(time.Second))
+
+		var buf [1]byte
+		_, err = conn.Read(buf[:])
+		if errors.Is(err, unix.ECONNREFUSED) {
+			conn.Close()
+			return nil
+		}
+		if err != nil {
+			tb.Fatal("Can't read:", err)
+		}
+
+		return conn.(syscall.Conn)
+
+	default:
+		tb.Fatal("Unsupported network:", network)
+		return nil
+	}
 }

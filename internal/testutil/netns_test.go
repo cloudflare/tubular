@@ -37,23 +37,25 @@ func TestCanDialNetNS(t *testing.T) {
 
 	for _, network := range []string{"tcp", "udp"} {
 		t.Run(network, func(t *testing.T) {
-			if CanDialNetNS(t, netns, network, "127.0.0.1:8080") {
+			if CanDial(t, netns, network, "127.0.0.1:8080") {
 				t.Fatal("Can dial in empty network namespace")
 			}
 
-			if CanDialNetNS(t, netns, network, "127.0.0.1:8080") {
+			if CanDial(t, netns, network, "127.0.0.1:8080") {
 				t.Fatal("Can dial a second time in empty network namespace")
 			}
 
-			ListenNetNS(t, netns, network, "127.0.0.1:8080")
+			Listen(t, netns, network, "127.0.0.1:8080")
 
-			if !CanDialNetNS(t, netns, network, "127.0.0.1:8080") {
+			if !CanDial(t, netns, network, "127.0.0.1:8080") {
 				t.Fatal("Can't dial with listener present")
 			}
 
-			if !CanDialNetNS(t, netns, network, "127.0.0.1:8080") {
+			if !CanDial(t, netns, network, "127.0.0.1:8080") {
 				t.Fatal("Can't dial a second time with listener present")
 			}
+
+			Dial(t, netns, network, "127.0.0.1:8080")
 		})
 	}
 }

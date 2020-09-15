@@ -87,9 +87,9 @@ func TestAddAndRemoveBindings(t *testing.T) {
 		name := fmt.Sprintf("%v %s", tc.Protocol, tc.Prefix)
 		t.Run(name, func(t *testing.T) {
 			network := tc.Protocol.String()
-			testutil.ListenNetNS(t, netns, network, tc.ip+":8080")
+			testutil.Listen(t, netns, network, tc.ip+":8080")
 
-			if !testutil.CanDialNetNS(t, netns, network, tc.ip+":8080") {
+			if !testutil.CanDial(t, netns, network, tc.ip+":8080") {
 				t.Fatal("Can't dial before creating the binding")
 			}
 
@@ -98,7 +98,7 @@ func TestAddAndRemoveBindings(t *testing.T) {
 				t.Fatal("Can't create binding:", err)
 			}
 
-			if testutil.CanDialNetNS(t, netns, network, tc.ip+":8080") {
+			if testutil.CanDial(t, netns, network, tc.ip+":8080") {
 				t.Fatal("Binding without registered service doesn't refuse connections")
 			}
 
@@ -107,7 +107,7 @@ func TestAddAndRemoveBindings(t *testing.T) {
 				t.Fatal("Can't remove binding:", err)
 			}
 
-			if !testutil.CanDialNetNS(t, netns, network, tc.ip+":8080") {
+			if !testutil.CanDial(t, netns, network, tc.ip+":8080") {
 				t.Fatal("Can't dial after removing the binding")
 			}
 		})
