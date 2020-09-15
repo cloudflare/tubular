@@ -180,10 +180,14 @@ func isErrNetClosing(err error) bool {
 
 // CanDialNetNS returns true if an address can be dialled in a specific network namespace.
 func CanDialNetNS(tb testing.TB, netns ns.NetNS, network, address string) (ok bool) {
+	dialer := net.Dialer{
+		Timeout: 100 * time.Millisecond,
+	}
+
 	JoinNetNS(tb, netns, func() {
 		switch network {
 		case "tcp", "tcp4", "tcp6":
-			conn, err := net.Dial(network, address)
+			conn, err := dialer.Dial(network, address)
 			if err == nil {
 				conn.Close()
 				ok = true
@@ -194,7 +198,7 @@ func CanDialNetNS(tb testing.TB, netns ns.NetNS, network, address string) (ok bo
 			}
 
 		case "udp", "udp4", "udp6":
-			conn, err := net.Dial(network, address)
+			conn, err := dialer.Dial(network, address)
 			if err != nil {
 				tb.Fatal("Can't dial:", err)
 			}
