@@ -432,6 +432,10 @@ func checkMap(spec *ebpf.MapSpec, m *ebpf.Map) error {
 type SocketCookie uint64
 
 func (c SocketCookie) String() string {
+	if c == 0 {
+		// Socket cookies are always allocated starting at 1.
+		return "sk:-"
+	}
 	return fmt.Sprintf("sk:%x", uint64(c))
 }
 
