@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/cilium/ebpf"
+	"golang.org/x/sys/unix"
 )
 
 // destinationID is a numeric identifier for a destination.
@@ -80,6 +81,86 @@ func newDestinationFromBinding(bind *Binding) *Destination {
 	}
 
 	return &Destination{bind.Label, domain, bind.Protocol, 0}
+}
+
+func newDestinationFromFd(label string, fd uintptr) (*Destination, error) {
+	domain, err := unix.GetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_DOMAIN)
+	if err != nil {
+		return nil, fmt.Errorf("get SO_DOMAIN: %s", err)
+	}
+
+	sotype, err := unix.GetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_TYPE)
+	if err != nil {
+		return nil, fmt.Errorf("get SO_TYPE: %s", err)
+	}
+
+	proto, err := unix.GetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_PROTOCOL)
+	if err != nil {
+		return nil, fmt.Errorf("get SO_PROTOCOL: %s", err)
+	}
+
+	acceptConn, err := unix.GetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_ACCEPTCONN)
+	if err != nil {
+		return nil, fmt.Errorf("get SO_ACCEPTCONN: %s", err)
+	}
+	listening := (acceptConn == 1)
+
+	unconnected := false
+	if _, err = unix.Getpeername(int(fd)); err != nil {
+		if !errors.Is(err, unix.ENOTCONN) {
+			return nil, fmt.Errorf("getpeername: %s", err)
+		}
+		unconnected = true
+	}
+
+	cookie, err := unix.GetsockoptUint64(int(fd), unix.SOL_SOCKET, unix.SO_COOKIE)
+	if err != nil {
+		return nil, fmt.Errorf("get SO_COOKIE: %s", err)
+	}
+
+	if domain != unix.AF_INET && domain != unix.AF_INET6 {
+		return nil, fmt.Errorf("unsupported socket domain %v", domain)
+	}
+	if sotype != unix.SOCK_STREAM && sotype != unix.SOCK_DGRAM {
+		return nil, fmt.Errorf("unsupported socket type %v", sotype)
+	}
+	if sotype == unix.SOCK_STREAM && proto != unix.IPPROTO_TCP {
+		return nil, fmt.Errorf("unsupported stream socket protocol %v", proto)
+	}
+	if sotype == unix.SOCK_DGRAM && proto != unix.IPPROTO_UDP {
+		return nil, fmt.Errorf("unsupported packet socket protocol %v", proto)
+	}
+	if sotype == unix.SOCK_STREAM && !listening {
+		return nil, fmt.Errorf("stream socket not listening")
+	}
+	if sotype == unix.SOCK_DGRAM && !unconnected {
+		return nil, fmt.Errorf("packet socket not unconnected")
+	}
+
+	return &Destination{
+		label,
+		Domain(domain),
+		Protocol(proto),
+		SocketCookie(cookie),
+	}, nil
+}
+
+func newDestinationFromConn(label string, conn syscall.RawConn) (*Destination, error) {
+	var (
+		dest  *Destination
+		opErr error
+	)
+	err := conn.Control(func(fd uintptr) {
+		dest, opErr = newDestinationFromFd(label, fd)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("access fd: %s", err)
+	}
+	if opErr != nil {
+		return nil, fmt.Errorf("destination from fd: %s", opErr)
+	}
+
+	return dest, nil
 }
 
 func (dest *Destination) String() string {

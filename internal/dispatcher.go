@@ -441,76 +441,9 @@ func (d *Dispatcher) RegisterSocket(label string, conn syscall.Conn) error {
 		return fmt.Errorf("raw conn: %s", err)
 	}
 
-	var (
-		domain      int
-		sotype      int
-		proto       int
-		listening   bool
-		unconnected bool
-		cookie      uint64
-		opErr       error
-	)
-	err = raw.Control(func(s uintptr) {
-		domain, opErr = unix.GetsockoptInt(int(s), unix.SOL_SOCKET, unix.SO_DOMAIN)
-		if opErr != nil {
-			return
-		}
-		sotype, opErr = unix.GetsockoptInt(int(s), unix.SOL_SOCKET, unix.SO_TYPE)
-		if opErr != nil {
-			return
-		}
-		proto, opErr = unix.GetsockoptInt(int(s), unix.SOL_SOCKET, unix.SO_PROTOCOL)
-		if opErr != nil {
-			return
-		}
-
-		acceptConn, opErr := unix.GetsockoptInt(int(s), unix.SOL_SOCKET, unix.SO_ACCEPTCONN)
-		if opErr != nil {
-			return
-		}
-		listening = (acceptConn == 1)
-
-		_, opErr = unix.Getpeername(int(s))
-		if opErr != nil {
-			if !errors.Is(opErr, unix.ENOTCONN) {
-				return
-			}
-			unconnected = true
-		}
-
-		cookie, opErr = unix.GetsockoptUint64(int(s), unix.SOL_SOCKET, unix.SO_COOKIE)
-	})
+	dest, err := newDestinationFromConn(label, raw)
 	if err != nil {
-		return fmt.Errorf("RawConn.Control/getsockopt failed: %v", err)
-	}
-	if opErr != nil {
-		return fmt.Errorf("getsockopt failed: %v", opErr)
-	}
-
-	if domain != unix.AF_INET && domain != unix.AF_INET6 {
-		return fmt.Errorf("Unsupported socket domain %v", domain)
-	}
-	if sotype != unix.SOCK_STREAM && sotype != unix.SOCK_DGRAM {
-		return fmt.Errorf("Unsupported socket type %v", sotype)
-	}
-	if sotype == unix.SOCK_STREAM && proto != unix.IPPROTO_TCP {
-		return fmt.Errorf("Unsupported stream socket protocol %v", proto)
-	}
-	if sotype == unix.SOCK_DGRAM && proto != unix.IPPROTO_UDP {
-		return fmt.Errorf("Unsupported packet socket protocol %v", proto)
-	}
-	if sotype == unix.SOCK_STREAM && !listening {
-		return fmt.Errorf("Stream socket not listening")
-	}
-	if sotype == unix.SOCK_DGRAM && !unconnected {
-		return fmt.Errorf("Packet socket not unconnected")
-	}
-
-	dest := &Destination{
-		label,
-		Domain(domain),
-		Protocol(proto),
-		SocketCookie(cookie),
+		return err
 	}
 
 	created, err := d.destinations.AddSocket(dest, raw)
