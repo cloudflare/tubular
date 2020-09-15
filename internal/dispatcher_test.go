@@ -167,8 +167,8 @@ func TestRegisterSupportedSocketKind(t *testing.T) {
 	}
 	for _, net := range networks {
 		t.Run(net, func(t *testing.T) {
-			rawConn := mustNewLocalListener(t, net)
-			err := dp.RegisterSocket("service-name", rawConn)
+			conn := mustNewLocalListener(t, net)
+			err := dp.RegisterSocket("service-name", conn)
 			if err != nil {
 				t.Fatal("RegisterSocket failed:", err)
 			}
@@ -183,8 +183,8 @@ func TestUpdateRegisteredSocket(t *testing.T) {
 	dp := mustCreateDispatcher(t, netns.Path())
 
 	for i := 0; i < 3; i++ {
-		rawConn := mustNewLocalListener(t, "tcp4")
-		err := dp.RegisterSocket("service-name", rawConn)
+		conn := mustNewLocalListener(t, "tcp4")
+		err := dp.RegisterSocket("service-name", conn)
 		if err != nil {
 			t.Fatalf("Can't RegisterSocket try #%d: %v", i+1, err)
 		}
@@ -202,8 +202,8 @@ func TestRegisterUnixSocket(t *testing.T) {
 	}
 	for _, net := range networks {
 		t.Run(net, func(t *testing.T) {
-			rawConn := mustNewLocalListener(t, net)
-			err := dp.RegisterSocket("service-name", rawConn)
+			conn := mustNewLocalListener(t, net)
+			err := dp.RegisterSocket("service-name", conn)
 			if err == nil {
 				t.Fatal("RegisterSocket didn't fail")
 			}
@@ -228,11 +228,7 @@ func TestRegisterConnectedTCP(t *testing.T) {
 	}
 	defer c.Close()
 
-	rc, err := c.(*net.TCPConn).SyscallConn()
-	if err != nil {
-		t.Fatal("Can't get RawConn:", err)
-	}
-	err = dp.RegisterSocket("service-name", rc)
+	err = dp.RegisterSocket("service-name", c.(*net.TCPConn))
 	if err == nil {
 		t.Fatal("RegisterSocket didn't fail")
 	}
@@ -255,18 +251,13 @@ func TestRegisterConnectedUDP(t *testing.T) {
 	}
 	defer c.Close()
 
-	rc, err := c.(*net.UDPConn).SyscallConn()
-	if err != nil {
-		t.Fatal("Can't get RawConn:", err)
-	}
-	err = dp.RegisterSocket("service-name", rc)
+	err = dp.RegisterSocket("service-name", c.(*net.UDPConn))
 	if err == nil {
 		t.Fatal("RegisterSocket didn't fail")
 	}
 }
 
-func mustNewLocalListener(tb testing.TB, network string) syscall.RawConn {
-	var sysConn syscall.Conn
+func mustNewLocalListener(tb testing.TB, network string) syscall.Conn {
 	switch network {
 	case "tcp4", "tcp6", "unix", "unixpacket":
 		ln, err := nettest.NewLocalListener(network)
@@ -275,7 +266,7 @@ func mustNewLocalListener(tb testing.TB, network string) syscall.RawConn {
 		}
 		tb.Cleanup(func() { ln.Close() })
 
-		sysConn = ln.(syscall.Conn)
+		return ln.(syscall.Conn)
 
 	case "udp4", "udp6", "unixgram":
 		c, err := nettest.NewLocalPacketListener(network)
@@ -284,15 +275,12 @@ func mustNewLocalListener(tb testing.TB, network string) syscall.RawConn {
 		}
 		tb.Cleanup(func() { c.Close() })
 
-		sysConn = c.(syscall.Conn)
-	}
+		return c.(syscall.Conn)
 
-	raw, err := sysConn.SyscallConn()
-	if err != nil {
-		tb.Fatal("Can't get raw conn:", err)
+	default:
+		tb.Fatal("unsupported network", network)
+		return nil
 	}
-
-	return raw
 }
 
 func mustNewBinding(tb testing.TB, label string, proto Protocol, prefix string, port uint16) *Binding {

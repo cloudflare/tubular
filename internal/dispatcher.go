@@ -439,7 +439,12 @@ func (c SocketCookie) String() string {
 	return fmt.Sprintf("sk:%x", uint64(c))
 }
 
-func (d *Dispatcher) RegisterSocket(label string, conn syscall.RawConn) error {
+func (d *Dispatcher) RegisterSocket(label string, conn syscall.Conn) error {
+	raw, err := conn.SyscallConn()
+	if err != nil {
+		return fmt.Errorf("raw conn: %s", err)
+	}
+
 	var (
 		domain      int
 		sotype      int
@@ -449,7 +454,7 @@ func (d *Dispatcher) RegisterSocket(label string, conn syscall.RawConn) error {
 		cookie      uint64
 		opErr       error
 	)
-	err := conn.Control(func(s uintptr) {
+	err = raw.Control(func(s uintptr) {
 		domain, opErr = unix.GetsockoptInt(int(s), unix.SOL_SOCKET, unix.SO_DOMAIN)
 		if opErr != nil {
 			return
@@ -533,7 +538,7 @@ func (d *Dispatcher) RegisterSocket(label string, conn syscall.RawConn) error {
 		return fmt.Errorf("Can't lookup destination %+v: %v", key, err)
 	}
 
-	err = conn.Control(func(s uintptr) {
+	err = raw.Control(func(s uintptr) {
 		opErr = d.bpf.MapDestinations.Update(key, uint64(s), 0)
 	})
 	if err != nil {
