@@ -27,12 +27,12 @@ var (
 
 // Dispatcher manipulates the socket dispatch data plane.
 type Dispatcher struct {
-	netns  *netns
-	link   *link.RawLink
-	Path   string
-	bpf    dispatcherObjects
-	labels *labels
-	dir    *os.File
+	netns        *netns
+	link         *link.RawLink
+	Path         string
+	bindings     *ebpf.Map
+	destinations *destinations
+	dir          *os.File
 }
 
 // CreateDispatcher loads the dispatcher into a network namespace.
@@ -86,12 +86,6 @@ func CreateDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 		return nil, err
 	}
 
-	labels, err := createLabels(filepath.Join(pinPath, "labels"))
-	if err != nil {
-		return nil, err
-	}
-	defer closeOnError(labels)
-
 	coll, err = ebpf.NewCollection(spec)
 	if err != nil {
 		return nil, fmt.Errorf("can't load BPF: %s", err)
@@ -110,6 +104,12 @@ func CreateDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 	}
 	defer closeOnError(&bpf)
 
+	dests, err := createDestinations(&bpf, filepath.Join(pinPath, "destinations"))
+	if err != nil {
+		return nil, err
+	}
+	defer closeOnError(dests)
+
 	attach, err := netns.AttachProgram(bpf.ProgramDispatcher)
 	if err != nil {
 		return nil, err
@@ -121,7 +121,7 @@ func CreateDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 		return nil, fmt.Errorf("can't pin link: %s", err)
 	}
 
-	return &Dispatcher{netns, attach, pinPath, bpf, labels, dir}, nil
+	return &Dispatcher{netns, attach, pinPath, bpf.MapBindings, dests, dir}, nil
 }
 
 // OpenDispatcher loads an existing dispatcher from a namespace.
@@ -163,12 +163,6 @@ func OpenDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 		return nil, err
 	}
 
-	labels, err := openLabels(filepath.Join(pinPath, "labels"))
-	if err != nil {
-		return nil, err
-	}
-	defer closeOnError(labels)
-
 	pinnedMaps := make(map[string]*ebpf.Map)
 	for name, mapSpec := range spec.Maps {
 		m, err := ebpf.LoadPinnedMap(filepath.Join(pinPath, name))
@@ -203,6 +197,12 @@ func OpenDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 	}
 	defer closeOnError(&bpf)
 
+	dests, err := openDestinations(&bpf, filepath.Join(pinPath, "destinations"))
+	if err != nil {
+		return nil, err
+	}
+	defer closeOnError(dests)
+
 	linkPath := filepath.Join(pinPath, "link")
 	attach, err := link.LoadPinnedRawLink(linkPath)
 	if err != nil {
@@ -211,7 +211,7 @@ func OpenDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 
 	// TODO: We should verify that the attached program tag (aka truncated sha1)
 	// matches bpf.ProgramDispatcher.
-	return &Dispatcher{netns, attach, pinPath, bpf, labels, dir}, nil
+	return &Dispatcher{netns, attach, pinPath, bpf.MapBindings, dests, dir}, nil
 }
 
 // Close frees associated resources.
@@ -221,11 +221,11 @@ func (d *Dispatcher) Close() error {
 	if err := d.link.Close(); err != nil {
 		return fmt.Errorf("can't close link: %s", err)
 	}
-	if err := d.bpf.Close(); err != nil {
+	if err := d.bindings.Close(); err != nil {
 		return fmt.Errorf("can't close BPF objects: %s", err)
 	}
-	if err := d.labels.Close(); err != nil {
-		return fmt.Errorf("can't close labels: %x", err)
+	if err := d.destinations.Close(); err != nil {
+		return fmt.Errorf("can't close destination IDs: %x", err)
 	}
 	if err := d.netns.Close(); err != nil {
 		return fmt.Errorf("can't close netns handle: %s", err)
@@ -298,27 +298,28 @@ func (d *Dispatcher) AddBinding(bind *Binding) (err error) {
 		}
 	}
 
-	label := bind.Label
-	id, err := d.labels.Acquire(label)
+	dest := newDestinationFromBinding(bind)
+
+	id, err := d.destinations.AcquireID(dest)
 	if err != nil {
 		return fmt.Errorf("add binding: %s", err)
 	}
-	defer onError(func() { _ = d.labels.Release(label) })
+	defer onError(func() { _ = d.destinations.ReleaseID(dest) })
 
 	key, err := bind.key()
 	if err != nil {
 		return err
 	}
 
-	var existingID labelID
-	if err := d.bpf.MapBindings.Lookup(key, &existingID); err == nil {
+	var existingID destinationID
+	if err := d.bindings.Lookup(key, &existingID); err == nil {
 		if existingID == id {
 			// TODO: We could also turn this into a no-op?
-			return fmt.Errorf("add binding: already bound to %q", label)
+			return fmt.Errorf("add binding: already bound to %s", bind)
 		}
 	}
 
-	err = d.bpf.MapBindings.Update(key, id, 0)
+	err = d.bindings.Update(key, id, 0)
 	if err != nil {
 		return fmt.Errorf("create binding: %s", err)
 	}
@@ -335,22 +336,23 @@ func (d *Dispatcher) RemoveBinding(bind *Binding) error {
 		return err
 	}
 
-	var existingID labelID
-	if err := d.bpf.MapBindings.Lookup(key, &existingID); err != nil {
-		return fmt.Errorf("remove binding: lookup label: %s", err)
+	var existingID destinationID
+	if err := d.bindings.Lookup(key, &existingID); err != nil {
+		return fmt.Errorf("remove binding: lookup destination: %s", err)
 	}
 
-	if !d.labels.HasID(bind.Label, existingID) {
-		return fmt.Errorf("remove binding: label mismatch")
+	dest := newDestinationFromBinding(bind)
+	if !d.destinations.HasID(dest, existingID) {
+		return fmt.Errorf("remove binding: destination mismatch")
 	}
 
-	if err := d.bpf.MapBindings.Delete(key); err != nil {
+	if err := d.bindings.Delete(key); err != nil {
 		return fmt.Errorf("remove binding: %s", err)
 	}
 
 	// We err on the side of caution here: if this release fails
-	// we can have unused labels, but we can't have re-used IDs.
-	if err := d.labels.Release(bind.Label); err != nil {
+	// we can have unused destinations, but we can't have re-used IDs.
+	if err := d.destinations.ReleaseID(dest); err != nil {
 		return fmt.Errorf("remove binding: %s", err)
 	}
 
@@ -361,24 +363,24 @@ func (d *Dispatcher) RemoveBinding(bind *Binding) error {
 //
 // The returned slice is sorted.
 func (d *Dispatcher) Bindings() ([]*Binding, error) {
-	labels, err := d.labels.List()
+	dests, err := d.destinations.List()
 	if err != nil {
-		return nil, fmt.Errorf("list labels: %s", err)
+		return nil, fmt.Errorf("list destination IDs: %s", err)
 	}
 
 	var (
 		key      bindingKey
-		id       labelID
+		id       destinationID
 		bindings []*Binding
-		iter     = d.bpf.MapBindings.Iterate()
+		iter     = d.bindings.Iterate()
 	)
 	for iter.Next(&key, &id) {
-		label := labels[id]
-		if label == "" {
-			return nil, fmt.Errorf("no label for id %d", id)
+		dest := dests[id]
+		if dest == nil {
+			return nil, fmt.Errorf("no destination for id %d", id)
 		}
 
-		bindings = append(bindings, newBindingFromBPF(label, &key))
+		bindings = append(bindings, newBindingFromBPF(dest.Label, &key))
 	}
 	if err := iter.Err(); err != nil {
 		return nil, fmt.Errorf("can't iterate bindings: %s", err)
@@ -504,51 +506,23 @@ func (d *Dispatcher) RegisterSocket(label string, conn syscall.Conn) error {
 		return fmt.Errorf("Packet socket not unconnected")
 	}
 
-	id, err := d.labels.Acquire(label)
+	dest := &Destination{
+		label,
+		Domain(domain),
+		Protocol(proto),
+		SocketCookie(cookie),
+	}
+
+	created, err := d.destinations.AddSocket(dest, raw)
 	if err != nil {
-		return fmt.Errorf("Can't acquire label %s: %v", label, err)
-	}
-	defer func() {
-		if err != nil {
-			_ = d.labels.Release(label)
-		}
-	}()
-
-	// TODO: Extract printable destination key?
-	type destinationKey struct {
-		l3Proto Domain
-		l4Proto Protocol
-		labelID labelID
-	}
-	key := &destinationKey{
-		l3Proto: Domain(domain),
-		l4Proto: Protocol(proto),
-		labelID: id,
-	}
-
-	var existingCookie SocketCookie
-	err = d.bpf.MapDestinations.Lookup(key, &existingCookie)
-	if err != nil && !errors.Is(err, ebpf.ErrKeyNotExist) {
-		return fmt.Errorf("Can't lookup destination %+v: %v", key, err)
-	}
-
-	err = raw.Control(func(s uintptr) {
-		opErr = d.bpf.MapDestinations.Update(key, uint64(s), 0)
-	})
-	if err != nil {
-		return fmt.Errorf("RawConn.Control/map update failed: %v", err)
-	}
-	if opErr != nil {
-		return fmt.Errorf("Map update failed: %v", err)
+		return fmt.Errorf("add socket: %s", err)
 	}
 
 	// TODO: Log and timestamp info messages
-	if existingCookie != 0 {
-		fmt.Printf("Updated destination (%s, %s, %s) -> %s to %s\n",
-			key.l3Proto, key.l4Proto, label, existingCookie, SocketCookie(cookie))
+	if !created {
+		fmt.Printf("Updated destination %s\n", dest)
 	} else {
-		fmt.Printf("Created destination (%s, %s, %s) -> %s\n",
-			key.l3Proto, key.l4Proto, label, SocketCookie(cookie))
+		fmt.Printf("Created destination %s\n", dest)
 	}
 	return nil
 }

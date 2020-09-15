@@ -124,30 +124,30 @@ func TestRemoveBinding(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	labels, err := dp.labels.List()
+	dests, err := dp.destinations.List()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if n := len(labels); n != 1 {
-		t.Fatal("Expected one label, got", n)
+	if n := len(dests); n != 1 {
+		t.Fatal("Expected one destination, got", n)
 	}
 
 	if err := dp.RemoveBinding(bindB); err == nil {
-		t.Fatal("Removed a binding where the label doesn't match")
+		t.Fatal("Removed a binding where the destination doesn't match")
 	}
 
 	if err := dp.RemoveBinding(bindA); err != nil {
 		t.Fatal("Can't remove binding:", err)
 	}
 
-	labels, err = dp.labels.List()
+	dests, err = dp.destinations.List()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if n := len(labels); n != 0 {
-		t.Fatal("Expected no labels, got", n)
+	if n := len(dests); n != 0 {
+		t.Fatal("Expected no destinations, got", n)
 	}
 }
 

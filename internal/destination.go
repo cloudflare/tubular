@@ -2,161 +2,249 @@ package internal
 
 import (
 	"bytes"
-	"encoding"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"sort"
 	"strings"
+	"syscall"
 
 	"github.com/cilium/ebpf"
 )
 
-// labelID is a numeric identifier for a label.
+// destinationID is a numeric identifier for a destination.
 // 0 is not a valid ID.
-type labelID uint32
+type destinationID uint32
 
-// systemd supports names of up to this length. Match the limit.
-const maxLabelLength = 255
+// systemd supports names of up to 255 bytes, match the limit.
+type label [255]byte
 
-type label string
+func (lbl *label) String() string {
+	end := bytes.IndexByte((*lbl)[:], 0)
+	if end == -1 {
+		end = len(*lbl)
+	}
 
-var _ encoding.BinaryMarshaler = label("")
+	return string((*lbl)[:end])
+}
 
-func (lbl label) MarshalBinary() ([]byte, error) {
-	if lbl == "" {
+type destinationKey struct {
+	Label    label
+	Domain   Domain
+	Protocol Protocol
+}
+
+func newDestinationKey(dest *Destination) (*destinationKey, error) {
+	key := &destinationKey{
+		Domain:   dest.Domain,
+		Protocol: dest.Protocol,
+	}
+
+	if dest.Label == "" {
 		return nil, fmt.Errorf("label is empty")
 	}
-	if strings.ContainsRune(string(lbl), 0) {
+	if strings.ContainsRune(dest.Label, 0) {
 		return nil, fmt.Errorf("label contains null byte")
 	}
-	buf := make([]byte, maxLabelLength)
-	if copy(buf, lbl) != len(lbl) {
-		return nil, fmt.Errorf("label exceeds maximum length of %d bytes", maxLabelLength)
-	}
-	return buf, nil
-}
-
-var _ encoding.BinaryUnmarshaler = (*label)(nil)
-
-func (lbl *label) UnmarshalBinary(buf []byte) error {
-	nul := bytes.IndexByte(buf, 0)
-	if nul == -1 {
-		*lbl = label(buf)
-		return nil
+	if max := len(key.Label); len(dest.Label) > max {
+		return nil, fmt.Errorf("label exceeds maximum length of %d bytes", max)
 	}
 
-	*lbl = label(buf[:nul])
-	return nil
+	copy(key.Label[:], dest.Label)
+	return key, nil
 }
 
-type labels struct {
-	m *ebpf.Map
+func (dkey *destinationKey) String() string {
+	return fmt.Sprintf("%s:%s:%s", dkey.Label, dkey.Domain, dkey.Protocol)
 }
 
-type labelValue struct {
-	ID    labelID
+type destinationAlloc struct {
+	ID    destinationID
 	Count uint32
 }
 
-var labelsSpec = &ebpf.MapSpec{
-	Name:       "labels",
+// A Destination receives traffic from a Binding.
+//
+// It is implicitly created when registering a socket with a Dispatcher.
+type Destination struct {
+	Label    string
+	Domain   Domain
+	Protocol Protocol
+	Socket   SocketCookie
+}
+
+func newDestinationFromBinding(bind *Binding) *Destination {
+	domain := AF_INET
+	if bind.Prefix.IP.To4() == nil {
+		domain = AF_INET6
+	}
+
+	return &Destination{bind.Label, domain, bind.Protocol, 0}
+}
+
+func (dest *Destination) String() string {
+	return fmt.Sprintf("%s:%s:%s->%s", dest.Domain, dest.Protocol, dest.Label, dest.Socket)
+}
+
+type destinations struct {
+	allocs  *ebpf.Map
+	sockets *ebpf.Map
+}
+
+var destinationsSpec = &ebpf.MapSpec{
+	Name:       "tube_dest_ids",
 	Type:       ebpf.Hash,
-	KeySize:    maxLabelLength,
-	ValueSize:  uint32(binary.Size(labelValue{})),
+	KeySize:    uint32(binary.Size(destinationKey{})),
+	ValueSize:  uint32(binary.Size(destinationAlloc{})),
 	MaxEntries: 512,
 }
 
-func newLabels() (*labels, error) {
-	m, err := ebpf.NewMap(labelsSpec)
+func newDestinations(bpf *dispatcherObjects) (*destinations, error) {
+	ids, err := ebpf.NewMap(destinationsSpec)
 	if err != nil {
-		return nil, fmt.Errorf("create labels: %s", err)
+		return nil, fmt.Errorf("create destinations: %s", err)
 	}
 
-	return &labels{m}, nil
+	return &destinations{ids, bpf.MapSockets}, nil
 }
 
-func createLabels(path string) (*labels, error) {
-	lbls, err := newLabels()
+func createDestinations(bpf *dispatcherObjects, path string) (*destinations, error) {
+	lbls, err := newDestinations(bpf)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := lbls.m.Pin(path); err != nil {
-		return nil, fmt.Errorf("create labels: %s", err)
+	if err := lbls.allocs.Pin(path); err != nil {
+		return nil, fmt.Errorf("create destinations: %s", err)
 	}
 
 	return lbls, nil
 }
 
-func openLabels(path string) (*labels, error) {
-	m, err := ebpf.LoadPinnedMap(path)
+func openDestinations(bpf *dispatcherObjects, path string) (*destinations, error) {
+	ids, err := ebpf.LoadPinnedMap(path)
 	if err != nil {
-		return nil, fmt.Errorf("can't load pinned labels: %s", err)
+		return nil, fmt.Errorf("can't load pinned destinations: %s", err)
 	}
 
-	if err := checkMap(labelsSpec, m); err != nil {
-		m.Close()
-		return nil, fmt.Errorf("pinned labels: %s", err)
+	if err := checkMap(destinationsSpec, ids); err != nil {
+		ids.Close()
+		return nil, fmt.Errorf("pinned destinations: %s", err)
 	}
 
-	return &labels{m}, nil
+	return &destinations{ids, bpf.MapSockets}, nil
 }
 
-func (lbls *labels) Close() error {
-	return lbls.m.Close()
+func (dests *destinations) Close() error {
+	if err := dests.allocs.Close(); err != nil {
+		return err
+	}
+	return dests.sockets.Close()
 }
 
-func (lbls *labels) HasID(lbl string, want labelID) bool {
-	var value labelValue
-	err := lbls.m.Lookup(label(lbl), &value)
+func (dests *destinations) AddSocket(dest *Destination, conn syscall.RawConn) (created bool, err error) {
+	key, err := newDestinationKey(dest)
+	if err != nil {
+		return false, err
+	}
+
+	alloc, err := dests.getAllocation(key)
+	if err != nil {
+		return false, err
+	}
+
+	var opErr error
+	err = conn.Control(func(fd uintptr) {
+		opErr = dests.sockets.Update(alloc.ID, uint64(fd), ebpf.UpdateExist)
+		if errors.Is(opErr, ebpf.ErrKeyNotExist) {
+			created = true
+			opErr = dests.sockets.Update(alloc.ID, uint64(fd), ebpf.UpdateNoExist)
+		}
+	})
+	if err != nil {
+		return false, fmt.Errorf("access fd: %s", err)
+	}
+	if opErr != nil {
+		return false, fmt.Errorf("map update failed: %s", opErr)
+	}
+
+	return
+}
+
+func (dests *destinations) HasID(dest *Destination, want destinationID) bool {
+	key, err := newDestinationKey(dest)
 	if err != nil {
 		return false
 	}
-	return value.ID == want
-}
 
-func (lbls *labels) Acquire(lbl string) (labelID, error) {
-	var value labelValue
-	err := lbls.m.Lookup(label(lbl), &value)
-	if errors.Is(err, ebpf.ErrKeyNotExist) {
-		return lbls.allocateID(lbl)
-	}
+	var alloc destinationAlloc
+	err = dests.allocs.Lookup(key, &alloc)
 	if err != nil {
-		return 0, fmt.Errorf("find id for label %s: %s", lbl, err)
+		return false
 	}
 
-	count := value.Count + 1
-	if count < value.Count {
-		return 0, fmt.Errorf("acquire label %q: counter overflow", lbl)
-	}
-
-	value.Count = count
-	if err := lbls.m.Update(label(lbl), &value, ebpf.UpdateExist); err != nil {
-		return 0, fmt.Errorf("acquire label %q: %s", lbl, err)
-	}
-
-	return value.ID, nil
+	return alloc.ID == want
 }
 
-// allocateID finds a unique identifier for a label.
-//
-// You must Release the label when no longer using it.
-func (lbls *labels) allocateID(lbl string) (labelID, error) {
+func (dests *destinations) AcquireID(dest *Destination) (destinationID, error) {
+	key, err := newDestinationKey(dest)
+	if err != nil {
+		return 0, err
+	}
+
+	alloc, err := dests.getAllocation(key)
+	if err != nil {
+		return 0, fmt.Errorf("get allocation for %v: %s", key, err)
+	}
+
+	alloc.Count++
+	if alloc.Count == 0 {
+		return 0, fmt.Errorf("acquire binding %v: counter overflow", key)
+	}
+
+	if err := dests.allocs.Update(key, alloc, ebpf.UpdateExist); err != nil {
+		return 0, fmt.Errorf("acquire binding %v: %s", key, err)
+	}
+
+	return alloc.ID, nil
+}
+
+func (dests *destinations) allocationInUse(alloc *destinationAlloc) bool {
+	if alloc.Count > 0 {
+		// There is at least one outstanding user of this ID.
+		return true
+	}
+
+	// There is no outstanding user, but we might need the ID to refer to an
+	// existing socket. Do a lookup in our sockmap to find out.
+	var unused SocketCookie
+	err := dests.sockets.Lookup(alloc.ID, &unused)
+	return !errors.Is(err, ebpf.ErrKeyNotExist)
+}
+
+// getAllocation returns an existing allocation, or creates a new one with an
+// unused ID.
+func (dests *destinations) getAllocation(key *destinationKey) (*destinationAlloc, error) {
+	alloc := new(destinationAlloc)
+	if err := dests.allocs.Lookup(key, alloc); err == nil {
+		return alloc, nil
+	}
+
 	var (
-		key   label
-		value labelValue
-		ids   []labelID
-		iter  = lbls.m.Iterate()
+		unused destinationKey
+		ids    []destinationID
+		iter   = dests.allocs.Iterate()
 	)
-	for iter.Next(&key, &value) {
-		ids = append(ids, value.ID)
+	for iter.Next(&unused, alloc) {
+		if dests.allocationInUse(alloc) {
+			ids = append(ids, alloc.ID)
+		}
 	}
 	if err := iter.Err(); err != nil {
-		return 0, fmt.Errorf("iterate labels: %s", err)
+		return nil, fmt.Errorf("iterate allocations: %s", err)
 	}
 
-	id := labelID(1)
+	id := destinationID(1)
 	if len(ids) > 0 {
 		sort.Slice(ids, func(i, j int) bool {
 			return ids[i] < ids[j]
@@ -169,51 +257,79 @@ func (lbls *labels) allocateID(lbl string) (labelID, error) {
 
 			id = allocatedID + 1
 			if id < allocatedID {
-				return 0, fmt.Errorf("allocate label: ran out of ids")
+				return nil, fmt.Errorf("allocate destination: ran out of ids")
 			}
 		}
 	}
 
-	value = labelValue{ID: id, Count: 1}
-	if err := lbls.m.Update(label(lbl), &value, ebpf.UpdateNoExist); err != nil {
-		return 0, fmt.Errorf("allocate label: %s", err)
+	alloc = &destinationAlloc{ID: id}
+
+	// This may replace an unused-but-not-deleted allocation.
+	if err := dests.allocs.Update(key, alloc, ebpf.UpdateAny); err != nil {
+		return nil, fmt.Errorf("allocate destination: %s", err)
 	}
 
-	return id, nil
+	return alloc, nil
 }
 
-func (lbls *labels) Release(lbl string) error {
-	var value labelValue
-	err := lbls.m.Lookup(label(lbl), &value)
+func (dests *destinations) ReleaseID(dest *Destination) error {
+	key, err := newDestinationKey(dest)
 	if err != nil {
-		return fmt.Errorf("release label %q: %s", lbl, err)
+		return err
 	}
 
-	if value.Count == 1 {
-		err = lbls.m.Delete(label(lbl))
-	} else {
-		value.Count--
-		err = lbls.m.Update(label(lbl), &value, ebpf.UpdateExist)
-	}
+	var alloc destinationAlloc
+	err = dests.allocs.Lookup(key, &alloc)
 	if err != nil {
-		return fmt.Errorf("release label %q: %s", lbl, err)
+		return fmt.Errorf("release id for %s: %s", key, err)
 	}
 
+	if alloc.Count == 0 {
+		return fmt.Errorf("release id: underflow")
+	}
+
+	alloc.Count--
+	if dests.allocationInUse(&alloc) {
+		if err = dests.allocs.Update(key, &alloc, ebpf.UpdateExist); err != nil {
+			return fmt.Errorf("release id for %s: %s", key, err)
+		}
+		return nil
+	}
+
+	// There are no more references, and no socket. We can release the allocation.
+	if err = dests.allocs.Delete(key); err != nil {
+		return fmt.Errorf("delete allocation: %s", err)
+	}
 	return nil
 }
 
-func (lbls *labels) List() (map[labelID]string, error) {
+func (dests *destinations) List() (map[destinationID]*Destination, error) {
 	var (
-		lbl    label
-		value  labelValue
-		labels = make(map[labelID]string)
-		iter   = lbls.m.Iterate()
+		key    destinationKey
+		alloc  destinationAlloc
+		result = make(map[destinationID]*Destination)
+		iter   = dests.allocs.Iterate()
 	)
-	for iter.Next(&lbl, &value) {
-		labels[value.ID] = string(lbl)
+	for iter.Next(&key, &alloc) {
+		var cookie SocketCookie
+		err := dests.sockets.Lookup(alloc.ID, &cookie)
+		if errors.Is(err, ebpf.ErrKeyNotExist) {
+			if alloc.Count == 0 {
+				continue
+			}
+		} else if err != nil {
+			return nil, fmt.Errorf("lookup cookie for id %d: %s", alloc.ID, err)
+		}
+
+		result[alloc.ID] = &Destination{
+			key.Label.String(),
+			key.Domain,
+			key.Protocol,
+			cookie,
+		}
 	}
 	if err := iter.Err(); err != nil {
-		return nil, fmt.Errorf("can't iterate labels: %s", err)
+		return nil, fmt.Errorf("can't iterate allocations: %s", err)
 	}
-	return labels, nil
+	return result, nil
 }
