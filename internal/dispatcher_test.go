@@ -2,12 +2,8 @@ package internal
 
 import (
 	"fmt"
-	"net"
 	"os"
-	"syscall"
 	"testing"
-
-	"golang.org/x/net/nettest"
 
 	"code.cfops.it/sys/tubular/internal/testutil"
 )
@@ -165,9 +161,9 @@ func TestRegisterSupportedSocketKind(t *testing.T) {
 		"udp4",
 		"udp6",
 	}
-	for _, net := range networks {
-		t.Run(net, func(t *testing.T) {
-			conn := mustNewLocalListener(t, net)
+	for _, network := range networks {
+		t.Run(network, func(t *testing.T) {
+			conn := testutil.Listen(t, netns, network, "")
 			err := dp.RegisterSocket("service-name", conn)
 			if err != nil {
 				t.Fatal("RegisterSocket failed:", err)
@@ -183,7 +179,7 @@ func TestUpdateRegisteredSocket(t *testing.T) {
 	dp := mustCreateDispatcher(t, netns.Path())
 
 	for i := 0; i < 3; i++ {
-		conn := mustNewLocalListener(t, "tcp4")
+		conn := testutil.Listen(t, netns, "tcp4", "")
 		err := dp.RegisterSocket("service-name", conn)
 		if err != nil {
 			t.Fatalf("Can't RegisterSocket try #%d: %v", i+1, err)
@@ -200,9 +196,9 @@ func TestRegisterUnixSocket(t *testing.T) {
 		"unixpacket",
 		"unixgram",
 	}
-	for _, net := range networks {
-		t.Run(net, func(t *testing.T) {
-			conn := mustNewLocalListener(t, net)
+	for _, network := range networks {
+		t.Run(network, func(t *testing.T) {
+			conn := testutil.Listen(t, netns, network, "")
 			err := dp.RegisterSocket("service-name", conn)
 			if err == nil {
 				t.Fatal("RegisterSocket didn't fail")
@@ -211,75 +207,25 @@ func TestRegisterUnixSocket(t *testing.T) {
 	}
 }
 
-func TestRegisterConnectedTCP(t *testing.T) {
+func TestRegisterConnectedSocket(t *testing.T) {
 	netns := testutil.NewNetNS(t)
 	dp := mustCreateDispatcher(t, netns.Path())
 
-	ln, err := nettest.NewLocalListener("tcp4")
-	if err != nil {
-		t.Fatal("Can't Listen:", err)
+	networks := []string{
+		"tcp4",
+		"udp4",
 	}
-	defer ln.Close()
 
-	laddr := ln.Addr()
-	c, err := net.Dial(laddr.Network(), laddr.String())
-	if err != nil {
-		t.Fatal("Can't dial:", err)
-	}
-	defer c.Close()
+	for _, network := range networks {
+		t.Run(network, func(t *testing.T) {
+			testutil.Listen(t, netns, network, "127.0.0.1:1234")
+			conn := testutil.Dial(t, netns, network, "127.0.0.1:1234")
 
-	err = dp.RegisterSocket("service-name", c.(*net.TCPConn))
-	if err == nil {
-		t.Fatal("RegisterSocket didn't fail")
-	}
-}
-
-func TestRegisterConnectedUDP(t *testing.T) {
-	netns := testutil.NewNetNS(t)
-	dp := mustCreateDispatcher(t, netns.Path())
-
-	pc, err := nettest.NewLocalPacketListener("udp4")
-	if err != nil {
-		t.Fatal("Can't ListenPacket:", err)
-	}
-	defer pc.Close()
-
-	laddr := pc.LocalAddr()
-	c, err := net.Dial(laddr.Network(), laddr.String())
-	if err != nil {
-		t.Fatal("Can't dial:", err)
-	}
-	defer c.Close()
-
-	err = dp.RegisterSocket("service-name", c.(*net.UDPConn))
-	if err == nil {
-		t.Fatal("RegisterSocket didn't fail")
-	}
-}
-
-func mustNewLocalListener(tb testing.TB, network string) syscall.Conn {
-	switch network {
-	case "tcp4", "tcp6", "unix", "unixpacket":
-		ln, err := nettest.NewLocalListener(network)
-		if err != nil {
-			tb.Fatal(err)
-		}
-		tb.Cleanup(func() { ln.Close() })
-
-		return ln.(syscall.Conn)
-
-	case "udp4", "udp6", "unixgram":
-		c, err := nettest.NewLocalPacketListener(network)
-		if err != nil {
-			tb.Fatal(err)
-		}
-		tb.Cleanup(func() { c.Close() })
-
-		return c.(syscall.Conn)
-
-	default:
-		tb.Fatal("unsupported network", network)
-		return nil
+			err := dp.RegisterSocket("service-name", conn)
+			if err == nil {
+				t.Fatal("RegisterSocket didn't fail")
+			}
+		})
 	}
 }
 
