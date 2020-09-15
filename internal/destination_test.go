@@ -1,10 +1,12 @@
 package internal
 
 import (
+	"net"
+	"syscall"
 	"testing"
 )
 
-func TestDestinationID(t *testing.T) {
+func TestDestinationsHasID(t *testing.T) {
 	dests := mustNewDestinations(t)
 	foo := &Destination{"foo", AF_INET, TCP, 0}
 
@@ -46,32 +48,6 @@ func TestDestinationIDAllocation(t *testing.T) {
 		}
 	}
 
-	check := func(t *testing.T, dests *destinations, want ...*Destination) {
-		t.Helper()
-
-		set := make(map[Destination]bool)
-		for _, dest := range want {
-			set[*dest] = true
-		}
-
-		have, err := dests.List()
-		if err != nil {
-			t.Fatal("Can't get destinations:", err)
-		}
-
-		for _, dest := range have {
-			if set[*dest] {
-				delete(set, *dest)
-			} else {
-				t.Error("Extraneous destination:", dest)
-			}
-		}
-
-		for dest := range set {
-			t.Error("Missing destination:", &dest)
-		}
-	}
-
 	var (
 		foo   = &Destination{"foo", AF_INET, TCP, 0}
 		bar   = &Destination{"bar", AF_INET, TCP, 0}
@@ -93,7 +69,7 @@ func TestDestinationIDAllocation(t *testing.T) {
 		acquire(t, lbls, foo, 1)
 		acquire(t, lbls, bar, 2)
 		acquire(t, lbls, baz, 3)
-		check(t, lbls, foo, bar, baz)
+		checkDestinations(t, lbls, foo, bar, baz)
 	})
 
 	t.Run("usage counting", func(t *testing.T) {
@@ -101,12 +77,12 @@ func TestDestinationIDAllocation(t *testing.T) {
 		acquire(t, lbls, foo, 1)
 		acquire(t, lbls, foo, 1)
 		release(t, lbls, foo)
-		check(t, lbls, foo)
+		checkDestinations(t, lbls, foo)
 		acquire(t, lbls, foo, 1)
 		release(t, lbls, foo)
-		check(t, lbls, foo)
+		checkDestinations(t, lbls, foo)
 		release(t, lbls, foo)
-		check(t, lbls)
+		checkDestinations(t, lbls)
 	})
 
 	t.Run("allocate unused ids", func(t *testing.T) {
@@ -114,16 +90,48 @@ func TestDestinationIDAllocation(t *testing.T) {
 		acquire(t, lbls, foo, 1)
 		acquire(t, lbls, bar, 2)
 		acquire(t, lbls, baz, 3)
-		check(t, lbls, foo, bar, baz)
+		checkDestinations(t, lbls, foo, bar, baz)
 		release(t, lbls, foo)
-		check(t, lbls, bar, baz)
+		checkDestinations(t, lbls, bar, baz)
 		release(t, lbls, bar)
-		check(t, lbls, baz)
+		checkDestinations(t, lbls, baz)
 		acquire(t, lbls, bingo, 1)
 		acquire(t, lbls, quux, 2)
 		acquire(t, lbls, frood, 4)
-		check(t, lbls, baz, bingo, quux, frood)
+		checkDestinations(t, lbls, baz, bingo, quux, frood)
 	})
+}
+
+func TestDestinationsAddSocket(t *testing.T) {
+	dests := mustNewDestinations(t)
+
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	conn := mustRawConn(t, ln.(syscall.Conn))
+	dest, err := newDestinationFromConn("foo", conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if created, err := dests.AddSocket(dest, conn); err != nil {
+		t.Fatal("Can't add socket:", err)
+	} else if !created {
+		t.Error("Adding a socket for the first time doesn't set created to true")
+	}
+
+	checkDestinations(t, dests, dest)
+
+	if created, err := dests.AddSocket(dest, conn); err != nil {
+		t.Fatal("Can't add socket:", err)
+	} else if created {
+		t.Error("Adding a socket for the second time sets created to true")
+	}
+
+	// TODO: Remove socket
 }
 
 func mustNewDestinations(tb testing.TB) *destinations {
@@ -146,4 +154,41 @@ func mustNewDestinations(tb testing.TB) *destinations {
 	}
 	tb.Cleanup(func() { lbls.Close() })
 	return lbls
+}
+
+func mustRawConn(tb testing.TB, conn syscall.Conn) syscall.RawConn {
+	tb.Helper()
+
+	raw, err := conn.SyscallConn()
+	if err != nil {
+		tb.Fatal(err)
+	}
+
+	return raw
+}
+
+func checkDestinations(tb testing.TB, dests *destinations, want ...*Destination) {
+	tb.Helper()
+
+	set := make(map[Destination]bool)
+	for _, dest := range want {
+		set[*dest] = true
+	}
+
+	have, err := dests.List()
+	if err != nil {
+		tb.Fatal("Can't get destinations:", err)
+	}
+
+	for _, dest := range have {
+		if set[*dest] {
+			delete(set, *dest)
+		} else {
+			tb.Error("Extraneous destination:", dest)
+		}
+	}
+
+	for dest := range set {
+		tb.Error("Missing destination:", &dest)
+	}
 }
