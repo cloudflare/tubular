@@ -330,11 +330,6 @@ func (d *Dispatcher) AddBinding(bind *Binding) (err error) {
 //
 // Returns an error if the binding doesn't exist.
 func (d *Dispatcher) RemoveBinding(bind *Binding) error {
-	id, err := d.labels.ID(bind.Label)
-	if err != nil {
-		return err
-	}
-
 	key, err := bind.key()
 	if err != nil {
 		return err
@@ -345,7 +340,7 @@ func (d *Dispatcher) RemoveBinding(bind *Binding) error {
 		return fmt.Errorf("remove binding: lookup label: %s", err)
 	}
 
-	if id != existingID {
+	if !d.labels.HasID(bind.Label, existingID) {
 		return fmt.Errorf("remove binding: label mismatch")
 	}
 

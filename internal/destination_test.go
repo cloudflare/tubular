@@ -5,8 +5,8 @@ import "testing"
 func TestLabelID(t *testing.T) {
 	lbls := mustNewLabels(t)
 
-	if _, err := lbls.ID("foo"); err == nil {
-		t.Fatal("No error when looking up non-existing label")
+	if lbls.HasID("foo", 0) {
+		t.Fatal("HasID returns true for non-existing destination")
 	}
 
 	id, err := lbls.allocateID("foo")
@@ -17,13 +17,8 @@ func TestLabelID(t *testing.T) {
 		t.Fatal("Expected ID for foo to be 1, got", id)
 	}
 
-	foundID, err := lbls.ID("foo")
-	if err != nil {
-		t.Fatal("Can't lookup foo:", err)
-	}
-
-	if foundID != id {
-		t.Errorf("Expected id %d for label foo, got %d", id, foundID)
+	if !lbls.HasID("foo", id) {
+		t.Error("Expected id for foo to match", id)
 	}
 }
 

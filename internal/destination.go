@@ -107,13 +107,13 @@ func (lbls *labels) Close() error {
 	return lbls.m.Close()
 }
 
-func (lbls *labels) ID(lbl string) (labelID, error) {
+func (lbls *labels) HasID(lbl string, want labelID) bool {
 	var value labelValue
 	err := lbls.m.Lookup(label(lbl), &value)
 	if err != nil {
-		return 0, fmt.Errorf("id for label %q: %s", lbl, err)
+		return false
 	}
-	return value.ID, nil
+	return value.ID == want
 }
 
 func (lbls *labels) Acquire(lbl string) (labelID, error) {
