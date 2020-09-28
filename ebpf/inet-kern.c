@@ -8,6 +8,8 @@
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 
+#define MAX_SOCKETS (1024)
+
 enum {
 	AF_INET  = 2,
 	AF_INET6 = 10,
@@ -24,9 +26,15 @@ struct addr {
 	} addr;
 } __attribute__((packed));
 
+struct destination_metrics {
+	__u64 received_packets;
+	__u64 dropped_packets__missing_socket;
+	__u64 dropped_packets__incompatible_socket;
+};
+
 struct bpf_map_def SEC("maps") sockets = {
 	.type        = BPF_MAP_TYPE_SOCKMAP,
-	.max_entries = 512,
+	.max_entries = MAX_SOCKETS,
 	.key_size    = sizeof(destination_id_t),
 	.value_size  = sizeof(__u64),
 };
@@ -37,6 +45,13 @@ struct bpf_map_def SEC("maps") bindings = {
 	.key_size    = sizeof(struct addr),
 	.value_size  = sizeof(destination_id_t),
 	.map_flags   = BPF_F_NO_PREALLOC,
+};
+
+struct bpf_map_def SEC("maps") destination_metrics = {
+	.type        = BPF_MAP_TYPE_PERCPU_ARRAY,
+	.max_entries = MAX_SOCKETS,
+	.key_size    = sizeof(destination_id_t),
+	.value_size  = sizeof(struct destination_metrics),
 };
 
 SEC("license") const char __license[] = "Proprietary";
@@ -87,6 +102,18 @@ int dispatcher(struct bpf_sk_lookup *ctx)
 			continue;
 		}
 
+		struct destination_metrics *metrics = bpf_map_lookup_elem(&destination_metrics, dest_id);
+		if (!metrics) {
+			/* Per-CPU arrays are fully pre-allocated, so a lookup failure here
+			 * means that dest_id is out of bounds. Since we check that metrics
+			 * and socket map have the same size, the socket lookup will also
+			 * fail. Since there is no use in continuing, reject the packet.
+			 */
+			return SK_DROP;
+		}
+
+		metrics->received_packets++;
+
 		struct bpf_sock *sk = bpf_map_lookup_elem(&sockets, dest_id);
 		if (!sk) {
 			/* Service for the address registered,
@@ -96,6 +123,7 @@ int dispatcher(struct bpf_sk_lookup *ctx)
 			 * bound to the address/port reserved
 			 * for this service.
 			 */
+			metrics->dropped_packets__missing_socket++;
 			return SK_DROP;
 		}
 
@@ -107,6 +135,7 @@ int dispatcher(struct bpf_sk_lookup *ctx)
 			 * for the address/port it is mapped
 			 * to. Service misconfigured.
 			 */
+			metrics->dropped_packets__incompatible_socket++;
 			bpf_sk_release(sk);
 			return SK_DROP;
 		}

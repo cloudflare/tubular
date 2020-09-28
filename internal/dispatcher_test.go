@@ -2,6 +2,7 @@ package internal
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"testing"
 
@@ -234,6 +235,97 @@ func TestRegisterConnectedSocket(t *testing.T) {
 				t.Fatal("RegisterSocket didn't fail")
 			}
 		})
+	}
+}
+
+func TestMetrics(t *testing.T) {
+	netns := testutil.NewNetNS(t)
+	dp := mustCreateDispatcher(t, netns.Path())
+	ln := testutil.Listen(t, netns, "tcp4", "").(*net.TCPListener)
+
+	bind := mustNewBinding(t, "foo", TCP, "127.0.0.1", 8080)
+	if err := dp.AddBinding(bind); err != nil {
+		t.Fatal("Can't add binding:", err)
+	}
+
+	if testutil.CanDial(t, netns, "tcp4", "127.0.0.1:8080") {
+		t.Fatal("Could dial before adding socket")
+	}
+
+	if _, err := dp.RegisterSocket("foo", ln); err != nil {
+		t.Fatal("Can't add socket:", err)
+	}
+
+	if !testutil.CanDial(t, netns, "tcp4", "127.0.0.1:8080") {
+		t.Fatal("Can't dial after adding socket")
+	}
+
+	raw, err := ln.SyscallConn()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dest, err := newDestinationFromConn("foo", raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	metrics, err := dp.Metrics()
+	if err != nil {
+		t.Fatal("Can't get metrics:", err)
+	}
+
+	destMetrics, ok := metrics.Destinations[*dest]
+	if !ok {
+		t.Fatal("No metrics for", dest)
+	}
+
+	if destMetrics.ReceivedPackets != 2 {
+		t.Error("Expected two packets, got", destMetrics.ReceivedPackets)
+	}
+
+	if destMetrics.DroppedPacketsMissingSocket != 1 {
+		t.Error("Expected one missing socket packet, got", destMetrics.DroppedPacketsMissingSocket)
+	}
+
+	if destMetrics.DroppedPacketsIncompatibleSocket != 0 {
+		t.Error("Expected no incompatible socket packet, got", destMetrics.DroppedPacketsIncompatibleSocket)
+	}
+
+	// Remove the socket from the sockmap
+	ln.Close()
+
+	if err := dp.RemoveBinding(bind); err != nil {
+		t.Fatal("Can't remove binding:", err)
+	}
+
+	// New binding should re-use ID
+	bind2 := mustNewBinding(t, "foo", UDP, "127.0.0.1", 443)
+	if err := dp.AddBinding(bind2); err != nil {
+		t.Fatal("Can't add second binding:", err)
+	}
+
+	dest = newDestinationFromBinding(bind2)
+	metrics, err = dp.Metrics()
+	if err != nil {
+		t.Fatal("Can't get metrics:", err)
+	}
+
+	destMetrics, ok = metrics.Destinations[*dest]
+	if !ok {
+		t.Fatal("No metrics for", dest)
+	}
+
+	if destMetrics.ReceivedPackets != 0 {
+		t.Error("Expected zero packets, got", destMetrics.ReceivedPackets)
+	}
+
+	if destMetrics.DroppedPacketsMissingSocket != 0 {
+		t.Error("Expected zero missing socket packet, got", destMetrics.DroppedPacketsMissingSocket)
+	}
+
+	if destMetrics.DroppedPacketsIncompatibleSocket != 0 {
+		t.Error("Expected zero incompatible socket packet, got", destMetrics.DroppedPacketsIncompatibleSocket)
 	}
 }
 

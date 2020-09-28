@@ -1,19 +1,19 @@
-package internal
+package endian
 
 import (
 	"encoding/binary"
 	"unsafe"
 )
 
-// nativeEndian is set to either binary.BigEndian or binary.LittleEndian,
+// NativeEndian is set to either binary.BigEndian or binary.LittleEndian,
 // depending on the host's endianness.
-var nativeEndian binary.ByteOrder
+var NativeEndian binary.ByteOrder
 
 func init() {
 	if isBigEndian() {
-		nativeEndian = binary.BigEndian
+		NativeEndian = binary.BigEndian
 	} else {
-		nativeEndian = binary.LittleEndian
+		NativeEndian = binary.LittleEndian
 	}
 }
 

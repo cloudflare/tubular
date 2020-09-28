@@ -169,6 +169,8 @@ func (dest *Destination) String() string {
 type destinations struct {
 	allocs  *ebpf.Map
 	sockets *ebpf.Map
+	metrics *ebpf.Map
+	maxID   destinationID
 }
 
 var destinationsSpec = &ebpf.MapSpec{
@@ -179,44 +181,61 @@ var destinationsSpec = &ebpf.MapSpec{
 	MaxEntries: 512,
 }
 
-func newDestinations(bpf *dispatcherObjects) (*destinations, error) {
-	ids, err := ebpf.NewMap(destinationsSpec)
-	if err != nil {
-		return nil, fmt.Errorf("create destinations: %s", err)
+func newDestinations(bpf *dispatcherObjects, allocs *ebpf.Map) (*destinations, error) {
+	maxEntries := bpf.MapSockets.ABI().MaxEntries
+	if destMax := bpf.MapDestinationMetrics.ABI().MaxEntries; destMax != maxEntries {
+		return nil, fmt.Errorf("socket and metrics map size doesn't match: %d != %d", maxEntries, destMax)
 	}
 
-	return &destinations{ids, bpf.MapSockets}, nil
+	return &destinations{
+		allocs,
+		bpf.MapSockets,
+		bpf.MapDestinationMetrics,
+		destinationID(maxEntries),
+	}, nil
 }
 
 func createDestinations(bpf *dispatcherObjects, path string) (*destinations, error) {
-	lbls, err := newDestinations(bpf)
+	allocs, err := ebpf.NewMap(destinationsSpec)
 	if err != nil {
-		return nil, err
-	}
-
-	if err := lbls.allocs.Pin(path); err != nil {
 		return nil, fmt.Errorf("create destinations: %s", err)
 	}
 
-	return lbls, nil
+	dests, err := newDestinations(bpf, allocs)
+	if err != nil {
+		return nil, fmt.Errorf("create destinations: %s", err)
+	}
+
+	if path == "" {
+		return dests, nil
+	}
+
+	if err := allocs.Pin(path); err != nil {
+		return nil, fmt.Errorf("create destinations: %s", err)
+	}
+
+	return dests, nil
 }
 
 func openDestinations(bpf *dispatcherObjects, path string) (*destinations, error) {
-	ids, err := ebpf.LoadPinnedMap(path)
+	allocs, err := ebpf.LoadPinnedMap(path)
 	if err != nil {
 		return nil, fmt.Errorf("can't load pinned destinations: %s", err)
 	}
 
-	if err := checkMap(destinationsSpec, ids); err != nil {
-		ids.Close()
+	if err := checkMap(destinationsSpec, allocs); err != nil {
+		allocs.Close()
 		return nil, fmt.Errorf("pinned destinations: %s", err)
 	}
 
-	return &destinations{ids, bpf.MapSockets}, nil
+	return newDestinations(bpf, allocs)
 }
 
 func (dests *destinations) Close() error {
 	if err := dests.allocs.Close(); err != nil {
+		return err
+	}
+	if err := dests.metrics.Close(); err != nil {
 		return err
 	}
 	return dests.sockets.Close()
@@ -336,10 +355,22 @@ func (dests *destinations) getAllocation(key *destinationKey) (*destinationAlloc
 			}
 
 			id = allocatedID + 1
-			if id < allocatedID {
+			if id == 0 || id >= dests.maxID {
 				return nil, fmt.Errorf("allocate destination: ran out of ids")
 			}
 		}
+	}
+
+	// Reset metrics to zero. There is currently no more straighforward way to
+	// do this.
+	var perCPUMetrics []DestinationMetrics
+	if err := dests.metrics.Lookup(id, &perCPUMetrics); err != nil {
+		return nil, fmt.Errorf("lookup metrics for id %d: %s", id, err)
+	}
+
+	zero := make([]DestinationMetrics, len(perCPUMetrics))
+	if err := dests.metrics.Put(id, zero); err != nil {
+		return nil, fmt.Errorf("zero metrics for id %d: %s", id, err)
 	}
 
 	alloc = &destinationAlloc{ID: id}
@@ -412,4 +443,48 @@ func (dests *destinations) List() (map[destinationID]*Destination, error) {
 		return nil, fmt.Errorf("can't iterate allocations: %s", err)
 	}
 	return result, nil
+}
+
+func (dests *destinations) Metrics() (map[Destination]DestinationMetrics, error) {
+	list, err := dests.List()
+	if err != nil {
+		return nil, fmt.Errorf("list destinations: %s", err)
+	}
+
+	metrics := make(map[Destination]DestinationMetrics)
+	for id, dest := range list {
+		var perCPUMetrics []DestinationMetrics
+		if err := dests.metrics.Lookup(id, &perCPUMetrics); err != nil {
+			return nil, fmt.Errorf("metrics for destination %s: %s", dest, err)
+		}
+
+		metrics[*dest] = sumDestinationMetrics(perCPUMetrics)
+	}
+
+	return metrics, nil
+}
+
+type DestinationMetrics struct {
+	// Total number of packets sent to this destination.
+	ReceivedPackets uint64
+	// Total number of packets dropped due to no socket being available.
+	DroppedPacketsMissingSocket uint64
+	// Total number of packets dropped due to the socket being incompatible
+	// with the incoming traffic.
+	DroppedPacketsIncompatibleSocket uint64
+}
+
+func sumDestinationMetrics(in []DestinationMetrics) DestinationMetrics {
+	if len(in) == 0 {
+		return DestinationMetrics{}
+	}
+
+	sum := in[0]
+	for _, metrics := range in[1:] {
+		sum.ReceivedPackets += metrics.ReceivedPackets
+		sum.DroppedPacketsMissingSocket += metrics.DroppedPacketsMissingSocket
+		sum.DroppedPacketsIncompatibleSocket += metrics.DroppedPacketsIncompatibleSocket
+	}
+
+	return sum
 }

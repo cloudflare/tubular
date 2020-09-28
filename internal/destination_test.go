@@ -148,7 +148,7 @@ func mustNewDestinations(tb testing.TB) *destinations {
 	}
 	tb.Cleanup(func() { obj.Close() })
 
-	lbls, err := newDestinations(obj)
+	lbls, err := createDestinations(obj, "")
 	if err != nil {
 		tb.Fatal("Can't create labels:", err)
 	}
