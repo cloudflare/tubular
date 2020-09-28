@@ -2,7 +2,10 @@ package main
 
 import (
 	"fmt"
+	"sort"
 	"text/tabwriter"
+
+	"code.cfops.it/sys/tubular/internal"
 )
 
 func list(e env, args ...string) error {
@@ -36,5 +39,59 @@ func list(e env, args ...string) error {
 		return err
 	}
 
+	metrics, err := dp.Metrics()
+	if err != nil {
+		return fmt.Errorf("get metrics: %s", err)
+	}
+
+	dests := make([]internal.Destination, 0, len(metrics.Destinations))
+	for dest := range metrics.Destinations {
+		dests = append(dests, dest)
+	}
+
+	sortDestinations(dests)
+
+	fmt.Fprintln(e.stdout, "\nDestinations:")
+	fmt.Fprintln(w, "label\tdomain\tprotocol\tsocket\tpackets\tdropped\t")
+
+	for dest, metrics := range metrics.Destinations {
+		dropped := metrics.DroppedPacketsIncompatibleSocket + metrics.DroppedPacketsMissingSocket
+		_, err := fmt.Fprint(w,
+			dest.Label, "\t",
+			dest.Domain, "\t",
+			dest.Protocol, "\t",
+			dest.Socket, "\t",
+			metrics.ReceivedPackets, "\t",
+			dropped, "\t",
+			"\n",
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	if err := w.Flush(); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+func sortDestinations(dests []internal.Destination) {
+	sort.Slice(dests, func(i, j int) bool {
+		a, b := dests[i], dests[j]
+		if a.Label != b.Label {
+			return a.Label < b.Label
+		}
+
+		if a.Domain != b.Domain {
+			return a.Domain < b.Domain
+		}
+
+		if a.Protocol != b.Protocol {
+			return a.Protocol < b.Protocol
+		}
+
+		return a.Socket < b.Socket
+	})
 }
