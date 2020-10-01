@@ -6,6 +6,7 @@ import (
 	"go/format"
 	"go/token"
 	"io"
+	"io/ioutil"
 	"strings"
 	"text/template"
 	"unicode"
@@ -28,7 +29,7 @@ import (
 	"github.com/cilium/ebpf"
 )
 
-type {{ .Name.Specs }} struct{
+type {{ .Name.Specs }} struct {
 {{- range $name, $_ := .Programs }}
 	Program{{ identifier $name }} *ebpf.ProgramSpec {{ tag $name }}
 {{- end }}
@@ -43,7 +44,7 @@ type {{ .Name.Specs }} struct{
 }
 
 func {{ .Name.NewSpecs }}() (*{{ .Name.Specs }}, error) {
-	reader := bytes.NewReader({{ .Name.Bytes }}())
+	reader := bytes.NewReader({{ .Name.Bytes }})
 	spec, err := ebpf.LoadCollectionSpecFromReader(reader)
 	if err != nil {
 		return nil, fmt.Errorf("can't load {{ .Name }}: %w", err)
@@ -60,9 +61,9 @@ func {{ .Name.NewSpecs }}() (*{{ .Name.Specs }}, error) {
 func (s *{{ .Name.Specs }}) CollectionSpec() *ebpf.CollectionSpec {
 	return &ebpf.CollectionSpec{
 		Programs: map[string]*ebpf.ProgramSpec{
-			{{- range $name, $_ := .Programs }}
-				"{{ $name }}": s.Program{{ identifier $name }},
-			{{- end }}
+{{- range $name, $_ := .Programs }}
+			"{{ $name }}": s.Program{{ identifier $name }},
+{{- end }}
 		},
 		Maps: map[string]*ebpf.MapSpec{
 {{- range $name, $_ := .Maps }}
@@ -105,18 +106,18 @@ func (s *{{ .Name.Specs }}) Copy() *{{ .Name.Specs }} {
 	}
 }
 
-type {{ .Name.Objects }} struct{
-	{{- range $name, $_ := .Programs }}
-		Program{{ identifier $name }} *ebpf.Program {{ tag $name }}
-	{{- end }}
+type {{ .Name.Objects }} struct {
+{{- range $name, $_ := .Programs }}
+	Program{{ identifier $name }} *ebpf.Program {{ tag $name }}
+{{- end }}
 
-	{{- range $name, $_ := .Maps }}
-		Map{{ identifier $name }} *ebpf.Map {{ tag $name }}
-	{{- end }}
+{{- range $name, $_ := .Maps }}
+	Map{{ identifier $name }} *ebpf.Map {{ tag $name }}
+{{- end }}
 
-	{{- range $name, $_ := .Sections }}
-		Section{{ identifier $name }} *ebpf.Map {{ tag $name }}
-	{{- end }}
+{{- range $name, $_ := .Sections }}
+	Section{{ identifier $name }} *ebpf.Map {{ tag $name }}
+{{- end }}
 }
 
 func (o *{{ .Name.Objects }}) Close() error {
@@ -140,17 +141,13 @@ func (o *{{ .Name.Objects }}) Close() error {
 	return nil
 }
 
-func {{ .Name.Bytes }}() []byte {
-	return []byte{
-{{ range $i, $c := .Bytes }}{{ indent $i $c }}{{ end }}
-	}
-}
+// Do not access this directly.
+var {{ .Name.Bytes }} = []byte("{{ .Bytes }}")
 
 `
 
 var (
 	tplFuncs = map[string]interface{}{
-		"indent":     indent,
 		"identifier": identifier,
 		"tag":        tag,
 	}
@@ -168,7 +165,7 @@ func (n templateName) maybeExport(str string) string {
 }
 
 func (n templateName) Bytes() string {
-	return n.maybeExport(string(n) + "Bytes")
+	return "_" + toUpperFirst(string(n)) + "Bytes"
 }
 
 func (n templateName) Specs() string {
@@ -187,12 +184,17 @@ type writeArgs struct {
 	pkg   string
 	ident string
 	tags  []string
-	obj   []byte
+	obj   io.Reader
 	out   io.Writer
 }
 
 func writeCommon(args writeArgs) error {
-	spec, err := ebpf.LoadCollectionSpecFromReader(bytes.NewReader(args.obj))
+	obj, err := ioutil.ReadAll(args.obj)
+	if err != nil {
+		return fmt.Errorf("read object file contents: %s", err)
+	}
+
+	spec, err := ebpf.LoadCollectionSpecFromReader(bytes.NewReader(obj))
 	if err != nil {
 		return fmt.Errorf("can't load BPF from ELF: %s", err)
 	}
@@ -214,7 +216,7 @@ func writeCommon(args writeArgs) error {
 		Sections map[string]struct{}
 		Maps     map[string]struct{}
 		Programs map[string]*ebpf.ProgramSpec
-		Bytes    []byte
+		Bytes    string
 	}{
 		args.pkg,
 		args.tags,
@@ -222,7 +224,7 @@ func writeCommon(args writeArgs) error {
 		sections,
 		maps,
 		spec.Programs,
-		args.obj,
+		binaryString(obj),
 	}
 
 	var buf bytes.Buffer
@@ -233,6 +235,15 @@ func writeCommon(args writeArgs) error {
 	return writeFormatted(buf.Bytes(), args.out)
 }
 
+func binaryString(buf []byte) string {
+	var builder strings.Builder
+	for _, b := range buf {
+		builder.WriteString(`\x`)
+		builder.WriteString(fmt.Sprintf("%02x", b))
+	}
+	return builder.String()
+}
+
 func writeFormatted(src []byte, out io.Writer) error {
 	formatted, err := format.Source(src)
 	if err != nil {
@@ -241,20 +252,6 @@ func writeFormatted(src []byte, out io.Writer) error {
 
 	_, err = out.Write(formatted)
 	return err
-}
-
-func indent(n int, value byte) string {
-	const (
-		width = 80 - 8
-		wrap  = (width / 6) - 1
-	)
-
-	format := "0x%02x,"
-	if (n+1)%wrap == 0 {
-		format += "\n"
-	}
-
-	return fmt.Sprintf(format, value)
 }
 
 func identifier(str string) string {

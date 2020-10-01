@@ -98,7 +98,14 @@ func run(stdout io.Writer, pkg, outputDir string, args []string) (err error) {
 		return fmt.Errorf("%q is not a valid identifier", ident)
 	}
 
-	inputDir, inputFile, err := splitPathAbs(args[1])
+	input := args[1]
+	if _, err := os.Stat(input); os.IsNotExist(err) {
+		return fmt.Errorf("file %s doesn't exist", input)
+	} else if err != nil {
+		return fmt.Errorf("state %s: %s", input, err)
+	}
+
+	inputDir, inputFile, err := splitPathAbs(input)
 	if err != nil {
 		return err
 	}
@@ -136,33 +143,23 @@ func run(stdout io.Writer, pkg, outputDir string, args []string) (err error) {
 
 	cFlags = cFlags[:len(cFlags):len(cFlags)]
 	for _, target := range targets {
-		var obj, dep bytes.Buffer
+		objFileName := fmt.Sprintf("%s_%s.o", stripExtension(inputFile), target)
+		objFileName = filepath.Join(inputDir, objFileName)
+
+		var dep bytes.Buffer
 		err = compile(compileArgs{
 			cc:     *flagCC,
 			cFlags: append(cFlags, "-target", target),
-			file:   inputDir + inputFile,
-			out:    &obj,
+			dir:    cwd,
+			source: inputDir + inputFile,
+			dest:   objFileName,
 			dep:    &dep,
 		})
-
 		if err != nil {
 			return err
 		}
 
-		// Write out compiled BPF
-		objFileName := fmt.Sprintf("%s_%s.o", stripExtension(inputFile), target)
-		objFileName = filepath.Join(inputDir, objFileName)
-		objFile, err := os.Create(objFileName)
-		if err != nil {
-			return err
-		}
-		defer removeOnError(objFile)
-
-		if _, err := objFile.Write(obj.Bytes()); err != nil {
-			return fmt.Errorf("can't write %s: %s", objFileName, err)
-		}
-
-		fmt.Fprintln(stdout, "Wrote", objFileName)
+		fmt.Fprintln(stdout, "Compiled", objFileName)
 
 		// Write out generated go
 		goFileName := fmt.Sprintf("%s_%s.go", strings.ToLower(ident), target)
@@ -181,11 +178,17 @@ func run(stdout io.Writer, pkg, outputDir string, args []string) (err error) {
 			tags = append(tags, *flagTags)
 		}
 
+		obj, err := os.Open(objFileName)
+		if err != nil {
+			return err
+		}
+		defer obj.Close()
+
 		err = writeCommon(writeArgs{
 			pkg:   pkg,
 			ident: ident,
 			tags:  tags,
-			obj:   obj.Bytes(),
+			obj:   obj,
 			out:   goFile,
 		})
 		if err != nil {

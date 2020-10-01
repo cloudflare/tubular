@@ -16,10 +16,12 @@ type compileArgs struct {
 	// Which compiler to use
 	cc     string
 	cFlags []string
+	// Absolute working directory
+	dir string
 	// Absolute input file name
-	file string
-	// Compiled ELF will be written here
-	out io.Writer
+	source string
+	// Absolute output file name
+	dest string
 	// Depfile will be written here if depName is not empty
 	dep io.Writer
 }
@@ -27,25 +29,27 @@ type compileArgs struct {
 func compile(args compileArgs) error {
 	cmd := exec.Command(args.cc, args.cFlags...)
 	cmd.Stderr = os.Stderr
-	cmd.Stdout = args.out
 
-	inputDir := filepath.Dir(args.file)
+	inputDir := filepath.Dir(args.source)
+	relInputDir, err := filepath.Rel(args.dir, inputDir)
+	if err != nil {
+		return err
+	}
+
 	cmd.Args = append(cmd.Args,
-		"-c", args.file,
-		"-o", "-",
+		"-c", args.source,
+		"-o", args.dest,
 		// Don't include clang version
 		"-fno-ident",
 		// Don't output inputDir into debug info
-		"-fdebug-prefix-map="+inputDir+"=.",
+		"-fdebug-prefix-map="+inputDir+"="+relInputDir,
 		"-fdebug-compilation-dir", ".",
 		// We always want BTF to be generated, so enforce debug symbols
 		"-g",
 	)
+	cmd.Dir = args.dir
 
-	var (
-		depRd, depWr *os.File
-		err          error
-	)
+	var depRd, depWr *os.File
 	if args.dep != nil {
 		depRd, depWr, err = os.Pipe()
 		if err != nil {
