@@ -83,30 +83,22 @@ int dispatcher(struct bpf_sk_lookup *ctx)
 
 	struct addr lookup_keys[] = {
 		{
-			.protocol = ctx->protocol,
-			.port     = ctx->local_port,
-			.addr     = laddr_full,
+			.prefixlen = (sizeof(struct addr) - 4) * 8,
+			.protocol  = ctx->protocol,
+			.port      = ctx->local_port,
+			.addr      = laddr_full,
 		},
 		{
-			.protocol = ctx->protocol,
-			.port     = 0,
-			.addr     = laddr_full,
+			.prefixlen = (sizeof(struct addr) - 4) * 8,
+			.protocol  = ctx->protocol,
+			.port      = 0,
+			.addr      = laddr_full,
 		},
 	};
 
-	int i = 0;
 #pragma clang loop unroll(full)
-	for (i = 0; i < (int)ARRAY_SIZE(lookup_keys); i++) {
-		/* eBPF voodoo. For some reason key = lookup_keys[i] aint work.
-		 */
-		struct addr key = {
-			.protocol = lookup_keys[i].protocol,
-			.port     = lookup_keys[i].port,
-		};
-		key.prefixlen = (sizeof(struct addr) - 4) * 8;
-		key.addr      = lookup_keys[i].addr;
-
-		__u32 *dest_id = bpf_map_lookup_elem(&bindings, &key);
+	for (int i = 0; i < (int)ARRAY_SIZE(lookup_keys); i++) {
+		__u32 *dest_id = bpf_map_lookup_elem(&bindings, &lookup_keys[i]);
 		if (!dest_id) {
 			continue;
 		}
