@@ -54,6 +54,15 @@ struct bpf_map_def SEC("maps") destination_metrics = {
 	.value_size  = sizeof(struct destination_metrics),
 };
 
+static inline void cleanup_sk(struct bpf_sock **sk)
+{
+	if (*sk != NULL) {
+		bpf_sk_release(*sk);
+	}
+}
+
+#define __cleanup_sk __attribute__((cleanup(cleanup_sk)))
+
 SEC("license") const char __license[] = "Proprietary";
 
 SEC("sk_lookup/dispatcher")
@@ -114,7 +123,7 @@ int dispatcher(struct bpf_sk_lookup *ctx)
 
 		metrics->received_packets++;
 
-		struct bpf_sock *sk = bpf_map_lookup_elem(&sockets, dest_id);
+		struct bpf_sock *sk __cleanup_sk = bpf_map_lookup_elem(&sockets, dest_id);
 		if (!sk) {
 			/* Service for the address registered,
 			 * but socket is missing (service
@@ -136,13 +145,11 @@ int dispatcher(struct bpf_sk_lookup *ctx)
 			 * to. Service misconfigured.
 			 */
 			metrics->dropped_packets__incompatible_socket++;
-			bpf_sk_release(sk);
 			return SK_DROP;
 		}
 
 		/* Found and selected a suitable socket. Direct
 		 * the incoming connection to it. */
-		bpf_sk_release(sk);
 		return SK_PASS;
 	}
 
