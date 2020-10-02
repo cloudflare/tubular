@@ -31,6 +31,35 @@ func bind(e env, args ...string) error {
 	return dp.AddBinding(bind)
 }
 
+func unbind(e env, args ...string) error {
+	set := e.newFlagSet("unbind")
+	set.Usage = func() {
+		fmt.Fprintf(set.Output(), "Usage: %s <label> <protocol> <ip[/mask]> <port>\n", set.Name())
+		set.PrintDefaults()
+	}
+	if err := set.Parse(args); err != nil {
+		return err
+	}
+
+	bind, err := bindingFromArgs(set.Args())
+	if err != nil {
+		return err
+	}
+
+	dp, err := e.openDispatcher()
+	if err != nil {
+		return err
+	}
+	defer dp.Close()
+
+	if err := dp.RemoveBinding(bind); err != nil {
+		return err
+	}
+
+	fmt.Fprintln(e.stdout, "Removed", bind)
+	return nil
+}
+
 func bindingFromArgs(args []string) (*internal.Binding, error) {
 	if n := len(args); n != 4 {
 		return nil, fmt.Errorf("expected label, protocol, ip and port but got %d arguments", n)

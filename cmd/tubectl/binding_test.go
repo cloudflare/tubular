@@ -24,13 +24,23 @@ func TestBind(t *testing.T) {
 		}
 	}
 
+	_, err := testTubectl(t, netns, "unbind", "foo", "udp", "::1", "443")
+	if err != nil {
+		t.Fatal("Can't unbind:", err)
+	}
+
+	_, err = testTubectl(t, netns, "unbind", "foo", "udp", "::1", "443")
+	if err == nil {
+		t.Error("Unbind doesn't return an error for non-existing binding")
+	}
+
 	dp := mustOpenDispatcher(t, netns)
 	bindings, err := dp.Bindings()
 	if err != nil {
 		t.Fatal("Can't get bindings:", err)
 	}
 
-	if n := len(bindings); n != 3 {
+	if n := len(bindings); n != 2 {
 		t.Error("Expected three bindings, got", n)
 	}
 
