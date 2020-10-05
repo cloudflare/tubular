@@ -17,9 +17,26 @@ type env struct {
 	netns          string
 	bpfFs          string
 	memlimit       uint64
+	osFns
+}
+
+type osFns struct {
+	// Override for os.Getenv
+	getenv func(key string) string
+	// Override for os.NewFile
+	newFile func(fd uintptr, name string) *os.File
 }
 
 var (
+	defaultEnv = env{
+		stdout: os.Stdout,
+		stderr: os.Stderr,
+		osFns: osFns{
+			getenv:  os.Getenv,
+			newFile: os.NewFile,
+		},
+	}
+
 	// Errors returned by tubectl
 	errBadArg = syscall.EINVAL
 )
@@ -49,17 +66,12 @@ func (e *env) newFlagSet(name string) *flag.FlagSet {
 
 type cmdFunc func(*env, ...string) error
 
-func tubectl(stdout, stderr io.Writer, args []string) (err error) {
+func tubectl(e env, args []string) (err error) {
 	defer func() {
 		if err != nil {
-			fmt.Fprintln(stderr, "Error:", err)
+			fmt.Fprintln(e.stderr, "Error:", err)
 		}
 	}()
-
-	e := env{
-		stdout: stdout,
-		stderr: stderr,
-	}
 
 	set := e.newFlagSet("tubectl")
 	set.StringVar(&e.netns, "netns", "/proc/self/ns/net", "`path` to the network namespace")
@@ -77,17 +89,17 @@ func tubectl(stdout, stderr io.Writer, args []string) (err error) {
 	}
 
 	set.Usage = func() {
-		fmt.Fprintf(stderr, "Usage: %s [flags] command [arguments and flags]\n\n", set.Name())
+		fmt.Fprintf(e.stderr, "Usage: %s [flags] command [arguments and flags]\n\n", set.Name())
 
-		fmt.Fprintln(stderr, "Available flags:")
+		fmt.Fprintln(e.stderr, "Available flags:")
 		set.PrintDefaults()
-		fmt.Fprintln(stderr)
+		fmt.Fprintln(e.stderr)
 
-		fmt.Fprintln(stderr, "Available commands:")
+		fmt.Fprintln(e.stderr, "Available commands:")
 		for cmd := range cmds {
-			fmt.Fprintln(stderr, "  "+cmd)
+			fmt.Fprintln(e.stderr, "  "+cmd)
 		}
-		fmt.Fprintln(stderr)
+		fmt.Fprintln(e.stderr)
 	}
 
 	if err = set.Parse(args); err != nil {
@@ -119,14 +131,14 @@ func tubectl(stdout, stderr io.Writer, args []string) (err error) {
 	}
 
 	if err := cmdFn(&e, cmdArgs...); err != nil {
-		return fmt.Errorf("%s: %s", cmd, err)
+		return fmt.Errorf("%s: %w", cmd, err)
 	}
 
 	return nil
 }
 
 func main() {
-	if err := tubectl(os.Stdout, os.Stderr, os.Args[1:]); err != nil {
+	if err := tubectl(defaultEnv, os.Args[1:]); err != nil {
 		os.Exit(1)
 	}
 }

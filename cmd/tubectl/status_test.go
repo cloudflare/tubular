@@ -19,10 +19,7 @@ func TestList(t *testing.T) {
 		t.Fatal("Can't execute list:", err)
 	}
 
-	out := output.String()
-	t.Log(out)
-
-	if !strings.Contains(out, "foo") {
+	if !strings.Contains(output.String(), "foo") {
 		t.Error("Output of list doesn't contain label foo")
 	}
 }
