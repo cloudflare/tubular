@@ -176,7 +176,7 @@ func newDestinationFromConn(label string, conn syscall.RawConn) (*Destination, e
 		return nil, fmt.Errorf("access fd: %s", err)
 	}
 	if opErr != nil {
-		return nil, fmt.Errorf("destination from fd: %w", opErr)
+		return nil, opErr
 	}
 
 	return dest, nil
