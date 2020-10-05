@@ -1,19 +1,19 @@
 package main
 
 import (
-	"strings"
+	"errors"
 	"testing"
 )
+
+// Tests for simple register
 
 func TestRegisterFailsWithoutLabel(t *testing.T) {
 	netns := mustReadyNetNS(t)
 
 	_, err := testTubectl(t, netns, "register")
-	if err == nil {
-		t.Fatal("expected register to fail")
-	}
-	if !strings.Contains(err.Error(), "missing arguments") {
-		t.Fatal("unexpected register error: ", err)
+	want := errBadArg
+	if !errors.Is(err, want) {
+		t.Fatalf("unexpected error: want %v, have %v", want, err)
 	}
 }
 

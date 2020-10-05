@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"syscall"
 
 	"code.cfops.it/sys/tubular/internal"
 	"code.cfops.it/sys/tubular/internal/rlimit"
@@ -17,6 +18,11 @@ type env struct {
 	bpfFs          string
 	memlimit       uint64
 }
+
+var (
+	// Errors returned by tubectl
+	errBadArg = syscall.EINVAL
+)
 
 func (e *env) adjustMemlimit() error {
 	return rlimit.SetLockedMemoryLimits(e.memlimit)

@@ -22,7 +22,7 @@ func register(e env, args ...string) error {
 	}
 	if set.NArg() != 1 {
 		set.Usage()
-		return fmt.Errorf("missing arguments")
+		return fmt.Errorf("expected label but got %d arguments: %w", set.NArg(), errBadArg)
 	}
 
 	// FIXME: Finish me
