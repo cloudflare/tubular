@@ -43,7 +43,13 @@ func (e *env) newFlagSet(name string) *flag.FlagSet {
 
 type cmdFunc func(env, ...string) error
 
-func tubectl(stdout, stderr io.Writer, args ...string) error {
+func tubectl(stdout, stderr io.Writer, args ...string) (err error) {
+	defer func() {
+		if err != nil {
+			fmt.Fprintln(stderr, "Error:", err)
+		}
+	}()
+
 	e := env{
 		stdout: stdout,
 		stderr: stderr,
@@ -78,7 +84,7 @@ func tubectl(stdout, stderr io.Writer, args ...string) error {
 		fmt.Fprintln(stderr)
 	}
 
-	if err := set.Parse(args); err != nil {
+	if err = set.Parse(args); err != nil {
 		return err
 	}
 
@@ -115,7 +121,6 @@ func tubectl(stdout, stderr io.Writer, args ...string) error {
 
 func main() {
 	if err := tubectl(os.Stdout, os.Stderr, os.Args[1:]...); err != nil {
-		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
 	}
 }
