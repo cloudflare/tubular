@@ -171,7 +171,7 @@ func TestUpdateRegisteredSocket(t *testing.T) {
 		}
 
 		if i > 0 && created {
-			t.Errorf("Created is true on trd #%d", i+1)
+			t.Errorf("Created is true on try #%d", i+1)
 		}
 	}
 }
