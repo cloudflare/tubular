@@ -102,7 +102,7 @@ func CreateDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 	if err := coll.Assign(&bpf); err != nil {
 		return nil, fmt.Errorf("can't assign objects: %s", err)
 	}
-	defer closeOnError(&bpf)
+	defer bpf.Close()
 
 	dests, err := createDestinations(&bpf, filepath.Join(pinPath, "destinations"))
 	if err != nil {
@@ -121,7 +121,12 @@ func CreateDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 		return nil, fmt.Errorf("can't pin link: %s", err)
 	}
 
-	return &Dispatcher{netns, attach, pinPath, bpf.MapBindings, dests, dir}, nil
+	mapBindings, err := bpf.MapBindings.Clone()
+	if err != nil {
+		return nil, fmt.Errorf("can't clone bindings map: %s", err)
+	}
+
+	return &Dispatcher{netns, attach, pinPath, mapBindings, dests, dir}, nil
 }
 
 // OpenDispatcher loads an existing dispatcher from a namespace.
@@ -195,7 +200,7 @@ func OpenDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 	if err := coll.Assign(&bpf); err != nil {
 		return nil, fmt.Errorf("can't assign objects: %s", err)
 	}
-	defer closeOnError(&bpf)
+	defer bpf.Close()
 
 	dests, err := openDestinations(&bpf, filepath.Join(pinPath, "destinations"))
 	if err != nil {
@@ -209,9 +214,14 @@ func OpenDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 		return nil, fmt.Errorf("load dispatcher: %s", err)
 	}
 
+	mapBindings, err := bpf.MapBindings.Clone()
+	if err != nil {
+		return nil, fmt.Errorf("can't clone bindings map: %s", err)
+	}
+
 	// TODO: We should verify that the attached program tag (aka truncated sha1)
 	// matches bpf.ProgramDispatcher.
-	return &Dispatcher{netns, attach, pinPath, bpf.MapBindings, dests, dir}, nil
+	return &Dispatcher{netns, attach, pinPath, mapBindings, dests, dir}, nil
 }
 
 // Close frees associated resources.

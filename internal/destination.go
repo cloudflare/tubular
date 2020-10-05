@@ -187,10 +187,20 @@ func newDestinations(bpf *dispatcherObjects, allocs *ebpf.Map) (*destinations, e
 		return nil, fmt.Errorf("socket and metrics map size doesn't match: %d != %d", maxEntries, destMax)
 	}
 
+	mapSockets, err := bpf.MapSockets.Clone()
+	if err != nil {
+		return nil, fmt.Errorf("can't clone sockets map: %s", err)
+	}
+	mapDestinationMetrics, err := bpf.MapDestinationMetrics.Clone()
+	if err != nil {
+		mapSockets.Close()
+		return nil, fmt.Errorf("can't clone destination metrics map: %s", err)
+	}
+
 	return &destinations{
 		allocs,
-		bpf.MapSockets,
-		bpf.MapDestinationMetrics,
+		mapSockets,
+		mapDestinationMetrics,
 		destinationID(maxEntries),
 	}, nil
 }
