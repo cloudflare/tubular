@@ -39,6 +39,7 @@ var (
 
 	// Errors returned by tubectl
 	errBadArg = syscall.EINVAL
+	errBadFD  = syscall.EBADF
 )
 
 func (e *env) adjustMemlimit() error {

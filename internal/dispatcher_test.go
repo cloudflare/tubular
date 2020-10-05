@@ -145,7 +145,7 @@ func TestRegisterSupportedSocketKind(t *testing.T) {
 	for _, network := range networks {
 		t.Run(network, func(t *testing.T) {
 			conn := testutil.Listen(t, netns, network, "")
-			created, err := dp.RegisterSocket("service-name", conn)
+			_, created, err := dp.RegisterSocket("service-name", conn)
 			if err != nil {
 				t.Fatal("RegisterSocket failed:", err)
 			}
@@ -165,7 +165,7 @@ func TestUpdateRegisteredSocket(t *testing.T) {
 
 	for i := 0; i < 3; i++ {
 		conn := testutil.Listen(t, netns, "tcp4", "")
-		created, err := dp.RegisterSocket("service-name", conn)
+		_, created, err := dp.RegisterSocket("service-name", conn)
 		if err != nil {
 			t.Fatalf("Can't RegisterSocket try #%d: %v", i+1, err)
 		}
@@ -188,7 +188,7 @@ func TestRegisterUnixSocket(t *testing.T) {
 	for _, network := range networks {
 		t.Run(network, func(t *testing.T) {
 			conn := testutil.Listen(t, netns, network, "")
-			_, err := dp.RegisterSocket("service-name", conn)
+			_, _, err := dp.RegisterSocket("service-name", conn)
 			if err == nil {
 				t.Fatal("RegisterSocket didn't fail")
 			}
@@ -210,7 +210,7 @@ func TestRegisterConnectedSocket(t *testing.T) {
 			testutil.Listen(t, netns, network, "127.0.0.1:1234")
 			conn := testutil.Dial(t, netns, network, "127.0.0.1:1234")
 
-			_, err := dp.RegisterSocket("service-name", conn)
+			_, _, err := dp.RegisterSocket("service-name", conn)
 			if err == nil {
 				t.Fatal("RegisterSocket didn't fail")
 			}
@@ -232,7 +232,7 @@ func TestMetrics(t *testing.T) {
 		t.Fatal("Could dial before adding socket")
 	}
 
-	if _, err := dp.RegisterSocket("foo", ln); err != nil {
+	if _, _, err := dp.RegisterSocket("foo", ln); err != nil {
 		t.Fatal("Can't add socket:", err)
 	}
 
@@ -338,7 +338,7 @@ func TestBindingPrecedence(t *testing.T) {
 		ln := testutil.ListenWithName(t, netns, bind.Protocol.String(), "127.0.0.1:0", bind.Label)
 		listeners[bind.Label] = ln
 
-		if _, err := dp.RegisterSocket(bind.Label, ln); err != nil {
+		if _, _, err := dp.RegisterSocket(bind.Label, ln); err != nil {
 			t.Fatal("Can't register listener:", err)
 		}
 	}

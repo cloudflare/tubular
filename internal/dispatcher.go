@@ -21,8 +21,13 @@ import (
 
 // Errors returned by the Dispatcher.
 var (
-	ErrLoaded    = errors.New("dispatcher already loaded")
-	ErrNotLoaded = errors.New("dispatcher not loaded")
+	ErrLoaded            = errors.New("dispatcher already loaded")
+	ErrNotLoaded         = errors.New("dispatcher not loaded")
+	ErrNotSocket         = syscall.ENOTSOCK
+	ErrBadSocketDomain   = syscall.EPFNOSUPPORT
+	ErrBadSocketType     = syscall.ESOCKTNOSUPPORT
+	ErrBadSocketProtocol = syscall.EPROTONOSUPPORT
+	ErrBadSocketState    = syscall.EBADFD
 )
 
 // Dispatcher manipulates the socket dispatch data plane.
@@ -447,21 +452,23 @@ func (c SocketCookie) String() string {
 // The socket receives traffic for all Bindings that share the same label,
 // L3 and L4 protocol.
 //
-// Returns a boolean indicating whether a destination was created or updated, or an error.
-func (d *Dispatcher) RegisterSocket(label string, conn syscall.Conn) (created bool, _ error) {
+
+// Returns the Destination with which the socket was registered, and a boolean
+// indicating whether the Destination was created or updated, or an error.
+func (d *Dispatcher) RegisterSocket(label string, conn syscall.Conn) (dest *Destination, created bool, _ error) {
 	raw, err := conn.SyscallConn()
 	if err != nil {
-		return false, fmt.Errorf("raw conn: %s", err)
+		return nil, false, fmt.Errorf("raw conn: %s", err)
 	}
 
-	dest, err := newDestinationFromConn(label, raw)
+	dest, err = newDestinationFromConn(label, raw)
 	if err != nil {
-		return false, err
+		return nil, false, err
 	}
 
 	created, err = d.destinations.AddSocket(dest, raw)
 	if err != nil {
-		return false, fmt.Errorf("add socket: %s", err)
+		return nil, false, fmt.Errorf("add socket: %s", err)
 	}
 
 	return

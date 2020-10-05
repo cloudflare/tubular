@@ -83,57 +83,77 @@ func newDestinationFromBinding(bind *Binding) *Destination {
 }
 
 func newDestinationFromFd(label string, fd uintptr) (*Destination, error) {
+	var stat unix.Stat_t
+	err := unix.Fstat(int(fd), &stat)
+	if err != nil {
+		return nil, fmt.Errorf("fstat: %w", err)
+	}
+	if stat.Mode&unix.S_IFMT != unix.S_IFSOCK {
+		return nil, fmt.Errorf("fd is not a socket: %w", ErrNotSocket)
+	}
+
 	domain, err := unix.GetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_DOMAIN)
 	if err != nil {
-		return nil, fmt.Errorf("get SO_DOMAIN: %s", err)
+		return nil, fmt.Errorf("get SO_DOMAIN: %w", err)
 	}
 
 	sotype, err := unix.GetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_TYPE)
 	if err != nil {
-		return nil, fmt.Errorf("get SO_TYPE: %s", err)
+		return nil, fmt.Errorf("get SO_TYPE: %w", err)
 	}
 
 	proto, err := unix.GetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_PROTOCOL)
 	if err != nil {
-		return nil, fmt.Errorf("get SO_PROTOCOL: %s", err)
+		return nil, fmt.Errorf("get SO_PROTOCOL: %w", err)
 	}
 
 	acceptConn, err := unix.GetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_ACCEPTCONN)
 	if err != nil {
-		return nil, fmt.Errorf("get SO_ACCEPTCONN: %s", err)
+		return nil, fmt.Errorf("get SO_ACCEPTCONN: %w", err)
 	}
 	listening := (acceptConn == 1)
 
 	unconnected := false
 	if _, err = unix.Getpeername(int(fd)); err != nil {
 		if !errors.Is(err, unix.ENOTCONN) {
-			return nil, fmt.Errorf("getpeername: %s", err)
+			return nil, fmt.Errorf("getpeername: %w", err)
 		}
 		unconnected = true
 	}
 
 	cookie, err := unix.GetsockoptUint64(int(fd), unix.SOL_SOCKET, unix.SO_COOKIE)
 	if err != nil {
-		return nil, fmt.Errorf("get SO_COOKIE: %s", err)
+		return nil, fmt.Errorf("get SO_COOKIE: %w", err)
 	}
 
 	if domain != unix.AF_INET && domain != unix.AF_INET6 {
-		return nil, fmt.Errorf("unsupported socket domain %v", domain)
+		return nil, fmt.Errorf("unsupported socket domain %v: %w", domain, ErrBadSocketDomain)
 	}
 	if sotype != unix.SOCK_STREAM && sotype != unix.SOCK_DGRAM {
-		return nil, fmt.Errorf("unsupported socket type %v", sotype)
+		return nil, fmt.Errorf("unsupported socket type %v: %w", sotype, ErrBadSocketType)
 	}
 	if sotype == unix.SOCK_STREAM && proto != unix.IPPROTO_TCP {
-		return nil, fmt.Errorf("unsupported stream socket protocol %v", proto)
+		return nil, fmt.Errorf("unsupported stream socket protocol %v: %w", proto, ErrBadSocketProtocol)
 	}
 	if sotype == unix.SOCK_DGRAM && proto != unix.IPPROTO_UDP {
-		return nil, fmt.Errorf("unsupported packet socket protocol %v", proto)
+		return nil, fmt.Errorf("unsupported packet socket protocol %v: %w", proto, ErrBadSocketDomain)
 	}
 	if sotype == unix.SOCK_STREAM && !listening {
-		return nil, fmt.Errorf("stream socket not listening")
+		return nil, fmt.Errorf("stream socket not listening: %w", ErrBadSocketState)
 	}
 	if sotype == unix.SOCK_DGRAM && !unconnected {
-		return nil, fmt.Errorf("packet socket not unconnected")
+		return nil, fmt.Errorf("packet socket is connected: %w", ErrBadSocketState)
+	}
+
+	// Reject dual-stack sockets
+	if domain == unix.AF_INET6 {
+		v6only, err := unix.GetsockoptInt(int(fd), unix.SOL_IPV6, unix.IPV6_V6ONLY)
+		if err != nil {
+			return nil, fmt.Errorf("getsockopt(IPV6_V6ONLY): %w", err)
+		}
+		if v6only != 1 {
+			return nil, fmt.Errorf("unsupported dual-stack ipv6 socket (not v6only): %w", ErrBadSocketState)
+		}
 	}
 
 	return &Destination{
@@ -156,7 +176,7 @@ func newDestinationFromConn(label string, conn syscall.RawConn) (*Destination, e
 		return nil, fmt.Errorf("access fd: %s", err)
 	}
 	if opErr != nil {
-		return nil, fmt.Errorf("destination from fd: %s", opErr)
+		return nil, fmt.Errorf("destination from fd: %w", opErr)
 	}
 
 	return dest, nil

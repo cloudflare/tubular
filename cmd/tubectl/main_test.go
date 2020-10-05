@@ -36,16 +36,22 @@ func mustReadyNetNS(tb testing.TB) ns.NetNS {
 	tb.Helper()
 
 	netns := testutil.NewNetNS(tb)
+	mustLoadDispatcher(tb, netns)
+	return netns
+}
+
+func mustLoadDispatcher(tb testing.TB, netns ns.NetNS) {
+	tb.Helper()
+
 	dp, err := internal.CreateDispatcher(netns.Path(), "/sys/fs/bpf")
 	if err != nil {
 		tb.Fatal(err)
 	}
-	path := dp.Path
+	tb.Cleanup(func() { os.RemoveAll(dp.Path) })
+
 	if err := dp.Close(); err != nil {
 		tb.Fatal("Can't close dispatcher:", err)
 	}
-	tb.Cleanup(func() { os.RemoveAll(path) })
-	return netns
 }
 
 func mustOpenDispatcher(tb testing.TB, netns ns.NetNS) *internal.Dispatcher {
