@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"syscall"
 	"testing"
 
 	"code.cfops.it/sys/tubular/internal/testutil"
@@ -43,27 +44,6 @@ func TestDispatcherLocking(t *testing.T) {
 	if err == nil {
 		t.Fatal("Dispatcher doesn't lock the state")
 	}
-}
-
-func TestOverlappingBindings(t *testing.T) {
-	netns := testutil.NewNetNS(t)
-	dp := mustCreateDispatcher(t, netns.Path())
-
-	bindA := mustNewBinding(t, "foo", TCP, "127.0.0.1/32", 8080)
-	if err := dp.AddBinding(bindA); err != nil {
-		t.Fatal("can't add /32:", err)
-	}
-
-	bindB := mustNewBinding(t, "foo", TCP, "127.0.0.1/24", 8080)
-	if err := dp.AddBinding(bindB); err != nil {
-		t.Fatal("can't add /24:", err)
-	}
-
-	if err := dp.AddBinding(bindB); err == nil {
-		t.Error("Bindings can be added multiple times")
-	}
-
-	// TODO: Check that connections reach the correct service.
 }
 
 func TestAddAndRemoveBindings(t *testing.T) {
@@ -326,6 +306,56 @@ func TestMetrics(t *testing.T) {
 
 	if destMetrics.DroppedPacketsIncompatibleSocket != 0 {
 		t.Error("Expected zero incompatible socket packet, got", destMetrics.DroppedPacketsIncompatibleSocket)
+	}
+}
+
+func TestBindingPrecedence(t *testing.T) {
+	netns := testutil.NewNetNS(t, "1.2.3.0/24", "4.3.2.0/24")
+	dp := mustCreateDispatcher(t, netns.Path())
+
+	testcases := []*Binding{
+		mustNewBinding(t, "spectrum", TCP, "1.2.3.0/24", 0),
+		// Port takes prededence over wildcard.
+		mustNewBinding(t, "nginx-ssl", TCP, "1.2.3.0/24", 443),
+		// More specific prefix takes precedence.
+		mustNewBinding(t, "spectrum", TCP, "1.2.3.4/32", 0),
+		// More specific prefix with port takes precedence.
+		mustNewBinding(t, "nginx-ssl", TCP, "1.2.3.4/32", 80),
+		mustNewBinding(t, "nginx-ssl", TCP, "4.3.2.0/24", 443),
+		mustNewBinding(t, "new-tls-thing", TCP, "4.3.2.0/25", 443),
+	}
+
+	listeners := make(map[string]syscall.Conn)
+	for i, bind := range testcases {
+		if err := dp.AddBinding(bind); err != nil {
+			t.Fatal("Can't add binding", i, bind, err)
+		}
+
+		if listeners[bind.Label] != nil {
+			continue
+		}
+
+		ln := testutil.ListenWithName(t, netns, bind.Protocol.String(), "127.0.0.1:0", bind.Label)
+		listeners[bind.Label] = ln
+
+		if _, err := dp.RegisterSocket(bind.Label, ln); err != nil {
+			t.Fatal("Can't register listener:", err)
+		}
+	}
+
+	for _, test := range []struct {
+		address string
+		label   string
+	}{
+		{"1.2.3.1:80", "spectrum"},
+		{"1.2.3.1:81", "spectrum"},
+		{"1.2.3.1:443", "nginx-ssl"},
+		{"1.2.3.4:443", "spectrum"},
+		{"1.2.3.4:80", "nginx-ssl"},
+		{"4.3.2.1:443", "new-tls-thing"},
+		{"4.3.2.128:443", "nginx-ssl"},
+	} {
+		testutil.CanDialName(t, netns, "tcp", test.address, test.label)
 	}
 }
 

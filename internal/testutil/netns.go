@@ -19,7 +19,7 @@ import (
 )
 
 // NewNetNS creates a pristine network namespace.
-func NewNetNS(tb testing.TB) ns.NetNS {
+func NewNetNS(tb testing.TB, networks ...string) ns.NetNS {
 	tb.Helper()
 
 	quit := make(chan struct{})
@@ -37,13 +37,24 @@ func NewNetNS(tb testing.TB) ns.NetNS {
 			return
 		}
 
-		ip := exec.Command("ip", "link", "set", "dev", "lo", "up")
+		ip := exec.Command("/sbin/ip", "link", "set", "dev", "lo", "up")
 		if out, err := ip.CombinedOutput(); err != nil {
 			if len(out) > 0 {
 				tb.Log(string(out))
 			}
 			errs <- fmt.Errorf("set up loopback: %s", err)
 			return
+		}
+
+		for _, network := range networks {
+			ip := exec.Command("/sbin/ip", "addr", "add", "dev", "lo", network)
+			if out, err := ip.CombinedOutput(); err != nil {
+				if len(out) > 0 {
+					tb.Log(string(out))
+				}
+				errs <- fmt.Errorf("add networks: %s", err)
+				return
+			}
 		}
 
 		netns, err := ns.GetCurrentNS()
@@ -105,10 +116,22 @@ func JoinNetNS(tb testing.TB, netns ns.NetNS, fn func()) {
 
 // Listen listens on a given address in a specific network namespace.
 //
-// Uses a local address if address is empty.
-//
-// Connections are accepted / packets read until the test ends.
+// Uses a local address if address is empty.  Connections are accepted / packets read until the test ends.
 func Listen(tb testing.TB, netns ns.NetNS, network, address string) (sys syscall.Conn) {
+	return ListenWithName(tb, netns, network, address, "default")
+}
+
+const maxNameLen = 128
+
+// ListenWithName listens on a given address in a specific network namespace, and
+// gives the listener a name.
+//
+// Use this with CanDialName to ensure that you're reaching the correct listener.
+func ListenWithName(tb testing.TB, netns ns.NetNS, network, address, name string) (sys syscall.Conn) {
+	if len(name) > maxNameLen {
+		tb.Fatalf("name exceeds %d bytes", maxNameLen)
+
+	}
 	if address == "" {
 		switch network {
 		case "tcp", "tcp4", "udp", "udp4":
@@ -145,11 +168,19 @@ func Listen(tb testing.TB, netns ns.NetNS, network, address string) (sys syscall
 					}
 
 					go func() {
-						_, err := io.Copy(ioutil.Discard, conn)
+						defer conn.Close()
+
+						conn.SetWriteDeadline(time.Now().Add(time.Second))
+						_, err := conn.Write([]byte(name))
 						if err != nil {
-							tb.Error()
+							tb.Error(err)
+							return
 						}
-						conn.Close()
+
+						_, err = io.Copy(ioutil.Discard, conn)
+						if err != nil {
+							tb.Error(err)
+						}
 					}()
 				}
 			}()
@@ -175,7 +206,8 @@ func Listen(tb testing.TB, netns ns.NetNS, network, address string) (sys syscall
 						}
 						return
 					}
-					conn.WriteTo([]byte("b"), from)
+
+					conn.WriteTo([]byte(name), from)
 				}
 			}()
 
@@ -202,7 +234,9 @@ func CanDial(tb testing.TB, netns ns.NetNS, network, address string) (ok bool) {
 	tb.Helper()
 
 	JoinNetNS(tb, netns, func() {
-		conn := dial(tb, network, address)
+		tb.Helper()
+
+		_, conn := dial(tb, network, address)
 		if conn != nil {
 			ok = true
 			conn.(io.Closer).Close()
@@ -212,11 +246,37 @@ func CanDial(tb testing.TB, netns ns.NetNS, network, address string) (ok bool) {
 	return
 }
 
+// CanDialName checks that a ListenWithName is reachable at the given network and address.
+func CanDialName(tb testing.TB, netns ns.NetNS, network, address, name string) {
+	tb.Helper()
+
+	var (
+		conn     syscall.Conn
+		haveName string
+	)
+	JoinNetNS(tb, netns, func() {
+		tb.Helper()
+
+		haveName, conn = dial(tb, network, address)
+	})
+	if conn == nil {
+		tb.Fatal("Can't dial", network, address)
+	}
+	conn.(io.Closer).Close()
+
+	if haveName != name {
+		tb.Fatalf("Expected to reach %q at %s %s, got %q instead", name, network, address, haveName)
+	}
+}
+
+// Dial connects to network and address in the given network namespace.
 func Dial(tb testing.TB, netns ns.NetNS, network, address string) (conn syscall.Conn) {
 	tb.Helper()
 
 	JoinNetNS(tb, netns, func() {
-		conn = dial(tb, network, address)
+		tb.Helper()
+
+		_, conn = dial(tb, network, address)
 		if conn == nil {
 			tb.Fatal("Can't dial", network, address)
 		}
@@ -225,7 +285,7 @@ func Dial(tb testing.TB, netns ns.NetNS, network, address string) (conn syscall.
 	return
 }
 
-func dial(tb testing.TB, network, address string) syscall.Conn {
+func dial(tb testing.TB, network, address string) (string, syscall.Conn) {
 	tb.Helper()
 
 	dialer := net.Dialer{
@@ -236,14 +296,21 @@ func dial(tb testing.TB, network, address string) syscall.Conn {
 	case "tcp", "tcp4", "tcp6":
 		conn, err := dialer.Dial(network, address)
 		if errors.Is(err, unix.ECONNREFUSED) {
-			return nil
+			return "", nil
 		}
 		if err != nil {
 			tb.Fatal("Can't dial:", err)
 		}
 		tb.Cleanup(func() { conn.Close() })
 
-		return conn.(syscall.Conn)
+		buf := make([]byte, maxNameLen)
+		n, err := conn.Read(buf)
+		if err != nil {
+			conn.Close()
+			tb.Fatal("Can't read name:", err)
+		}
+
+		return string(buf[:n]), conn.(syscall.Conn)
 
 	case "udp", "udp4", "udp6":
 		conn, err := dialer.Dial(network, address)
@@ -260,20 +327,19 @@ func dial(tb testing.TB, network, address string) syscall.Conn {
 
 		conn.SetReadDeadline(time.Now().Add(time.Second))
 
-		var buf [1]byte
-		_, err = conn.Read(buf[:])
+		buf := make([]byte, maxNameLen)
+		n, err := conn.Read(buf)
 		if errors.Is(err, unix.ECONNREFUSED) {
 			conn.Close()
-			return nil
+			return "", nil
 		}
 		if err != nil {
 			tb.Fatal("Can't read:", err)
 		}
 
-		return conn.(syscall.Conn)
+		return string(buf[:n]), conn.(syscall.Conn)
 
 	default:
-		tb.Fatal("Unsupported network:", network)
-		return nil
+		panic("unsupported network: " + network)
 	}
 }

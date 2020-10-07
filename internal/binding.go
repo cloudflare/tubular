@@ -94,10 +94,10 @@ type bindingKey struct {
 
 const bindingKeyHeaderBits = int(unsafe.Sizeof(bindingKey{}.Protocol)+unsafe.Sizeof(bindingKey{}.Port)) * 8
 
-func (b *Binding) key() (*bindingKey, error) {
-	ones, bits := b.Prefix.Mask.Size()
+func newBindingKey(bind *Binding) (*bindingKey, error) {
+	ones, bits := bind.Prefix.Mask.Size()
 	if ones == 0 && bits == 0 {
-		return nil, fmt.Errorf("invalid prefix: %s", b.Prefix)
+		return nil, fmt.Errorf("invalid prefix: %s", bind.Prefix)
 	}
 
 	if bits == 32 {
@@ -106,13 +106,19 @@ func (b *Binding) key() (*bindingKey, error) {
 
 	key := bindingKey{
 		PrefixLen: uint32(bindingKeyHeaderBits + ones),
-		Protocol:  b.Protocol,
-		Port:      b.Port,
+		Protocol:  bind.Protocol,
+		Port:      bind.Port,
 	}
 
-	if n := copy(key.IP[:], b.Prefix.IP.To16()); n != net.IPv6len {
+	if n := copy(key.IP[:], bind.Prefix.IP.To16()); n != net.IPv6len {
 		return nil, fmt.Errorf("invalid IP address: expected 16 bytes, got %d", n)
 	}
 
 	return &key, nil
+}
+
+// bindingValue mirrors struct binding.
+type bindingValue struct {
+	ID        destinationID
+	PrefixLen uint32
 }

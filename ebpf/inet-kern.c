@@ -26,6 +26,11 @@ struct addr {
 	} addr;
 } __attribute__((packed));
 
+struct binding {
+	destination_id_t id;
+	__u32 prefixlen;
+};
+
 struct destination_metrics {
 	__u64 received_packets;
 	__u64 dropped_packets__missing_socket;
@@ -43,7 +48,7 @@ struct bpf_map_def SEC("maps") bindings = {
 	.type        = BPF_MAP_TYPE_LPM_TRIE,
 	.max_entries = 4096,
 	.key_size    = sizeof(struct addr),
-	.value_size  = sizeof(destination_id_t),
+	.value_size  = sizeof(struct binding),
 	.map_flags   = BPF_F_NO_PREALLOC,
 };
 
@@ -63,7 +68,23 @@ static inline void cleanup_sk(struct bpf_sock **sk)
 
 #define __cleanup_sk __attribute__((cleanup(cleanup_sk)))
 
-SEC("license") const char __license[] = "Proprietary";
+static inline const struct binding *select_binding(const struct binding *bind, const struct binding *wildcard_bind)
+{
+	if (bind) {
+		if (wildcard_bind && wildcard_bind->prefixlen > bind->prefixlen) {
+			/* The wildcard is more specific. */
+			return wildcard_bind;
+		}
+
+		/* The wildcard is as specific, or less specific. Prefer the
+		 * non-wildcard.
+		 */
+		return bind;
+	}
+
+	/* There is no non-wildcard binding. Use the wildcard (which may be NULL). */
+	return wildcard_bind;
+}
 
 SEC("sk_lookup/dispatcher")
 int dispatcher(struct bpf_sk_lookup *ctx)
@@ -81,69 +102,65 @@ int dispatcher(struct bpf_sk_lookup *ctx)
 		laddr_full.ip_as_w[3] = ctx->local_ip6[3];
 	}
 
-	struct addr lookup_keys[] = {
-		{
-			.prefixlen = (sizeof(struct addr) - 4) * 8,
-			.protocol  = ctx->protocol,
-			.port      = ctx->local_port,
-			.addr      = laddr_full,
-		},
-		{
-			.prefixlen = (sizeof(struct addr) - 4) * 8,
-			.protocol  = ctx->protocol,
-			.port      = 0,
-			.addr      = laddr_full,
-		},
+	struct addr key = {
+		.prefixlen = (sizeof(struct addr) - 4) * 8,
+		.protocol  = ctx->protocol,
+		.port      = ctx->local_port,
+		.addr      = laddr_full,
 	};
 
-#pragma clang loop unroll(full)
-	for (int i = 0; i < (int)ARRAY_SIZE(lookup_keys); i++) {
-		__u32 *dest_id = bpf_map_lookup_elem(&bindings, &lookup_keys[i]);
-		if (!dest_id) {
-			continue;
-		}
+	/* First, find a binding with the port specified. */
+	const struct binding *bind = bpf_map_lookup_elem(&bindings, &key);
 
-		struct destination_metrics *metrics = bpf_map_lookup_elem(&destination_metrics, dest_id);
-		if (!metrics) {
-			/* Per-CPU arrays are fully pre-allocated, so a lookup failure here
-			 * means that dest_id is out of bounds. Since we check that metrics
-			 * and socket map have the same size, the socket lookup will also
-			 * fail. Since there is no use in continuing, reject the packet.
-			 */
-			return SK_DROP;
-		}
+	/* Second, find a wildcard port binding. */
+	key.port                            = 0;
+	const struct binding *wildcard_bind = bpf_map_lookup_elem(&bindings, &key);
 
-		metrics->received_packets++;
-
-		struct bpf_sock *sk __cleanup_sk = bpf_map_lookup_elem(&sockets, dest_id);
-		if (!sk) {
-			/* Service for the address registered,
-			 * but socket is missing (service
-			 * down?). Drop connections so they
-			 * don't end up in some other socket
-			 * bound to the address/port reserved
-			 * for this service.
-			 */
-			metrics->dropped_packets__missing_socket++;
-			return SK_DROP;
-		}
-
-		int err = bpf_sk_assign(ctx, sk, 0);
-		if (err) {
-			/* Same as for no socket case above,
-			 * except here socket is not compatible
-			 * with the IP family or L4 transport
-			 * for the address/port it is mapped
-			 * to. Service misconfigured.
-			 */
-			metrics->dropped_packets__incompatible_socket++;
-			return SK_DROP;
-		}
-
-		/* Found and selected a suitable socket. Direct
-		 * the incoming connection to it. */
+	bind = select_binding(bind, wildcard_bind);
+	if (!bind) {
 		return SK_PASS;
 	}
 
+	struct destination_metrics *metrics = bpf_map_lookup_elem(&destination_metrics, &bind->id);
+	if (!metrics) {
+		/* Per-CPU arrays are fully pre-allocated, so a lookup failure here
+		 * means that dest_id is out of bounds. Since we check that metrics
+		 * and socket map have the same size, the socket lookup will also
+		 * fail. Since there is no use in continuing, reject the packet.
+		 */
+		return SK_DROP;
+	}
+
+	metrics->received_packets++;
+
+	struct bpf_sock *sk __cleanup_sk = bpf_map_lookup_elem(&sockets, &bind->id);
+	if (!sk) {
+		/* Service for the address registered,
+		 * but socket is missing (service
+		 * down?). Drop connections so they
+		 * don't end up in some other socket
+		 * bound to the address/port reserved
+		 * for this service.
+		 */
+		metrics->dropped_packets__missing_socket++;
+		return SK_DROP;
+	}
+
+	int err = bpf_sk_assign(ctx, sk, 0);
+	if (err) {
+		/* Same as for no socket case above,
+		 * except here socket is not compatible
+		 * with the IP family or L4 transport
+		 * for the address/port it is mapped
+		 * to. Service misconfigured.
+		 */
+		metrics->dropped_packets__incompatible_socket++;
+		return SK_DROP;
+	}
+
+	/* Found and selected a suitable socket. Direct
+	 * the incoming connection to it. */
 	return SK_PASS;
 }
+
+SEC("license") const char __license[] = "Proprietary";

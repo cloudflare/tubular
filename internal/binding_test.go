@@ -72,7 +72,7 @@ func TestBinding(t *testing.T) {
 		t.Fatal("Can't create binding:", err)
 	}
 
-	key, err := in.key()
+	key, err := newBindingKey(in)
 	if err != nil {
 		t.Fatal("Can't create bindingKey:", err)
 	}

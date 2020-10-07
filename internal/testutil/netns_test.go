@@ -32,7 +32,7 @@ func TestNetNS(t *testing.T) {
 	})
 }
 
-func TestCanDialNetNS(t *testing.T) {
+func TestCanDial(t *testing.T) {
 	netns := NewNetNS(t)
 
 	for _, network := range []string{"tcp", "udp"} {
@@ -56,6 +56,9 @@ func TestCanDialNetNS(t *testing.T) {
 			}
 
 			Dial(t, netns, network, "127.0.0.1:8080")
+
+			ListenWithName(t, netns, network, "127.0.0.1:9090", "testing")
+			CanDialName(t, netns, network, "127.0.0.1:9090", "testing")
 		})
 	}
 }

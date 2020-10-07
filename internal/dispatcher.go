@@ -316,20 +316,13 @@ func (d *Dispatcher) AddBinding(bind *Binding) (err error) {
 	}
 	defer onError(func() { _ = d.destinations.ReleaseID(dest) })
 
-	key, err := bind.key()
+	key, err := newBindingKey(bind)
 	if err != nil {
 		return err
 	}
 
-	var existingID destinationID
-	if err := d.bindings.Lookup(key, &existingID); err == nil {
-		if existingID == id {
-			// TODO: We could also turn this into a no-op?
-			return fmt.Errorf("add binding: already bound to %s", bind)
-		}
-	}
-
-	err = d.bindings.Update(key, id, 0)
+	value := bindingValue{id, key.PrefixLen}
+	err = d.bindings.Update(key, &value, 0)
 	if err != nil {
 		return fmt.Errorf("create binding: %s", err)
 	}
@@ -341,18 +334,18 @@ func (d *Dispatcher) AddBinding(bind *Binding) (err error) {
 //
 // Returns an error if the binding doesn't exist.
 func (d *Dispatcher) RemoveBinding(bind *Binding) error {
-	key, err := bind.key()
+	key, err := newBindingKey(bind)
 	if err != nil {
 		return err
 	}
 
-	var existingID destinationID
-	if err := d.bindings.Lookup(key, &existingID); err != nil {
+	var existing bindingValue
+	if err := d.bindings.Lookup(key, &existing); err != nil {
 		return fmt.Errorf("remove binding: lookup destination: %s", err)
 	}
 
 	dest := newDestinationFromBinding(bind)
-	if !d.destinations.HasID(dest, existingID) {
+	if !d.destinations.HasID(dest, existing.ID) {
 		return fmt.Errorf("remove binding: destination mismatch")
 	}
 
@@ -380,14 +373,14 @@ func (d *Dispatcher) Bindings() ([]*Binding, error) {
 
 	var (
 		key      bindingKey
-		id       destinationID
+		value    bindingValue
 		bindings []*Binding
 		iter     = d.bindings.Iterate()
 	)
-	for iter.Next(&key, &id) {
-		dest := dests[id]
+	for iter.Next(&key, &value) {
+		dest := dests[value.ID]
 		if dest == nil {
-			return nil, fmt.Errorf("no destination for id %d", id)
+			return nil, fmt.Errorf("no destination for id %d", value.ID)
 		}
 
 		bindings = append(bindings, newBindingFromBPF(dest.Label, &key))
