@@ -20,7 +20,7 @@ func testTubectl(tb testing.TB, netns ns.NetNS, cmd string, args ...string) (*by
 	}, args...)
 
 	output := new(bytes.Buffer)
-	if err := tubectl(output, output, args...); err != nil {
+	if err := tubectl(output, output, args); err != nil {
 
 		return output, err
 	}
