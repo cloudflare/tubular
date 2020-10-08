@@ -8,7 +8,7 @@ import (
 	"code.cfops.it/sys/tubular/internal"
 )
 
-func list(e env, args ...string) error {
+func list(e *env, args ...string) error {
 	if len(args) > 0 {
 		return fmt.Errorf("invalid arguments")
 	}

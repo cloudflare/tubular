@@ -7,7 +7,7 @@ import (
 	"code.cfops.it/sys/tubular/internal"
 )
 
-func bind(e env, args ...string) error {
+func bind(e *env, args ...string) error {
 	set := e.newFlagSet("bind")
 	set.Usage = func() {
 		fmt.Fprintf(set.Output(), "Usage: %s <label> <protocol> <ip[/mask]> <port>\n", set.Name())
@@ -31,7 +31,7 @@ func bind(e env, args ...string) error {
 	return dp.AddBinding(bind)
 }
 
-func unbind(e env, args ...string) error {
+func unbind(e *env, args ...string) error {
 	set := e.newFlagSet("unbind")
 	set.Usage = func() {
 		fmt.Fprintf(set.Output(), "Usage: %s <label> <protocol> <ip[/mask]> <port>\n", set.Name())

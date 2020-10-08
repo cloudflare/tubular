@@ -8,7 +8,7 @@ import (
 // Version is replaced by the Makefile.
 var Version = "git"
 
-func version(e env, args ...string) error {
+func version(e *env, args ...string) error {
 	if len(args) > 0 {
 		return fmt.Errorf("invalid arguments")
 	}

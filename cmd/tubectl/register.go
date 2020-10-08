@@ -11,7 +11,7 @@ Usually used together with SystemD socket activation.
 
 `
 
-func register(e env, args ...string) error {
+func register(e *env, args ...string) error {
 	set := e.newFlagSet("register")
 	set.Usage = func() {
 		fmt.Fprintf(set.Output(), registerUsageMsg, set.Name())

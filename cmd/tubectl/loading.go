@@ -7,7 +7,7 @@ import (
 	"code.cfops.it/sys/tubular/internal"
 )
 
-func load(e env, args ...string) error {
+func load(e *env, args ...string) error {
 	if len(args) > 0 {
 		return fmt.Errorf("invalid arguments")
 	}
@@ -29,7 +29,7 @@ func load(e env, args ...string) error {
 	return nil
 }
 
-func unload(e env, args ...string) error {
+func unload(e *env, args ...string) error {
 	if len(args) > 0 {
 		return fmt.Errorf("invalid arguments")
 	}

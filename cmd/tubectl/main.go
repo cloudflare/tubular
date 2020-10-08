@@ -47,7 +47,7 @@ func (e *env) newFlagSet(name string) *flag.FlagSet {
 	return set
 }
 
-type cmdFunc func(env, ...string) error
+type cmdFunc func(*env, ...string) error
 
 func tubectl(stdout, stderr io.Writer, args []string) (err error) {
 	defer func() {
@@ -118,7 +118,7 @@ func tubectl(stdout, stderr io.Writer, args []string) (err error) {
 		return fmt.Errorf("unknown command '%s'", cmd)
 	}
 
-	if err := cmdFn(e, cmdArgs...); err != nil {
+	if err := cmdFn(&e, cmdArgs...); err != nil {
 		return fmt.Errorf("%s: %s", cmd, err)
 	}
 
