@@ -12,7 +12,7 @@ func load(e *env, args ...string) error {
 		return fmt.Errorf("invalid arguments")
 	}
 
-	dp, err := e.loadDispatcher()
+	dp, err := e.createDispatcher()
 	if errors.Is(err, internal.ErrLoaded) {
 		fmt.Fprintln(e.stderr, "dispatcher is already loaded in", e.netns)
 		return nil

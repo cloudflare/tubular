@@ -10,6 +10,8 @@ import (
 
 	"code.cfops.it/sys/tubular/internal"
 	"code.cfops.it/sys/tubular/internal/rlimit"
+
+	"golang.org/x/sys/unix"
 )
 
 type env struct {
@@ -42,12 +44,22 @@ var (
 	errBadFD  = syscall.EBADF
 )
 
-func (e *env) adjustMemlimit() error {
+func (e *env) setupEnv() error {
+	if !isBpfFsMounted(e.bpfFs) {
+		return fmt.Errorf("bpf file-system not mounted at %v", e.bpfFs)
+	}
+
 	return rlimit.SetLockedMemoryLimits(e.memlimit)
 }
 
-func (e *env) loadDispatcher() (*internal.Dispatcher, error) {
-	if err := e.adjustMemlimit(); err != nil {
+func isBpfFsMounted(path string) bool {
+	var fs unix.Statfs_t
+	err := unix.Statfs(path, &fs)
+	return err == nil && fs.Type == unix.BPF_FS_MAGIC
+}
+
+func (e *env) createDispatcher() (*internal.Dispatcher, error) {
+	if err := e.setupEnv(); err != nil {
 		return nil, err
 	}
 
@@ -60,7 +72,7 @@ func (e *env) loadDispatcher() (*internal.Dispatcher, error) {
 }
 
 func (e *env) openDispatcher() (*internal.Dispatcher, error) {
-	if err := e.adjustMemlimit(); err != nil {
+	if err := e.setupEnv(); err != nil {
 		return nil, err
 	}
 
