@@ -46,6 +46,19 @@ func (e *env) adjustMemlimit() error {
 	return rlimit.SetLockedMemoryLimits(e.memlimit)
 }
 
+func (e *env) loadDispatcher() (*internal.Dispatcher, error) {
+	if err := e.adjustMemlimit(); err != nil {
+		return nil, err
+	}
+
+	dp, err := internal.CreateDispatcher(e.netns, e.bpfFs)
+	if err != nil {
+		return nil, fmt.Errorf("can't load dispatcher: %w", err)
+	}
+
+	return dp, nil
+}
+
 func (e *env) openDispatcher() (*internal.Dispatcher, error) {
 	if err := e.adjustMemlimit(); err != nil {
 		return nil, err
