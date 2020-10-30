@@ -5,20 +5,17 @@
 set -eu
 set -o pipefail
 
-readonly default_version=5.9-rc1
+readonly default_version=5.10-rc1
 
 if [[ "${1:-}" = "--in-vm" ]]; then
   shift
 
   mount -t bpf bpf /sys/fs/bpf
-  export CGO_ENABLED=0
-  export GOFLAGS=-mod=readonly
   export GOPATH=/run/go-path
   export GOPROXY=file:///run/go-root/pkg/mod/cache/download
   export GOCACHE=/run/go-cache
 
-  echo Running tests...
-  go test -v ./...
+  make test
   touch "$1/success"
   exit 0
 fi
