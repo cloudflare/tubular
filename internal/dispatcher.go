@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"syscall"
 
 	"github.com/cilium/ebpf"
@@ -32,6 +34,7 @@ var (
 
 // Dispatcher manipulates the socket dispatch data plane.
 type Dispatcher struct {
+	stateMu      sync.Locker
 	netns        *netns
 	link         *link.RawLink
 	Path         string
@@ -44,11 +47,6 @@ type Dispatcher struct {
 //
 // Returns ErrLoaded if the namespace already has the dispatcher enabled.
 func CreateDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
-	onError := func(fn func()) {
-		if err != nil {
-			fn()
-		}
-	}
 	closeOnError := func(c io.Closer) {
 		if err != nil {
 			c.Close()
@@ -72,24 +70,25 @@ func CreateDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 		pinPath = netns.DispatcherStatePath()
 	)
 
-	if err := os.Mkdir(pinPath, 0700); os.IsExist(err) {
-		return nil, fmt.Errorf("create state directory %s: %w", pinPath, ErrLoaded)
-	} else if err != nil {
-		return nil, fmt.Errorf("create state directory: %s", err)
-	}
-	defer onError(func() {
-		os.RemoveAll(pinPath)
-	})
-
-	dir, err := os.Open(pinPath)
+	tempDir, err := ioutil.TempDir(filepath.Dir(pinPath), "tubular")
 	if err != nil {
-		return nil, fmt.Errorf("can't open state directory: %s", err)
+		return nil, fmt.Errorf("can't create temp directory: %s", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dir, err := os.Open(tempDir)
+	if err != nil {
+		return nil, err
 	}
 	defer closeOnError(dir)
 
-	if err := lock.TryLockExclusive(dir); err != nil {
-		return nil, err
+	stateMu, err := lock.Exclusive(dir)
+	if err != nil {
+		return nil, fmt.Errorf("can't lock state directory: %s", err)
 	}
+
+	stateMu.Lock()
+	defer stateMu.Unlock()
 
 	coll, err = ebpf.NewCollection(spec)
 	if err != nil {
@@ -98,7 +97,7 @@ func CreateDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 	defer coll.Close()
 
 	for name, m := range coll.Maps {
-		if err := m.Pin(filepath.Join(pinPath, name)); err != nil {
+		if err := m.Pin(filepath.Join(tempDir, name)); err != nil {
 			return nil, fmt.Errorf("can't pin map %s: %s", name, err)
 		}
 	}
@@ -109,20 +108,22 @@ func CreateDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 	}
 	defer bpf.Close()
 
-	dests, err := createDestinations(&bpf, filepath.Join(pinPath, "destinations"))
+	dests, err := createDestinations(&bpf, filepath.Join(tempDir, "destinations"))
 	if err != nil {
 		return nil, err
 	}
 	defer closeOnError(dests)
 
+	// The dispatcher is active after this call. Since we've not taken any
+	// lock, this can lead to two programs being active. We rely on the socket
+	// lookup semantics to prevent this being an issue.
 	attach, err := netns.AttachProgram(bpf.ProgramDispatcher)
 	if err != nil {
 		return nil, err
 	}
 	defer closeOnError(attach)
 
-	linkPath := filepath.Join(pinPath, "link")
-	if err := attach.Pin(linkPath); err != nil {
+	if err := attach.Pin(filepath.Join(tempDir, "link")); err != nil {
 		return nil, fmt.Errorf("can't pin link: %s", err)
 	}
 
@@ -131,7 +132,16 @@ func CreateDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 		return nil, fmt.Errorf("can't clone bindings map: %s", err)
 	}
 
-	return &Dispatcher{netns, attach, pinPath, mapBindings, dests, dir}, nil
+	// Rename will succeed if pinPath doesn't exist or is an empty directory,
+	// otherwise it will return an error. In that case tempDir is removed,
+	// and the pinned link + program are closed, undoing any changes.
+	if err := os.Rename(tempDir, pinPath); os.IsExist(err) || errors.Is(err, syscall.ENOTEMPTY) {
+		return nil, fmt.Errorf("can't create dispatcher: %w", ErrLoaded)
+	} else if err != nil {
+		return nil, fmt.Errorf("can't create dispatcher: %s", err)
+	}
+
+	return &Dispatcher{stateMu, netns, attach, pinPath, mapBindings, dests, dir}, nil
 }
 
 // OpenDispatcher loads an existing dispatcher from a namespace.
@@ -144,22 +154,13 @@ func OpenDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 		}
 	}
 
-	specs, err := newDispatcherSpecs()
-	if err != nil {
-		return nil, err
-	}
-
 	netns, err := newNetns(netnsPath, bpfFsPath)
 	if err != nil {
 		return nil, err
 	}
 	defer closeOnError(netns)
 
-	var (
-		coll    *ebpf.Collection
-		spec    = specs.CollectionSpec()
-		pinPath = netns.DispatcherStatePath()
-	)
+	pinPath := netns.DispatcherStatePath()
 
 	dir, err := os.Open(pinPath)
 	if os.IsNotExist(err) {
@@ -169,9 +170,23 @@ func OpenDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 	}
 	defer closeOnError(dir)
 
-	if err := lock.TryLockExclusive(dir); err != nil {
+	stateMu, err := lock.Exclusive(dir)
+	if err != nil {
+		return nil, fmt.Errorf("can't lock state directory: %s", err)
+	}
+
+	stateMu.Lock()
+	defer stateMu.Unlock()
+
+	specs, err := newDispatcherSpecs()
+	if err != nil {
 		return nil, err
 	}
+
+	var (
+		coll *ebpf.Collection
+		spec = specs.CollectionSpec()
+	)
 
 	pinnedMaps := make(map[string]*ebpf.Map)
 	for name, mapSpec := range spec.Maps {
@@ -226,13 +241,14 @@ func OpenDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 
 	// TODO: We should verify that the attached program tag (aka truncated sha1)
 	// matches bpf.ProgramDispatcher.
-	return &Dispatcher{netns, attach, pinPath, mapBindings, dests, dir}, nil
+	return &Dispatcher{stateMu, netns, attach, pinPath, mapBindings, dests, dir}, nil
 }
 
 // Close frees associated resources.
 //
 // It does not remove the dispatcher, see Unload for that.
 func (d *Dispatcher) Close() error {
+	// No need to lock the state, since we don't modify it here.
 	if err := d.link.Close(); err != nil {
 		return fmt.Errorf("can't close link: %s", err)
 	}
@@ -245,7 +261,6 @@ func (d *Dispatcher) Close() error {
 	if err := d.netns.Close(); err != nil {
 		return fmt.Errorf("can't close netns handle: %s", err)
 	}
-	// Close the directory as the last step, since it releases the lock.
 	if err := d.dir.Close(); err != nil {
 		return fmt.Errorf("can't close state directory handle: %s", err)
 	}
@@ -256,11 +271,17 @@ func (d *Dispatcher) Close() error {
 //
 // It isn't necessary to call Close() afterwards.
 func (d *Dispatcher) Unload() error {
+	// We have to Close after Unlock, since it panics otherwise.
+	defer d.Close()
+
+	d.stateMu.Lock()
+	defer d.stateMu.Unlock()
+
 	if err := os.RemoveAll(d.Path); err != nil {
 		return fmt.Errorf("can't remove pinned state: %s", err)
 	}
 
-	return d.Close()
+	return nil
 }
 
 type Domain uint8
@@ -307,6 +328,9 @@ func (p Protocol) String() string {
 //
 // Returns an error if the binding is already pointing at the specified label.
 func (d *Dispatcher) AddBinding(bind *Binding) (err error) {
+	d.stateMu.Lock()
+	defer d.stateMu.Unlock()
+
 	onError := func(fn func()) {
 		if err != nil {
 			fn()
@@ -339,6 +363,9 @@ func (d *Dispatcher) AddBinding(bind *Binding) (err error) {
 //
 // Returns an error if the binding doesn't exist.
 func (d *Dispatcher) RemoveBinding(bind *Binding) error {
+	d.stateMu.Lock()
+	defer d.stateMu.Unlock()
+
 	key, err := newBindingKey(bind)
 	if err != nil {
 		return err
@@ -371,6 +398,9 @@ func (d *Dispatcher) RemoveBinding(bind *Binding) error {
 //
 // The returned slice is sorted.
 func (d *Dispatcher) Bindings() ([]*Binding, error) {
+	d.stateMu.Lock()
+	defer d.stateMu.Unlock()
+
 	dests, err := d.destinations.List()
 	if err != nil {
 		return nil, fmt.Errorf("list destination IDs: %s", err)
@@ -466,6 +496,9 @@ func (d *Dispatcher) RegisterSocket(label string, conn syscall.Conn) (dest *Dest
 		return nil, false, err
 	}
 
+	d.stateMu.Lock()
+	defer d.stateMu.Unlock()
+
 	created, err = d.destinations.AddSocket(dest, raw)
 	if err != nil {
 		return nil, false, fmt.Errorf("add socket: %s", err)
@@ -481,6 +514,9 @@ type Metrics struct {
 
 // Metrics returns current counters from the data plane.
 func (d *Dispatcher) Metrics() (*Metrics, error) {
+	d.stateMu.Lock()
+	defer d.stateMu.Unlock()
+
 	destMetrics, err := d.destinations.Metrics()
 	if err != nil {
 		return nil, fmt.Errorf("destination metrics: %s", err)

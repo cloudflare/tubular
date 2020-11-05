@@ -1,11 +1,14 @@
 package internal
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
+	"runtime"
 	"syscall"
 	"testing"
+	"time"
 
 	"code.cfops.it/sys/tubular/internal/testutil"
 )
@@ -23,8 +26,6 @@ func TestLoadDispatcher(t *testing.T) {
 	}
 
 	dp = mustOpenDispatcher(t, netns.Path())
-	defer dp.Close()
-
 	if err := dp.Unload(); err != nil {
 		t.Fatal("Can't unload:", err)
 	}
@@ -37,12 +38,50 @@ func TestLoadDispatcher(t *testing.T) {
 }
 
 func TestDispatcherLocking(t *testing.T) {
-	netns := testutil.NewNetNS(t)
-	mustCreateDispatcher(t, netns.Path())
+	procs := runtime.GOMAXPROCS(0)
+	if procs < 2 {
+		t.Error("Need GOMAXPROCS >= 2")
+	}
 
-	_, err := OpenDispatcher(netns.Path(), "/sys/fs/bpf")
-	if err == nil {
-		t.Fatal("Dispatcher doesn't lock the state")
+	netns := testutil.NewNetNS(t)
+	netnsPath := netns.Path()
+	done := make(chan struct{}, procs-1)
+	open := func() {
+		for {
+			dp, err := OpenDispatcher(netnsPath, "/sys/fs/bpf")
+			if errors.Is(err, ErrNotLoaded) {
+				continue
+			}
+			if err != nil {
+				t.Error("Can't open dispatcher:", err)
+				break
+			}
+			dp.Close()
+			break
+		}
+
+		done <- struct{}{}
+	}
+
+	for i := 0; i < procs-1; i++ {
+		go open()
+	}
+
+	time.Sleep(50 * time.Millisecond)
+
+	mustCreateDispatcher(t, netnsPath)
+
+	if _, err := CreateDispatcher(netnsPath, "/sys/fs/bpf"); !errors.Is(err, ErrLoaded) {
+		t.Fatal("Creating an existing dispatcher doesn't return ErrLoaded:", err)
+	}
+
+	timeout := time.After(time.Second)
+	for i := 0; i < procs-1; i++ {
+		select {
+		case <-done:
+		case <-timeout:
+			t.Fatal("Can't open multiple dispatchers")
+		}
 	}
 }
 
@@ -378,7 +417,10 @@ func mustCreateDispatcher(tb testing.TB, netns string) *Dispatcher {
 		tb.Fatal("Can't create dispatcher:", err)
 	}
 
-	tb.Cleanup(func() { dp.Unload() })
+	tb.Cleanup(func() {
+		os.RemoveAll(dp.Path)
+		dp.Close()
+	})
 	return dp
 }
 

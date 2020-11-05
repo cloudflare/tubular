@@ -1,46 +1,95 @@
 package lock
 
 import (
-	"errors"
 	"io/ioutil"
 	"os"
 	"testing"
-
-	"golang.org/x/sys/unix"
+	"time"
 )
 
-func TestExclusiveLock(t *testing.T) {
+func TestLocking(t *testing.T) {
+	tests := []struct {
+		name        string
+		a, b        func(*os.File) (*File, error)
+		shouldBlock bool
+	}{
+		{"Ex-Ex", Exclusive, Exclusive, true},
+		{"Ex-Sh", Exclusive, Shared, true},
+		{"Sh-Sh", Shared, Shared, false},
+		{"Sh-Ex", Shared, Exclusive, true},
+	}
+
+	chanClosed := func(ch <-chan struct{}) bool {
+		select {
+		case <-ch:
+			return true
+		case <-time.After(50 * time.Millisecond):
+			return false
+		}
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			newHandle := mustTempDir(t)
+			a, err := test.a(newHandle())
+			if err != nil {
+				t.Fatal("Can't create lock a:", err)
+			}
+
+			b, err := test.b(newHandle())
+			if err != nil {
+				t.Fatal("Can't create lock:", err)
+			}
+
+			a.Lock()
+			acquired := make(chan struct{})
+			go func() {
+				b.Lock()
+				close(acquired)
+			}()
+			defer b.Unlock()
+
+			if test.shouldBlock {
+				if chanClosed(acquired) {
+					t.Fatal("Lock doesn't block")
+				}
+
+				a.Unlock()
+
+				if !chanClosed(acquired) {
+					t.Fatal("Unlock doesn't unblock")
+				}
+			} else {
+				if !chanClosed(acquired) {
+					t.Fatal("Lock blocks")
+				}
+
+				a.Unlock()
+			}
+		})
+	}
+}
+
+func mustTempDir(tb testing.TB) func() *os.File {
+	tb.Helper()
+
 	dir, err := ioutil.TempDir("", "tubular")
 	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
-
-	fh1, err := os.Open(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer fh1.Close()
-
-	err = TryLockExclusive(fh1)
-	if err != nil {
-		t.Fatal("Can't lock file:", err)
+		tb.Fatal(err)
 	}
 
-	fh2, err := os.Open(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer fh2.Close()
+	tb.Cleanup(func() {
+		os.RemoveAll(dir)
+	})
 
-	err = TryLockExclusive(fh2)
-	if !errors.Is(err, unix.EWOULDBLOCK) {
-		t.Fatal("Expected EWOULDBLOCK, got", err)
-	}
-
-	fh1.Close()
-	err = TryLockExclusive(fh2)
-	if err != nil {
-		t.Fatal("Closing fd doesn't release the lock:", err)
+	return func() *os.File {
+		handle, err := os.Open(dir)
+		if err != nil {
+			tb.Fatal("Can't open temporary dir:", err)
+		}
+		tb.Cleanup(func() { handle.Close() })
+		return handle
 	}
 }

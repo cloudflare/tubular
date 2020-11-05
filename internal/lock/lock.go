@@ -5,25 +5,73 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync"
+	"syscall"
 
 	"golang.org/x/sys/unix"
 )
 
-// TryLockExclusive places an exclusive advisory file lock on fd.
+// File is a flock() based avisory file lock.
 //
-// The lock is released when fd is closed.
+// dup()ed file descriptors share the same file description, and so share the
+// same lock.
+type File struct {
+	raw syscall.RawConn
+	how int
+}
+
+var _ sync.Locker = (*File)(nil)
+
+// Exclusive creates a new exclusive lock.
 //
-// Returns unix.EWOULDBLOCK if fd is already locked.
-func TryLockExclusive(file *os.File) error {
+//
+// Returns an unlocked lock.
+func Exclusive(file *os.File) (*File, error) {
 	raw, err := file.SyscallConn()
 	if err != nil {
-		return fmt.Errorf("lock exclusive: %s", err)
+		return nil, fmt.Errorf("lock exclusive: %s", err)
 	}
 
+	return &File{raw, unix.LOCK_EX}, nil
+}
+
+// Shared creates a new shared lock.
+//
+// The lock is implicitly released when the file description of file is closed.
+//
+// Returns an unlocked lock.
+func Shared(file *os.File) (*File, error) {
+	raw, err := file.SyscallConn()
+	if err != nil {
+		return nil, fmt.Errorf("lock exclusive: %s", err)
+	}
+
+	return &File{raw, unix.LOCK_SH}, nil
+}
+
+// Lock implements sync.Locker.
+//
+// It panics if the underlying syscalls return an error.
+func (fl *File) Lock() {
+	if err := fl.flock(fl.how); err != nil {
+		panic(err.Error())
+	}
+}
+
+// Unlock implements sync.Locker.
+//
+// It panics if the underlying syscalls return an error.
+func (fl *File) Unlock() {
+	if err := fl.flock(unix.LOCK_UN); err != nil {
+		panic(err.Error())
+	}
+}
+
+func (fl *File) flock(how int) error {
 	var flockErr error
-	err = raw.Control(func(fd uintptr) {
+	err := fl.raw.Control(func(fd uintptr) {
 		for {
-			flockErr = unix.Flock(int(fd), unix.LOCK_EX|unix.LOCK_NB)
+			flockErr = unix.Flock(int(fd), how)
 			if errors.Is(flockErr, unix.EINTR) {
 				continue
 			}
@@ -34,7 +82,7 @@ func TryLockExclusive(file *os.File) error {
 		}
 	})
 	if err != nil {
-		return fmt.Errorf("lock exclusive: %s", err)
+		return fmt.Errorf("lock exclusive: acquire fd: %s", err)
 	}
 	return flockErr
 }
