@@ -11,6 +11,7 @@ if [[ "${1:-}" = "--in-vm" ]]; then
   shift
 
   mount -t bpf bpf /sys/fs/bpf
+  export CCACHE_DISABLE=1
   export GOPATH=/run/go-path
   export GOPROXY=file:///run/go-root/pkg/mod/cache/download
   export GOCACHE=/run/go-cache
