@@ -64,11 +64,7 @@ func CreateDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 	}
 	defer closeOnError(netns)
 
-	var (
-		coll    *ebpf.Collection
-		spec    = specs.CollectionSpec()
-		pinPath = netns.DispatcherStatePath()
-	)
+	pinPath := netns.DispatcherStatePath()
 
 	tempDir, err := ioutil.TempDir(filepath.Dir(pinPath), "tubular")
 	if err != nil {
@@ -90,25 +86,15 @@ func CreateDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 	stateMu.Lock()
 	defer stateMu.Unlock()
 
-	coll, err = ebpf.NewCollection(spec)
+	bpf, err := specs.Load(&ebpf.CollectionOptions{
+		Maps: ebpf.MapOptions{PinPath: tempDir},
+	})
 	if err != nil {
-		return nil, fmt.Errorf("can't load BPF: %s", err)
-	}
-	defer coll.Close()
-
-	for name, m := range coll.Maps {
-		if err := m.Pin(filepath.Join(tempDir, name)); err != nil {
-			return nil, fmt.Errorf("can't pin map %s: %s", name, err)
-		}
-	}
-
-	var bpf dispatcherObjects
-	if err := coll.Assign(&bpf); err != nil {
-		return nil, fmt.Errorf("can't assign objects: %s", err)
+		return nil, fmt.Errorf("load BPF: %s", err)
 	}
 	defer bpf.Close()
 
-	dests, err := createDestinations(&bpf, filepath.Join(tempDir, "destinations"))
+	dests, err := newDestinations(bpf, tempDir)
 	if err != nil {
 		return nil, err
 	}
@@ -183,46 +169,15 @@ func OpenDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 		return nil, err
 	}
 
-	var (
-		coll *ebpf.Collection
-		spec = specs.CollectionSpec()
-	)
-
-	pinnedMaps := make(map[string]*ebpf.Map)
-	for name, mapSpec := range spec.Maps {
-		m, err := ebpf.LoadPinnedMap(filepath.Join(pinPath, name))
-		if err != nil {
-			return nil, fmt.Errorf("can't load pinned map %s: %s", name, err)
-		}
-		defer closeOnError(m)
-
-		if err := checkMap(mapSpec, m); err != nil {
-			return nil, fmt.Errorf("pinned map %s is incompatible: %s", name, err)
-		}
-
-		pinnedMaps[name] = m
-	}
-
-	if err := spec.RewriteMaps(pinnedMaps); err != nil {
-		return nil, fmt.Errorf("can't use pinned maps: %s", err)
-	}
-
-	coll, err = ebpf.NewCollection(spec)
+	bpf, err := specs.Load(&ebpf.CollectionOptions{
+		Maps: ebpf.MapOptions{PinPath: pinPath},
+	})
 	if err != nil {
-		return nil, fmt.Errorf("can't load BPF: %s", err)
-	}
-
-	// RewriteMaps removes maps from spec, so we have to
-	// add them back here.
-	coll.Maps = pinnedMaps
-
-	var bpf dispatcherObjects
-	if err := coll.Assign(&bpf); err != nil {
-		return nil, fmt.Errorf("can't assign objects: %s", err)
+		return nil, fmt.Errorf("load BPF: %s", err)
 	}
 	defer bpf.Close()
 
-	dests, err := openDestinations(&bpf, filepath.Join(pinPath, "destinations"))
+	dests, err := newDestinations(bpf, pinPath)
 	if err != nil {
 		return nil, err
 	}
@@ -449,22 +404,6 @@ func (d *Dispatcher) Bindings() ([]*Binding, error) {
 	})
 
 	return bindings, nil
-}
-
-func checkMap(spec *ebpf.MapSpec, m *ebpf.Map) error {
-	abi := m.ABI()
-	if abi.Type != spec.Type {
-		return fmt.Errorf("types differ")
-	}
-	if abi.KeySize != spec.KeySize {
-		return fmt.Errorf("key sizes differ")
-	}
-	if abi.ValueSize != spec.ValueSize {
-		return fmt.Errorf("value sizes differ")
-	}
-
-	// TODO: Check for flags?
-	return nil
 }
 
 type SocketCookie uint64

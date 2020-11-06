@@ -194,25 +194,38 @@ type destinations struct {
 }
 
 var destinationsSpec = &ebpf.MapSpec{
-	Name:       "tube_dest_ids",
+	Name:       "destinations",
 	Type:       ebpf.Hash,
 	KeySize:    uint32(binary.Size(destinationKey{})),
 	ValueSize:  uint32(binary.Size(destinationAlloc{})),
 	MaxEntries: 512,
 }
 
-func newDestinations(bpf *dispatcherObjects, allocs *ebpf.Map) (*destinations, error) {
+func newDestinations(bpf *dispatcherObjects, pinPath string) (*destinations, error) {
 	maxEntries := bpf.MapSockets.ABI().MaxEntries
 	if destMax := bpf.MapDestinationMetrics.ABI().MaxEntries; destMax != maxEntries {
 		return nil, fmt.Errorf("socket and metrics map size doesn't match: %d != %d", maxEntries, destMax)
 	}
 
+	spec := destinationsSpec.Copy()
+	if pinPath != "" {
+		spec.Pinning = ebpf.PinByName
+	}
+
+	allocs, err := ebpf.NewMapWithOptions(spec, ebpf.MapOptions{PinPath: pinPath})
+	if err != nil {
+		return nil, fmt.Errorf("create destinations map: %s", err)
+	}
+
 	mapSockets, err := bpf.MapSockets.Clone()
 	if err != nil {
+		allocs.Close()
 		return nil, fmt.Errorf("can't clone sockets map: %s", err)
 	}
+
 	mapDestinationMetrics, err := bpf.MapDestinationMetrics.Clone()
 	if err != nil {
+		allocs.Close()
 		mapSockets.Close()
 		return nil, fmt.Errorf("can't clone destination metrics map: %s", err)
 	}
@@ -223,42 +236,6 @@ func newDestinations(bpf *dispatcherObjects, allocs *ebpf.Map) (*destinations, e
 		mapDestinationMetrics,
 		destinationID(maxEntries),
 	}, nil
-}
-
-func createDestinations(bpf *dispatcherObjects, path string) (*destinations, error) {
-	allocs, err := ebpf.NewMap(destinationsSpec)
-	if err != nil {
-		return nil, fmt.Errorf("create destinations: %s", err)
-	}
-
-	dests, err := newDestinations(bpf, allocs)
-	if err != nil {
-		return nil, fmt.Errorf("create destinations: %s", err)
-	}
-
-	if path == "" {
-		return dests, nil
-	}
-
-	if err := allocs.Pin(path); err != nil {
-		return nil, fmt.Errorf("create destinations: %s", err)
-	}
-
-	return dests, nil
-}
-
-func openDestinations(bpf *dispatcherObjects, path string) (*destinations, error) {
-	allocs, err := ebpf.LoadPinnedMap(path)
-	if err != nil {
-		return nil, fmt.Errorf("can't load pinned destinations: %s", err)
-	}
-
-	if err := checkMap(destinationsSpec, allocs); err != nil {
-		allocs.Close()
-		return nil, fmt.Errorf("pinned destinations: %s", err)
-	}
-
-	return newDestinations(bpf, allocs)
 }
 
 func (dests *destinations) Close() error {

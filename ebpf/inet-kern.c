@@ -37,27 +37,30 @@ struct destination_metrics {
 	__u64 dropped_packets__incompatible_socket;
 };
 
-struct bpf_map_def SEC("maps") sockets = {
-	.type        = BPF_MAP_TYPE_SOCKMAP,
-	.max_entries = MAX_SOCKETS,
-	.key_size    = sizeof(destination_id_t),
-	.value_size  = sizeof(__u64),
-};
+struct {
+	__uint(type, BPF_MAP_TYPE_SOCKMAP);
+	__uint(key_size, sizeof(destination_id_t));
+	__uint(value_size, sizeof(__u64));
+	__uint(max_entries, MAX_SOCKETS);
+	__uint(pinning, LIBBPF_PIN_BY_NAME);
+} sockets SEC(".maps");
 
-struct bpf_map_def SEC("maps") bindings = {
-	.type        = BPF_MAP_TYPE_LPM_TRIE,
-	.max_entries = 4096,
-	.key_size    = sizeof(struct addr),
-	.value_size  = sizeof(struct binding),
-	.map_flags   = BPF_F_NO_PREALLOC,
-};
+struct {
+	__uint(type, BPF_MAP_TYPE_LPM_TRIE);
+	__type(key, struct addr);
+	__type(value, struct binding);
+	__uint(max_entries, 4096);
+	__uint(map_flags, BPF_F_NO_PREALLOC);
+	__uint(pinning, LIBBPF_PIN_BY_NAME);
+} bindings SEC(".maps");
 
-struct bpf_map_def SEC("maps") destination_metrics = {
-	.type        = BPF_MAP_TYPE_PERCPU_ARRAY,
-	.max_entries = MAX_SOCKETS,
-	.key_size    = sizeof(destination_id_t),
-	.value_size  = sizeof(struct destination_metrics),
-};
+struct {
+	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+	__type(key, destination_id_t);
+	__type(value, struct destination_metrics);
+	__uint(max_entries, MAX_SOCKETS);
+	__uint(pinning, LIBBPF_PIN_BY_NAME);
+} destination_metrics SEC(".maps");
 
 static inline void cleanup_sk(struct bpf_sock **sk)
 {

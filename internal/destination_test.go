@@ -1,9 +1,13 @@
 package internal
 
 import (
+	"io/ioutil"
 	"net"
+	"os"
 	"syscall"
 	"testing"
+
+	"github.com/cilium/ebpf"
 )
 
 func TestDestinationsHasID(t *testing.T) {
@@ -137,18 +141,26 @@ func TestDestinationsAddSocket(t *testing.T) {
 func mustNewDestinations(tb testing.TB) *destinations {
 	tb.Helper()
 
+	tempDir, err := ioutil.TempDir("/sys/fs/bpf", "tubular")
+	if err != nil {
+		tb.Fatal(err)
+	}
+	tb.Cleanup(func() { os.RemoveAll(tempDir) })
+
 	spec, err := newDispatcherSpecs()
 	if err != nil {
 		tb.Fatal("Can't create specs:", err)
 	}
 
-	obj, err := spec.Load(nil)
+	obj, err := spec.Load(&ebpf.CollectionOptions{
+		Maps: ebpf.MapOptions{PinPath: tempDir},
+	})
 	if err != nil {
 		tb.Fatal("Can't load objects:", err)
 	}
 	tb.Cleanup(func() { obj.Close() })
 
-	lbls, err := createDestinations(obj, "")
+	lbls, err := newDestinations(obj, "")
 	if err != nil {
 		tb.Fatal("Can't create labels:", err)
 	}
