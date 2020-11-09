@@ -9,11 +9,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"syscall"
 	"testing"
 	"time"
 
+	"code.cfops.it/sys/tubular/internal/utils"
 	"github.com/containernetworking/plugins/pkg/ns"
 	"golang.org/x/sys/unix"
 )
@@ -161,7 +161,7 @@ func ListenWithName(tb testing.TB, netns ns.NetNS, network, address, name string
 				for {
 					conn, err := ln.Accept()
 					if err != nil {
-						if !isErrNetClosing(err) {
+						if !utils.IsErrNetClosed(err) {
 							tb.Error("Can't accept:", err)
 						}
 						return
@@ -201,7 +201,7 @@ func ListenWithName(tb testing.TB, netns ns.NetNS, network, address, name string
 					var buf [1]byte
 					_, from, err := conn.ReadFrom(buf[:])
 					if err != nil {
-						if !isErrNetClosing(err) {
+						if !utils.IsErrNetClosed(err) {
 							tb.Error("Can't read UDP packets:", err)
 						}
 						return
@@ -217,16 +217,6 @@ func ListenWithName(tb testing.TB, netns ns.NetNS, network, address, name string
 	})
 
 	return
-}
-
-// Check if error is net.ErrNetClosing.
-//
-// Until net.ErrNetClosing gets exported (Go 1.16), match on the error message
-// which is guaranteed to stay consistent.
-//
-// See https://github.com/golang/go/issues/4373
-func isErrNetClosing(err error) bool {
-	return strings.Contains(err.Error(), "use of closed network connection")
 }
 
 // CanDial returns true if an address can be dialled in a specific network namespace.

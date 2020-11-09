@@ -2,7 +2,10 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"log"
 	"os"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -99,6 +102,13 @@ type tubectlTestCall struct {
 	// standard input, standard output, or standard error. If non-nil, entry i
 	// becomes file descriptor 3+i.
 	ExtraFds testFds
+
+	// Context cancelled when test call should return. Controlled with Start() and Stop().
+	ctx    context.Context
+	cancel context.CancelFunc
+
+	// Channel for passing error from Run(). Use via Start() and Stop().
+	errs chan error
 }
 
 func (tc *tubectlTestCall) Run(tb testing.TB) (*bytes.Buffer, error) {
@@ -108,6 +118,8 @@ func (tc *tubectlTestCall) Run(tb testing.TB) (*bytes.Buffer, error) {
 	env := env{
 		stdout: output,
 		stderr: output,
+		ctx:    tc.ctx,
+		log:    log.New(&testLogWriter{tb}, "", log.LstdFlags),
 		osFns: osFns{
 			getenv:  func(key string) string { return tc.getenv(key) },
 			newFile: func(fd uintptr, name string) *os.File { return tc.newFile(fd, name) },
@@ -119,6 +131,43 @@ func (tc *tubectlTestCall) Run(tb testing.TB) (*bytes.Buffer, error) {
 	err := tubectl(env, args)
 	tb.Logf("tubectl %s\n%s", strings.Join(args, " "), output)
 	return output, err
+}
+
+type testLogWriter struct {
+	tb testing.TB
+}
+
+func (w *testLogWriter) Write(p []byte) (int, error) {
+	w.tb.Log(string(p))
+	return len(p), nil
+}
+
+func (tc *tubectlTestCall) Start(tb testing.TB) {
+	if tc.ctx != nil {
+		return // already started
+	}
+
+	tc.ctx, tc.cancel = context.WithCancel(context.Background())
+	tc.errs = make(chan error, 1)
+
+	go func() {
+		_, err := tc.Run(tb)
+		tc.errs <- err
+		close(tc.errs)
+	}()
+	runtime.Gosched()
+}
+
+func (tc *tubectlTestCall) Stop() error {
+	if tc.ctx == nil {
+		return nil // not started
+	}
+
+	tc.cancel()
+	tc.ctx = nil
+
+	err := <-tc.errs
+	return err
 }
 
 func (tc *tubectlTestCall) getenv(key string) string {

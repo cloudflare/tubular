@@ -2,9 +2,11 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"syscall"
 
@@ -17,6 +19,8 @@ type env struct {
 	netns          string
 	bpfFs          string
 	memlimit       uint64
+	ctx            context.Context
+	log            *log.Logger
 	osFns
 }
 
@@ -31,6 +35,8 @@ var (
 	defaultEnv = env{
 		stdout: os.Stdout,
 		stderr: os.Stderr,
+		ctx:    context.Background(),
+		log:    log.New(log.Writer(), "", log.LstdFlags),
 		osFns: osFns{
 			getenv:  os.Getenv,
 			newFile: os.NewFile,
@@ -100,6 +106,7 @@ func tubectl(e env, args []string) (err error) {
 		"unbind":   unbind,
 		"list":     list,
 		"register": register,
+		"serve":    serve,
 	}
 
 	set.Usage = func() {
