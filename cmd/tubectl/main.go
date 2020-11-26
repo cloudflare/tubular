@@ -10,8 +10,6 @@ import (
 
 	"code.cfops.it/sys/tubular/internal"
 	"code.cfops.it/sys/tubular/internal/rlimit"
-
-	"golang.org/x/sys/unix"
 )
 
 type env struct {
@@ -45,17 +43,7 @@ var (
 )
 
 func (e *env) setupEnv() error {
-	if !isBpfFsMounted(e.bpfFs) {
-		return fmt.Errorf("bpf file-system not mounted at %v", e.bpfFs)
-	}
-
 	return rlimit.SetLockedMemoryLimits(e.memlimit)
-}
-
-func isBpfFsMounted(path string) bool {
-	var fs unix.Statfs_t
-	err := unix.Statfs(path, &fs)
-	return err == nil && fs.Type == unix.BPF_FS_MAGIC
 }
 
 func (e *env) createDispatcher() (*internal.Dispatcher, error) {

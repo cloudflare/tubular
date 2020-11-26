@@ -14,6 +14,7 @@ import (
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
+	"github.com/containernetworking/plugins/pkg/ns"
 	"golang.org/x/sys/unix"
 
 	"code.cfops.it/sys/tubular/internal/lock"
@@ -35,8 +36,8 @@ var (
 // Dispatcher manipulates the socket dispatch data plane.
 type Dispatcher struct {
 	stateMu      sync.Locker
-	netns        *netns
-	link         *link.RawLink
+	netns        ns.NetNS
+	link         *link.NetNsLink
 	Path         string
 	bindings     *ebpf.Map
 	destinations *destinations
@@ -58,13 +59,11 @@ func CreateDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 		return nil, err
 	}
 
-	netns, err := newNetns(netnsPath, bpfFsPath)
+	netns, pinPath, err := openNetNS(netnsPath, bpfFsPath)
 	if err != nil {
 		return nil, err
 	}
 	defer closeOnError(netns)
-
-	pinPath := netns.DispatcherStatePath()
 
 	tempDir, err := ioutil.TempDir(filepath.Dir(pinPath), "tubular")
 	if err != nil {
@@ -103,13 +102,13 @@ func CreateDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 	// The dispatcher is active after this call. Since we've not taken any
 	// lock, this can lead to two programs being active. We rely on the socket
 	// lookup semantics to prevent this being an issue.
-	attach, err := netns.AttachProgram(bpf.ProgramDispatcher)
+	link, err := link.AttachNetNs(int(netns.Fd()), bpf.ProgramDispatcher)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("attach program to netns %s: %s", netns.Path(), err)
 	}
-	defer closeOnError(attach)
+	defer closeOnError(link)
 
-	if err := attach.Pin(filepath.Join(tempDir, "link")); err != nil {
+	if err := link.Pin(filepath.Join(tempDir, "link")); err != nil {
 		return nil, fmt.Errorf("can't pin link: %s", err)
 	}
 
@@ -127,7 +126,7 @@ func CreateDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 		return nil, fmt.Errorf("can't create dispatcher: %s", err)
 	}
 
-	return &Dispatcher{stateMu, netns, attach, pinPath, mapBindings, dests, dir}, nil
+	return &Dispatcher{stateMu, netns, link, pinPath, mapBindings, dests, dir}, nil
 }
 
 // OpenDispatcher loads an existing dispatcher from a namespace.
@@ -140,13 +139,11 @@ func OpenDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 		}
 	}
 
-	netns, err := newNetns(netnsPath, bpfFsPath)
+	netns, pinPath, err := openNetNS(netnsPath, bpfFsPath)
 	if err != nil {
 		return nil, err
 	}
 	defer closeOnError(netns)
-
-	pinPath := netns.DispatcherStatePath()
 
 	dir, err := os.Open(pinPath)
 	if os.IsNotExist(err) {
@@ -184,9 +181,16 @@ func OpenDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 	defer closeOnError(dests)
 
 	linkPath := filepath.Join(pinPath, "link")
-	attach, err := link.LoadPinnedRawLink(linkPath)
+	link, err := link.LoadPinnedNetNs(linkPath)
 	if err != nil {
 		return nil, fmt.Errorf("load dispatcher: %s", err)
+	}
+	defer closeOnError(link)
+
+	if compat, err := isLinkCompatible(link, bpf.ProgramDispatcher); err != nil {
+		return nil, fmt.Errorf("check dispatcher compatibility: %s", err)
+	} else if !compat {
+		return nil, fmt.Errorf("loaded dispatcher is incompatible")
 	}
 
 	mapBindings, err := bpf.MapBindings.Clone()
@@ -194,9 +198,7 @@ func OpenDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 		return nil, fmt.Errorf("can't clone bindings map: %s", err)
 	}
 
-	// TODO: We should verify that the attached program tag (aka truncated sha1)
-	// matches bpf.ProgramDispatcher.
-	return &Dispatcher{stateMu, netns, attach, pinPath, mapBindings, dests, dir}, nil
+	return &Dispatcher{stateMu, netns, link, pinPath, mapBindings, dests, dir}, nil
 }
 
 // Close frees associated resources.

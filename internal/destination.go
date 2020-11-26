@@ -202,8 +202,8 @@ var destinationsSpec = &ebpf.MapSpec{
 }
 
 func newDestinations(bpf *dispatcherObjects, pinPath string) (*destinations, error) {
-	maxEntries := bpf.MapSockets.ABI().MaxEntries
-	if destMax := bpf.MapDestinationMetrics.ABI().MaxEntries; destMax != maxEntries {
+	maxEntries := bpf.MapSockets.MaxEntries()
+	if destMax := bpf.MapDestinationMetrics.MaxEntries(); destMax != maxEntries {
 		return nil, fmt.Errorf("socket and metrics map size doesn't match: %d != %d", maxEntries, destMax)
 	}
 
