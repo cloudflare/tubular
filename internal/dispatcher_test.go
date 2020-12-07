@@ -103,7 +103,7 @@ func TestAddAndRemoveBindings(t *testing.T) {
 		name := fmt.Sprintf("%v %s", tc.Protocol, tc.Prefix)
 		t.Run(name, func(t *testing.T) {
 			network := tc.Protocol.String()
-			testutil.Listen(t, netns, network, tc.ip+":8080")
+			testutil.ListenAndEcho(t, netns, network, tc.ip+":8080")
 
 			if !testutil.CanDial(t, netns, network, tc.ip+":8080") {
 				t.Fatal("Can't dial before creating the binding")
@@ -246,7 +246,7 @@ func TestRegisterConnectedSocket(t *testing.T) {
 
 	for _, network := range networks {
 		t.Run(network, func(t *testing.T) {
-			testutil.Listen(t, netns, network, "127.0.0.1:1234")
+			testutil.ListenAndEcho(t, netns, network, "127.0.0.1:1234")
 			conn := testutil.Dial(t, netns, network, "127.0.0.1:1234")
 
 			_, _, err := dp.RegisterSocket("service-name", conn)
@@ -260,7 +260,7 @@ func TestRegisterConnectedSocket(t *testing.T) {
 func TestMetrics(t *testing.T) {
 	netns := testutil.NewNetNS(t)
 	dp := mustCreateDispatcher(t, netns.Path())
-	ln := testutil.Listen(t, netns, "tcp4", "").(*net.TCPListener)
+	ln := testutil.ListenAndEcho(t, netns, "tcp4", "").(*net.TCPListener)
 
 	bind := mustNewBinding(t, "foo", TCP, "127.0.0.1", 8080)
 	if err := dp.AddBinding(bind); err != nil {
@@ -374,7 +374,7 @@ func TestBindingPrecedence(t *testing.T) {
 			continue
 		}
 
-		ln := testutil.ListenWithName(t, netns, bind.Protocol.String(), "127.0.0.1:0", bind.Label)
+		ln := testutil.ListenAndEchoWithName(t, netns, bind.Protocol.String(), "127.0.0.1:0", bind.Label)
 		listeners[bind.Label] = ln
 
 		if _, _, err := dp.RegisterSocket(bind.Label, ln); err != nil {

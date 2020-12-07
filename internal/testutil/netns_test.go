@@ -45,7 +45,7 @@ func TestCanDial(t *testing.T) {
 				t.Fatal("Can dial a second time in empty network namespace")
 			}
 
-			Listen(t, netns, network, "127.0.0.1:8080")
+			ListenAndEcho(t, netns, network, "127.0.0.1:8080")
 
 			if !CanDial(t, netns, network, "127.0.0.1:8080") {
 				t.Fatal("Can't dial with listener present")
@@ -57,7 +57,7 @@ func TestCanDial(t *testing.T) {
 
 			Dial(t, netns, network, "127.0.0.1:8080")
 
-			ListenWithName(t, netns, network, "127.0.0.1:9090", "testing")
+			ListenAndEchoWithName(t, netns, network, "127.0.0.1:9090", "testing")
 			CanDialName(t, netns, network, "127.0.0.1:9090", "testing")
 		})
 	}

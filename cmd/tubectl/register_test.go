@@ -128,7 +128,7 @@ func makeConnectedSocket(tb testing.TB, netns ns.NetNS, network string) syscall.
 	tb.Helper()
 
 	var laddr net.Addr
-	ln := testutil.Listen(tb, netns, network, "")
+	ln := testutil.ListenAndEcho(tb, netns, network, "")
 	switch ln := ln.(type) {
 	case *net.TCPListener:
 		laddr = ln.Addr()

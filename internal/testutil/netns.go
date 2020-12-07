@@ -116,17 +116,20 @@ func JoinNetNS(tb testing.TB, netns ns.NetNS, fn func()) {
 
 // Listen listens on a given address in a specific network namespace.
 //
-// Uses a local address if address is empty.  Connections are accepted / packets read until the test ends.
+// Uses a local address if address is empty.
 func Listen(tb testing.TB, netns ns.NetNS, network, address string) (sys syscall.Conn) {
 	return ListenWithName(tb, netns, network, address, "default")
+}
+
+// Same as Listen but connections are also accepted / packets read until the test ends.
+func ListenAndEcho(tb testing.TB, netns ns.NetNS, network, address string) (sys syscall.Conn) {
+	return ListenAndEchoWithName(tb, netns, network, address, "default")
 }
 
 const maxNameLen = 128
 
 // ListenWithName listens on a given address in a specific network namespace, and
 // gives the listener a name.
-//
-// Use this with CanDialName to ensure that you're reaching the correct listener.
 func ListenWithName(tb testing.TB, netns ns.NetNS, network, address, name string) (sys syscall.Conn) {
 	if len(name) > maxNameLen {
 		tb.Fatalf("name exceeds %d bytes", maxNameLen)
@@ -157,34 +160,6 @@ func ListenWithName(tb testing.TB, netns ns.NetNS, network, address, name string
 				ln.Close()
 			})
 
-			go func() {
-				for {
-					conn, err := ln.Accept()
-					if err != nil {
-						if !utils.IsErrNetClosed(err) {
-							tb.Error("Can't accept:", err)
-						}
-						return
-					}
-
-					go func() {
-						defer conn.Close()
-
-						conn.SetWriteDeadline(time.Now().Add(time.Second))
-						_, err := conn.Write([]byte(name))
-						if err != nil {
-							tb.Error(err)
-							return
-						}
-
-						_, err = io.Copy(ioutil.Discard, conn)
-						if err != nil {
-							tb.Error(err)
-						}
-					}()
-				}
-			}()
-
 		case "udp", "udp4", "udp6", "unixgram":
 			conn, err := net.ListenPacket(network, address)
 			if err != nil {
@@ -196,27 +171,72 @@ func ListenWithName(tb testing.TB, netns ns.NetNS, network, address, name string
 				conn.Close()
 			})
 
-			go func() {
-				for {
-					var buf [1]byte
-					_, from, err := conn.ReadFrom(buf[:])
-					if err != nil {
-						if !utils.IsErrNetClosed(err) {
-							tb.Error("Can't read UDP packets:", err)
-						}
-						return
-					}
-
-					conn.WriteTo([]byte(name), from)
-				}
-			}()
-
 		default:
 			tb.Fatal("Unsupported network:", network)
 		}
 	})
 
 	return
+}
+
+// Same as ListenWithName but also accepts connections / reads packets from the
+// listener unti the end of test.
+//
+// Use this with CanDialName to ensure that you're reaching the correct listener.
+func ListenAndEchoWithName(tb testing.TB, netns ns.NetNS, network, address, name string) (sys syscall.Conn) {
+	sys = ListenWithName(tb, netns, network, address, name)
+	go echo(tb, network, sys, name)
+	return
+}
+
+func echo(tb testing.TB, network string, sys syscall.Conn, name string) {
+	switch network {
+	case "tcp", "tcp4", "tcp6", "unix", "unixpacket":
+		ln := sys.(net.Listener)
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				if !utils.IsErrNetClosed(err) {
+					tb.Error("Can't accept:", err)
+				}
+				return
+			}
+
+			go func() {
+				defer conn.Close()
+
+				conn.SetWriteDeadline(time.Now().Add(time.Second))
+				_, err := conn.Write([]byte(name))
+				if err != nil {
+					tb.Error(err)
+					return
+				}
+
+				_, err = io.Copy(ioutil.Discard, conn)
+				if err != nil {
+					tb.Error(err)
+				}
+			}()
+		}
+
+	case "udp", "udp4", "udp6", "unixgram":
+		conn := sys.(net.PacketConn)
+		for {
+			var buf [1]byte
+			_, from, err := conn.ReadFrom(buf[:])
+			if err != nil {
+				if !utils.IsErrNetClosed(err) {
+					tb.Error("Can't read UDP packets:", err)
+				}
+				return
+			}
+
+			conn.WriteTo([]byte(name), from)
+		}
+
+	default:
+		tb.Fatal("Unsupported network:", network)
+	}
 }
 
 // CanDial returns true if an address can be dialled in a specific network namespace.
