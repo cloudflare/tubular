@@ -465,3 +465,20 @@ func (d *Dispatcher) Metrics() (*Metrics, error) {
 
 	return &Metrics{destMetrics}, nil
 }
+
+// Destinations returns a set of existing destinations, i.e. sockets and labels.
+func (d *Dispatcher) Destinations() ([]Destination, error) {
+	d.stateMu.Lock()
+	defer d.stateMu.Unlock()
+
+	dstMap, err := d.destinations.List()
+	if err != nil {
+		return nil, fmt.Errorf("list destinations: %s", err)
+	}
+
+	dstVec := make([]Destination, 0, len(dstMap))
+	for _, d := range dstMap {
+		dstVec = append(dstVec, *d)
+	}
+	return dstVec, nil
+}

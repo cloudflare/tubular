@@ -12,6 +12,7 @@ import (
 	"code.cfops.it/sys/tubular/internal/testutil"
 
 	"github.com/containernetworking/plugins/pkg/ns"
+	"golang.org/x/sys/unix"
 )
 
 func TestSingleRegisterCommand(t *testing.T) {
@@ -77,8 +78,65 @@ func TestSingleRegisterCommand(t *testing.T) {
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("unexpected error: want %v, have %v", tc.wantErr, err)
 			}
+
+			dests := destinations(t, netns)
+			if tc.wantErr != nil {
+				if len(dests) != 0 {
+					t.Fatalf("expected no registered destinations, have %v", len(dests))
+				}
+			} else {
+				if len(dests) != len(tc.extraFds) {
+					t.Fatalf("expected %v registered destination(s), have %v", len(tc.extraFds), len(dests))
+				}
+				for _, f := range tc.extraFds {
+					cookie := socketCookie(t, f)
+					if _, ok := dests[cookie]; !ok {
+						t.Fatalf("expected registered destination for socket %v", cookie)
+					}
+				}
+			}
 		})
 	}
+}
+
+func destinations(tb testing.TB, netns ns.NetNS) map[internal.SocketCookie]internal.Destination {
+	tb.Helper()
+	dp := mustOpenDispatcher(tb, netns)
+
+	dstVec, err := dp.Destinations()
+	if err != nil {
+		tb.Fatalf("dispatcher destinations: %s", err)
+	}
+	dstMap := make(map[internal.SocketCookie]internal.Destination, len(dstVec))
+	for _, d := range dstVec {
+		dstMap[d.Socket] = d
+	}
+	return dstMap
+}
+
+func socketCookie(tb testing.TB, conn syscall.Conn) internal.SocketCookie {
+	tb.Helper()
+
+	raw, err := conn.SyscallConn()
+	if err != nil {
+		tb.Fatalf("SyscallConn: %v", err)
+	}
+
+	var (
+		cookie uint64
+		opErr  error
+	)
+	err = raw.Control(func(fd uintptr) {
+		cookie, opErr = unix.GetsockoptUint64(int(fd), unix.SOL_SOCKET, unix.SO_COOKIE)
+	})
+	if err != nil {
+		tb.Fatalf("RawConn.Control: %v", err)
+	}
+	if opErr != nil {
+		tb.Fatalf("Getsockopt(SO_COOKIE): %v", err)
+	}
+
+	return internal.SocketCookie(cookie)
 }
 
 func makeNonSocket(tb testing.TB) syscall.Conn {
