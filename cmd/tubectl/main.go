@@ -62,6 +62,7 @@ func (e *env) createDispatcher() (*internal.Dispatcher, error) {
 		return nil, fmt.Errorf("can't load dispatcher: %w", err)
 	}
 
+	fmt.Fprintf(e.stdout, "created dispatcher in %v\n", dp.Path)
 	return dp, nil
 }
 
@@ -75,6 +76,7 @@ func (e *env) openDispatcher() (*internal.Dispatcher, error) {
 		return nil, fmt.Errorf("can't open dispatcher: %w", err)
 	}
 
+	fmt.Fprintf(e.stdout, "opened dispatcher at %v\n", dp.Path)
 	return dp, nil
 }
 
