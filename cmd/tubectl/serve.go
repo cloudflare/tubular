@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -16,7 +17,13 @@ import (
 	"code.cfops.it/sys/tubular/internal/utils"
 )
 
-const serveUsageMsg = `Usage: %s <listen address>
+const (
+	ioDeadline      = 30 * time.Second
+	maxRequestBytes = 8
+)
+
+func serve(e *env, args ...string) error {
+	set := e.newFlagSet("serve", `<listen address>
 
 Listen for command requests on the given address.
 
@@ -27,28 +34,16 @@ Server uses a sequenced-packet socket (SOCK_SEQPACKET) to listen for requests.
 
 Examples:
 
-  - serve on a pathname Unix socket address:
-  $ tubectl serve /tmp/tubectl.sock
+	- serve on a pathname Unix socket address:
+	$ tubectl serve /tmp/tubectl.sock
 
-  - serve on an abstract Unix socket adress ("\x00tubectl"):
-  $ tubectl serve @tubectl
+	- serve on an abstract Unix socket adress ("\x00tubectl"):
+	$ tubectl serve @tubectl
+`)
 
-`
-
-const (
-	ioDeadline      = 30 * time.Second
-	maxRequestBytes = 8
-)
-
-func serve(e *env, args ...string) error {
-	var err error
-
-	set := e.newFlagSet("serve")
-	set.Usage = func() {
-		fmt.Fprintf(set.Output(), serveUsageMsg, set.Name())
-		set.PrintDefaults()
-	}
-	if err := set.Parse(args); err != nil {
+	if err := set.Parse(args); errors.Is(err, flag.ErrHelp) {
+		return nil
+	} else if err != nil {
 		return err
 	}
 

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"flag"
 	"fmt"
 	"strconv"
 
@@ -8,12 +10,13 @@ import (
 )
 
 func bind(e *env, args ...string) error {
-	set := e.newFlagSet("bind")
-	set.Usage = func() {
-		fmt.Fprintf(set.Output(), "Usage: %s <label> <protocol> <ip[/mask]> <port>\n", set.Name())
-		set.PrintDefaults()
-	}
-	if err := set.Parse(args); err != nil {
+	set := e.newFlagSet("bind", `<label> <protocol> <ip[/mask]> <port>
+
+Bind a given prefix, port and protocol to a label.
+`)
+	if err := set.Parse(args); errors.Is(err, flag.ErrHelp) {
+		return nil
+	} else if err != nil {
 		return err
 	}
 
@@ -32,12 +35,13 @@ func bind(e *env, args ...string) error {
 }
 
 func unbind(e *env, args ...string) error {
-	set := e.newFlagSet("unbind")
-	set.Usage = func() {
-		fmt.Fprintf(set.Output(), "Usage: %s <label> <protocol> <ip[/mask]> <port>\n", set.Name())
-		set.PrintDefaults()
-	}
-	if err := set.Parse(args); err != nil {
+	set := e.newFlagSet("unbind", `<label> <protocol> <ip[/mask]> <port>
+
+Remove a previously created binding.
+`)
+	if err := set.Parse(args); errors.Is(err, flag.ErrHelp) {
+		return nil
+	} else if err != nil {
 		return err
 	}
 

@@ -1,34 +1,34 @@
 package main
 
 import (
+	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"strconv"
 	"syscall"
 )
 
-const registerUsageMsg = `Usage: %s <label>
+const (
+	listenFdsStart = 3 // SD_LISTEN_FDS_START
+)
+
+func register(e *env, args ...string) error {
+	set := e.newFlagSet("register", `<label>
 
 Registers sockets passed down from parent under given label.
 
 Usually used together with SystemD socket activation.
 Expects exactly one FD, i.e. LISTEN_FDS must be set to 1.
 LISTEN_PID is ignored, so is LISTEN_FDNAMES.
+`)
 
-`
-const (
-	listenFdsStart = 3 // SD_LISTEN_FDS_START
-)
-
-func register(e *env, args ...string) error {
-	set := e.newFlagSet("register")
-	set.Usage = func() {
-		fmt.Fprintf(set.Output(), registerUsageMsg, set.Name())
-		set.PrintDefaults()
-	}
-	if err := set.Parse(args); err != nil {
+	if err := set.Parse(args); errors.Is(err, flag.ErrHelp) {
+		return nil
+	} else if err != nil {
 		return err
 	}
+
 	if set.NArg() != 1 {
 		set.Usage()
 		return fmt.Errorf("expected label but got %d arguments: %w", set.NArg(), errBadArg)

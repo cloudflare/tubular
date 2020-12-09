@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"flag"
 	"fmt"
 	"sort"
 	"text/tabwriter"
@@ -9,7 +11,17 @@ import (
 )
 
 func list(e *env, args ...string) error {
-	if len(args) > 0 {
+	set := e.newFlagSet("list", `
+
+Show current bindings and destinations.
+`)
+	if err := set.Parse(args); errors.Is(err, flag.ErrHelp) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+
+	if set.NArg() > 0 {
 		return fmt.Errorf("invalid arguments")
 	}
 

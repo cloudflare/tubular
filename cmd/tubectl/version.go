@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"flag"
 	"fmt"
 	"runtime"
 )
@@ -9,7 +11,17 @@ import (
 var Version = "git"
 
 func version(e *env, args ...string) error {
-	if len(args) > 0 {
+	set := e.newFlagSet("version", `
+
+Show version information.
+`)
+	if err := set.Parse(args); errors.Is(err, flag.ErrHelp) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+
+	if set.NArg() > 0 {
 		return fmt.Errorf("invalid arguments")
 	}
 

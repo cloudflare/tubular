@@ -2,13 +2,24 @@ package main
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 
 	"code.cfops.it/sys/tubular/internal"
 )
 
 func load(e *env, args ...string) error {
-	if len(args) > 0 {
+	set := e.newFlagSet("load", `
+
+Load the tubular dispatcher.
+`)
+	if err := set.Parse(args); errors.Is(err, flag.ErrHelp) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+
+	if flag.NArg() > 0 {
 		return fmt.Errorf("invalid arguments")
 	}
 
@@ -26,7 +37,17 @@ func load(e *env, args ...string) error {
 }
 
 func unload(e *env, args ...string) error {
-	if len(args) > 0 {
+	set := e.newFlagSet("unload", `
+
+Unload the tubular dispatcher, removing any present state.
+`)
+	if err := set.Parse(args); errors.Is(err, flag.ErrHelp) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+
+	if flag.NArg() > 0 {
 		return fmt.Errorf("invalid arguments")
 	}
 

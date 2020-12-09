@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -80,9 +81,13 @@ func (e *env) openDispatcher() (*internal.Dispatcher, error) {
 	return dp, nil
 }
 
-func (e *env) newFlagSet(name string) *flag.FlagSet {
+func (e *env) newFlagSet(name, usage string) *flag.FlagSet {
 	set := flag.NewFlagSet(name, flag.ContinueOnError)
 	set.SetOutput(e.stderr)
+	set.Usage = func() {
+		fmt.Fprintf(set.Output(), "Usage: tubectl %s %s\n", set.Name(), usage)
+		set.PrintDefaults()
+	}
 	return set
 }
 
@@ -95,7 +100,8 @@ func tubectl(e env, args []string) (err error) {
 		}
 	}()
 
-	set := e.newFlagSet("tubectl")
+	set := flag.NewFlagSet("tubectl", flag.ContinueOnError)
+	set.SetOutput(e.stderr)
 	set.StringVar(&e.netns, "netns", "/proc/self/ns/net", "`path` to the network namespace")
 	set.StringVar(&e.bpfFs, "bpffs", "/sys/fs/bpf", "`path` to a BPF filesystem for state")
 	set.Uint64Var(&e.memlimit, "memlimit", 10*1024*1024, "maximum locked memory in `bytes`")
@@ -112,20 +118,23 @@ func tubectl(e env, args []string) (err error) {
 	}
 
 	set.Usage = func() {
-		fmt.Fprintf(e.stderr, "Usage: %s [flags] command [arguments and flags]\n\n", set.Name())
+		out := set.Output()
+		fmt.Fprintf(out, "Usage: %s <flags> command <arguments and flags>\n\n", set.Name())
 
-		fmt.Fprintln(e.stderr, "Available flags:")
+		fmt.Fprintln(out, "Available flags:")
 		set.PrintDefaults()
-		fmt.Fprintln(e.stderr)
+		fmt.Fprintln(out)
 
-		fmt.Fprintln(e.stderr, "Available commands:")
+		fmt.Fprintln(out, "Available commands:")
 		for cmd := range cmds {
-			fmt.Fprintln(e.stderr, "  "+cmd)
+			fmt.Fprintln(out, "  "+cmd)
 		}
-		fmt.Fprintln(e.stderr)
+		fmt.Fprintln(out)
 	}
 
-	if err = set.Parse(args); err != nil {
+	if err := set.Parse(args); errors.Is(err, flag.ErrHelp) {
+		return nil
+	} else if err != nil {
 		return err
 	}
 
