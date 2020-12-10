@@ -1,4 +1,4 @@
-VERSION := $(shell git describe --tags --always --dirty="-dev")
+VERSION := $(shell git describe --tags --always --dirty="-dev" --match="[0-9][0-9][0-9][0-9].[0-9][0-9].[0-9][0-9]")
 ARCH    ?= amd64
 GO      ?= go
 
