@@ -1,7 +1,7 @@
-default-flavor: stretch
+default-flavor: buster
 
-stretch: &stretch
-  build: &build-stretch
+buster: &buster
+  build:
     builddeps:
       - build-essential
       - crossbuild-essential-arm64
@@ -30,5 +30,5 @@ stretch: &stretch
       - sudo chgrp $(id -g) /dev/kvm
       - ./run-tests.sh < /dev/zero
 
-buster:
-  <<: *stretch
+stretch:
+  <<: *buster
