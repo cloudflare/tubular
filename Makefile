@@ -44,7 +44,11 @@ lint:
 
 .PHONY: clean
 clean:
-	$(RM) -r bin deb *.deb $(deps)
+	$(RM) -r bin deb $(deps)
+
+.PHONY: distclean
+distclean: clean
+	$(RM) *.deb
 
 ifneq ($(MAKECMDGOALS),clean)
 -include $(deps)
