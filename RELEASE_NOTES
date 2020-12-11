@@ -1,0 +1,94 @@
+2020.12.0
+- 2020-12-10 TUBE-28: Match only YYYY.MM.DD when generating version number
+- 2020-12-11 TUBE-28: Switch default build flavor to target Buster
+- 2020-12-11 TUBE-28: Don't clean up .deb build artifacts
+- 2020-12-03 add wrappers for dealing with Unix cmsg
+- 2020-12-07 TUBE-9: trivial: Use a more obvious service label in register tests
+- 2020-12-07 TUBE-9: Return a duplicate file descriptor from os.NewFile mock
+- 2020-12-07 TUBE-9: Report where dispatcher state is created at or loaded from
+- 2020-12-07 TUBE-9: Break up testutil.Listen into pure listen and ListenAndEcho
+- 2020-12-07 TUBE-9: Check that register creates a destination for passed socket
+- 2020-11-26 check tag of loaded dispatcher
+- 2020-11-05 TUBE-6: allow concurrent Dispatcher instances
+- 2020-11-06 dispatcher: outsource map pinning to ebpf library
+- 2020-11-05 TUBE-9: Disable ccache in VM running the tests
+- 2020-11-09 TUBE-9: Serve version requests over Unix connection
+- 2020-10-30 tests: update to 5.10-rc1 and use make test
+- 2020-10-20 TUBE-3: Extract helper for loading the dispatcher
+- 2020-10-20 TUBE-3: Check if bpf file-system is mounted
+- 2020-10-01 Update github.com/cilium/ebpf
+- 2020-10-01 ebpf: use __cleanup__ attribute to free sockets
+- 2020-10-01 ebpf: drop unnecessary lookup_key copy
+- 2020-10-02 TUBE-14: cmd/tubectl: add unbind subcommand
+- 2020-10-05 Close BPF maps and program FDs after creating/opening the Dispatcher
+- 2020-10-07 dispatcher: treat overlapping bindings according to spec
+- 2020-10-05 TUBE-9: Fix typo in test error message
+- 2020-10-05 TUBE-9: Rename usageMsg to registerUsageMsg
+- 2020-10-05 TUBE-9: Push error printing down to main command executor
+- 2020-10-07 TUBE-9: Make tubectl main function not variadic
+- 2020-10-05 TUBE-9: Make errors returned from tubectl() testable
+- 2020-10-08 TUBE-9: Pass around pointer to env
+- 2020-10-05 TUBE-9: Inject os.NewFile and os.Getenv to test FD passing
+- 2020-10-05 TUBE-9: Front-end for register handler
+- 2020-10-05 TUBE-9: Simplify error message from newDestinationFromConn
+- 2020-09-28 destinations: expose metrics from BPF
+- 2020-09-28 cmd/tubectl: add destinations to list
+- 2020-09-15 dispatcher: use syscall.Conn instead of syscall.RawConn
+- 2020-09-15 testutil: add a timeout to CanDialNetNS
+- 2020-09-15 testutil: return connections from Listen, add Dial helper
+- 2020-09-15 KRN-330: dispatcher: use sockets from correct netns in tests
+- 2020-09-15 vendor: remove unused x/net/nettest
+- 2020-09-15 labels: discourage direct ID lookup
+- 2020-09-15 allocate destination instead of label IDs
+- 2020-09-15 add newDestinationFromFd helper
+- 2020-09-15 destinations: test adding a socket
+- 2020-09-14 dispatcher: return a boolean from RegisterSocket
+- 2020-09-15 handle zero socket cookie
+- 2020-09-01 TUBE-9: Don't tie label length limit to NAME_MAX limit
+- 2020-09-01 TUBE-9: Use binary.Size for calculating the encoded Go struct size
+- 2020-09-01 TUBE-9: Switch to 64-bit label IDs without reuse
+- 2020-09-05 TUBE-9: Vendor golang.org/x/net/nettest
+- 2020-09-05 TUBE-9: Make Protocol type printable
+- 2020-09-05 TUBE-9: Support registering (label, socket) pair with Dispatcher
+- 2020-09-07 Revert "TUBE-9: Switch to 64-bit label IDs without reuse"
+- 2020-09-08 remove leftover debugging Printf
+- 2020-09-08 rename label.go to destination.go
+- 2020-09-08 allocate destination IDs starting at zero
+- 2020-08-31 TUBE-9: Don't signal out of band that socket is closing
+- 2020-08-21 vendor go-cmp
+- 2020-08-21 ensure our vendoring is up to date
+- 2020-08-20 dispatcher: allocate unused label IDs
+- 2020-08-21 dispatcher: move label into Binding
+- 2020-08-24 cmd/tubectl: add list command
+- 2020-08-26 dispatcher: deallocate unused label IDs
+- 2020-08-25 dispatcher: dont update program on load
+- 2020-08-27 dispatcher: ensure exclusive access
+- 2020-08-25 build: Don't bother grep to prune path from find results
+- 2020-08-25 build: Add target for compiling tests
+- 2020-08-26 Fix hardcoded subcommand name in NewFlagSet wrapper
+- 2020-08-25 TUBE-9: Prepare tubectl for subcommands for registering sockets
+- 2020-08-10 cmd/tubectl: add version command
+- 2020-08-12 Allow specifying the go command invoked by make
+- 2020-08-12 ebpf: remove unused endian.h
+- 2020-08-10 only run go generate when necessary
+- 2020-08-12 ebpf: remove some hacks
+- 2020-08-11 ebpf: drop connections for bindings without a socket
+- 2020-08-10 testutil: refactor JoinNetNS some more
+- 2020-08-11 internal: adding and removing bindings
+- 2020-08-13 ebpf: remove srvname from the data plane
+- 2020-08-19 fix running tests on CI
+- 2020-08-19 update github.com/cilium/ebpf
+- 2020-08-19 cmd/tubectl: add bind command
+- 2020-08-19 use go-cmp for better error messages
+- 2020-08-05 add gitignore
+- 2020-08-05 import inet-tool BPF code
+- 2020-08-05 ebpf: use clang-format
+- 2020-08-05 ebpf: merge into single file
+- 2020-08-06 internal: add dispatcher
+- 2020-08-06 cmd: add tubectl
+- 2020-08-05 add vendor
+- 2020-08-07 use correct revision of cilium/ebpf
+- 2020-08-07 testutil: automatically increase rlimit for tests
+- 2020-08-07 testutil: create private netns on the fly
+- 2020-08-07 dispatcher: only return ErrLoaded when the state directory exists
+
