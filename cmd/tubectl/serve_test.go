@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	dialTimeout  = 1 * time.Second
-	dialAttempts = 5
+	dialDeadline = 5 * time.Second
+	dialInterval = 5 * time.Millisecond
 
 	maxResponseBytes = 128
 )
@@ -152,18 +152,25 @@ func TestServeMany(t *testing.T) {
 	}
 }
 
-func dialUnixpacketTimeoutAndRetry(addr string) (_ *net.UnixConn, err error) {
+func dialUnixpacketTimeoutAndRetry(addr string) (*net.UnixConn, error) {
 	ua := resolveUnixAddr("unixpacket", addr)
-	for i := uint(0); i < dialAttempts; i++ {
-		c, err := net.DialTimeout(ua.Network(), ua.String(), dialTimeout)
-		if err == nil {
+	delay := dialInterval
+	var duration time.Duration
+	for {
+		if c, err := net.DialTimeout(ua.Network(), ua.String(), dialDeadline); err == nil {
 			return c.(*net.UnixConn), nil
+		} else {
+			if os.IsTimeout(err) {
+				return nil, err
+			}
+			if duration >= dialDeadline {
+				return nil, fmt.Errorf("dial timeout: %w", err)
+			}
+			time.Sleep(delay)
+			duration += delay
+			delay *= 2
 		}
 	}
-	if err != nil {
-		return nil, err
-	}
-	return nil, errors.New("max dial attempts reached")
 }
 
 var rng = rand.New(rand.NewSource(time.Now().UnixNano() + int64(os.Getpid())))
