@@ -1,3 +1,8 @@
+2020.12.1
+- 2020-12-14 fix generated version string
+- 2020-12-14 TUBE-28: Delay & retry dial over UNIX socket on hard errors
+- 2020-12-09 cmd/tubectl: unify usage messages
+
 2020.12.0
 - 2020-12-10 TUBE-28: Match only YYYY.MM.DD when generating version number
 - 2020-12-11 TUBE-28: Switch default build flavor to target Buster
