@@ -104,7 +104,7 @@ func tubectl(e env, args []string) (err error) {
 	set.SetOutput(e.stderr)
 	set.StringVar(&e.netns, "netns", "/proc/self/ns/net", "`path` to the network namespace")
 	set.StringVar(&e.bpfFs, "bpffs", "/sys/fs/bpf", "`path` to a BPF filesystem for state")
-	set.Uint64Var(&e.memlimit, "memlimit", 10*1024*1024, "maximum locked memory in `bytes`")
+	set.Uint64Var(&e.memlimit, "memlimit", 100*1024*1024, "maximum locked memory in `bytes`")
 
 	cmds := map[string]cmdFunc{
 		"version":  version,
