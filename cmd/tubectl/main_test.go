@@ -82,6 +82,17 @@ func mustAddBinding(tb testing.TB, dp *internal.Dispatcher, label string, proto 
 	}
 }
 
+func mustRegisterSocket(tb testing.TB, dp *internal.Dispatcher, label string, file syscall.Conn) *internal.Destination {
+	tb.Helper()
+
+	dest, _, err := dp.RegisterSocket(label, file)
+	if err != nil {
+		tb.Fatal("Can't register socket:", err)
+	}
+
+	return dest
+}
+
 type (
 	testEnv map[string]string
 	testFds []syscall.Conn

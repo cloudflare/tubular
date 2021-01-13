@@ -66,14 +66,15 @@ Show current bindings and destinations.
 	fmt.Fprintln(e.stdout, "\nDestinations:")
 	fmt.Fprintln(w, "label\tdomain\tprotocol\tsocket\tpackets\tdropped\t")
 
-	for dest, metrics := range metrics.Destinations {
-		dropped := metrics.DroppedPacketsIncompatibleSocket + metrics.DroppedPacketsMissingSocket
+	for _, dest := range dests {
+		destMestrics := metrics.Destinations[dest]
+		dropped := destMestrics.DroppedPacketsIncompatibleSocket + destMestrics.DroppedPacketsMissingSocket
 		_, err := fmt.Fprint(w,
 			dest.Label, "\t",
 			dest.Domain, "\t",
 			dest.Protocol, "\t",
 			dest.Socket, "\t",
-			metrics.ReceivedPackets, "\t",
+			destMestrics.ReceivedPackets, "\t",
 			dropped, "\t",
 			"\n",
 		)
