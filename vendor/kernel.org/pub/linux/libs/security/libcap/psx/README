@@ -1,0 +1,20 @@
+Package psx provides a CGo backed API for invoking system calls in a
+way that each system call is mirrored on all pthreads of the combined
+Go/CGo runtime. Since the Go runtime treats all pthreads as
+interchangeable, a feature like this is needed to meaningfully change
+process privilege (including dropping privilege) in a Go program
+running on Linux. This package is required by:
+
+   "kernel.org/pub/linux/libs/security/libcap/cap"
+
+The functionality is implemented by a C library: libpsx, which is
+distributed with the libcap. The official release announcement site
+for libcap and libpsx is:
+
+   https://sites.google.com/site/fullycapable/
+
+Like libcap/libpsx itself, the psx package is distributed with a "you
+choose" License. Specifically: BSD three clause, or GPL2. See the
+LICENSE file.
+
+Andrew G. Morgan <morgan@kernel.org>

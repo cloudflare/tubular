@@ -44,3 +44,7 @@ golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543 h1:E7g+9GITq07hpfrRu66IV
 golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
 gopkg.in/airbrake/gobrake.v2 v2.0.9/go.mod h1:/h5ZAUhDkGaJfjzjKLSjv6zCL6O0LLBxU4K+aSYdM/U=
 gopkg.in/gemnasium/logrus-airbrake-hook.v2 v2.1.2/go.mod h1:Xk6kEKp8OKb+X14hQBKWaSkCsqBpgog8nAV2xsGOxlo=
+kernel.org/pub/linux/libs/security/libcap/cap v0.2.46 h1:2my+JWsYxD0mFKUbqgtEf7r9A0m/fCMUv21RGgknTiU=
+kernel.org/pub/linux/libs/security/libcap/cap v0.2.46/go.mod h1:Xni6/5rCuzPoHAac5sCFMuDxz9FuI8GTUyQ4qlw3e0w=
+kernel.org/pub/linux/libs/security/libcap/psx v0.2.46 h1:9GvXrCSQAcgQ3zZVxRN8K866o1aAY1DYdXj0vHIHvYA=
+kernel.org/pub/linux/libs/security/libcap/psx v0.2.46/go.mod h1:+l6Ee2F59XiJ2I6WR5ObpC1utCQJZ/VLsEbQCD8RG24=

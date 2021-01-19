@@ -13,13 +13,15 @@ import (
 
 	"code.cfops.it/sys/tubular/internal"
 	"code.cfops.it/sys/tubular/internal/rlimit"
+
+	"golang.org/x/sys/unix"
+	"kernel.org/pub/linux/libs/security/libcap/cap"
 )
 
 type env struct {
 	stdout, stderr io.Writer
 	netns          string
 	bpfFs          string
-	memlimit       uint64
 	ctx            context.Context
 	log            *log.Logger
 	osFns
@@ -50,7 +52,20 @@ var (
 )
 
 func (e *env) setupEnv() error {
-	return rlimit.SetLockedMemoryLimits(e.memlimit)
+	haveSysResource, err := cap.GetProc().GetFlag(cap.Effective, cap.SYS_RESOURCE)
+	if err != nil {
+		return fmt.Errorf("get capabilities: %s", err)
+	}
+
+	if haveSysResource {
+		// Raise the memlock rlimit to unlimited when invoked via sudo.
+		err = rlimit.SetLockedMemoryLimits(unix.RLIM_INFINITY)
+		if err != nil {
+			return fmt.Errorf("set RLIMIT_MEMLOCK: %s", err)
+		}
+	}
+
+	return nil
 }
 
 func (e *env) createDispatcher() (*internal.Dispatcher, error) {
@@ -104,7 +119,6 @@ func tubectl(e env, args []string) (err error) {
 	set.SetOutput(e.stderr)
 	set.StringVar(&e.netns, "netns", "/proc/self/ns/net", "`path` to the network namespace")
 	set.StringVar(&e.bpfFs, "bpffs", "/sys/fs/bpf", "`path` to a BPF filesystem for state")
-	set.Uint64Var(&e.memlimit, "memlimit", 100*1024*1024, "maximum locked memory in `bytes`")
 
 	cmds := map[string]cmdFunc{
 		"version":  version,

@@ -21,3 +21,8 @@ github.com/google/go-cmp/cmp/internal/value
 ## explicit
 golang.org/x/sys/internal/unsafeheader
 golang.org/x/sys/unix
+# kernel.org/pub/linux/libs/security/libcap/cap v0.2.46
+## explicit
+kernel.org/pub/linux/libs/security/libcap/cap
+# kernel.org/pub/linux/libs/security/libcap/psx v0.2.46
+kernel.org/pub/linux/libs/security/libcap/psx
