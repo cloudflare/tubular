@@ -5,7 +5,7 @@
 set -eu
 set -o pipefail
 
-readonly default_version=5.10-rc1
+readonly default_version=5.10.8
 
 if [[ "${1:-}" = "--in-vm" ]]; then
   shift
