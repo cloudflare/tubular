@@ -67,6 +67,13 @@ func TestSingleRegisterCommand(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			mustLoadDispatcher(t, netns)
 
+			flags := make(map[syscall.Conn]int)
+			for _, f := range tc.extraFds {
+				if f != nil {
+					flags[f] = testutil.FileStatusFlags(t, f)
+				}
+			}
+
 			tubectl := tubectlTestCall{
 				NetNS:    netns,
 				Cmd:      "register",
@@ -84,15 +91,21 @@ func TestSingleRegisterCommand(t *testing.T) {
 				if len(dests) != 0 {
 					t.Fatalf("expected no registered destinations, have %v", len(dests))
 				}
-			} else {
-				if len(dests) != len(tc.extraFds) {
-					t.Fatalf("expected %v registered destination(s), have %v", len(tc.extraFds), len(dests))
+				return
+			}
+
+			if len(dests) != len(tc.extraFds) {
+				t.Fatalf("expected %v registered destination(s), have %v", len(tc.extraFds), len(dests))
+			}
+
+			for _, f := range tc.extraFds {
+				cookie := socketCookie(t, f)
+				if _, ok := dests[cookie]; !ok {
+					t.Fatalf("expected registered destination for socket %v", cookie)
 				}
-				for _, f := range tc.extraFds {
-					cookie := socketCookie(t, f)
-					if _, ok := dests[cookie]; !ok {
-						t.Fatalf("expected registered destination for socket %v", cookie)
-					}
+
+				if have := testutil.FileStatusFlags(t, f); have != flags[f] {
+					t.Fatalf("file status flags of %v changed: %d != %d", cookie, have, flags[f])
 				}
 			}
 		})
