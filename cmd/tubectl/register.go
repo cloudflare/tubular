@@ -49,7 +49,7 @@ LISTEN_PID is ignored, so is LISTEN_FDNAMES.
 
 	dst, created, err := dp.RegisterSocket(label, file)
 	if err != nil {
-		return fmt.Errorf("can't register fd %d: %w", file.Fd(), err)
+		return fmt.Errorf("can't register fd: %w", err)
 	}
 
 	var inode uint64
@@ -65,7 +65,7 @@ LISTEN_PID is ignored, so is LISTEN_FDNAMES.
 	} else {
 		msg = fmt.Sprintf("updated destination %s", dst.String())
 	}
-	fmt.Fprintf(e.stdout, "registered socket fd:%d ino:%d: %s\n", file.Fd(), inode, msg)
+	fmt.Fprintf(e.stdout, "registered socket ino:%d: %s\n", inode, msg)
 
 	return nil
 }
