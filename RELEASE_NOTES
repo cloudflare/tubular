@@ -1,3 +1,13 @@
+2021.1.0
+- 2021-01-20 TUBE-37: Enable CGo when cross-compiling
+- 2021-01-21 cmd/tubectl: check that register doesn't change file status flags
+- 2021-01-21 cmd/tubectl: don't call os.File.Fd
+- 2021-01-22 TUBE-37: dispatcher: minimise permissions needed for OpenDispatcher
+- 2021-01-13 TUBE-34: cmd/tubectl: fix unstable list output
+- 2021-01-19 run tests on Linux 5.10.8
+- 2021-01-19 TUBE-37: use unlimited memlock when invoked via sudo
+- 2020-12-15 cmd/tubectl: increase default memlock limit
+
 2020.12.1
 - 2020-12-14 fix generated version string
 - 2020-12-14 TUBE-28: Delay & retry dial over UNIX socket on hard errors
