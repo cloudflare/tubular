@@ -19,7 +19,7 @@ import (
 )
 
 type elfCode struct {
-	*elf.File
+	*internal.SafeELFFile
 	symbols           []elf.Symbol
 	symbolsPerSection map[elf.SectionIndex]map[uint64]elf.Symbol
 	license           string
@@ -43,7 +43,7 @@ func LoadCollectionSpec(file string) (*CollectionSpec, error) {
 
 // LoadCollectionSpecFromReader parses an ELF file into a CollectionSpec.
 func LoadCollectionSpecFromReader(rd io.ReaderAt) (*CollectionSpec, error) {
-	f, err := elf.NewFile(rd)
+	f, err := internal.NewSafeELFFile(rd)
 	if err != nil {
 		return nil, err
 	}
@@ -190,7 +190,7 @@ func (ec *elfCode) loadPrograms(progSections map[elf.SectionIndex]*elf.Section, 
 
 		insns, length, err := ec.loadInstructions(sec, syms, relocations[idx])
 		if err != nil {
-			return nil, fmt.Errorf("program %s: can't unmarshal instructions: %w", funcSym.Name, err)
+			return nil, fmt.Errorf("program %s: %w", funcSym.Name, err)
 		}
 
 		progType, attachType, attachTo := getProgType(sec.Name)
@@ -271,15 +271,15 @@ func (ec *elfCode) relocateInstruction(ins *asm.Instruction, rel elf.Symbol) err
 		name = rel.Name
 	)
 
+	if int(rel.Section) > len(ec.Sections) {
+		return errors.New("out-of-bounds section index")
+	}
+
+	section := ec.Sections[int(rel.Section)]
 	if typ == elf.STT_SECTION {
 		// Symbols with section type do not have a name set. Get it
 		// from the section itself.
-		idx := int(rel.Section)
-		if idx > len(ec.Sections) {
-			return errors.New("out-of-bounds section index")
-		}
-
-		name = ec.Sections[idx].Name
+		name = section.Name
 	}
 
 outer:
@@ -291,10 +291,16 @@ outer:
 		// that goes via the helper. They are distinguished by
 		// different relocations.
 		switch typ {
+		// This is a direct load since the referenced symbol is a
+		// section. Weirdly, the offset of the real symbol in the
+		// section is encoded in the instruction stream.
 		case elf.STT_SECTION:
-			// This is a direct load since the referenced symbol is a
-			// section. Weirdly, the offset of the real symbol in the
-			// section is encoded in the instruction stream.
+			if name == "maps" || name == ".maps" {
+				// A direct load from the map definition sections doesn't make
+				// sense, this usually happens due to a stray `static`.
+				return fmt.Errorf("possible erroneous static qualifier on map definition: found reference to section %s", name)
+			}
+
 			if bind != elf.STB_LOCAL {
 				return fmt.Errorf("direct load: %s: unsupported relocation %s", name, bind)
 			}
@@ -317,6 +323,10 @@ outer:
 			fallthrough
 
 		case elf.STT_OBJECT:
+			if section.Flags&elf.SHF_STRINGS > 0 {
+				return fmt.Errorf("load: %s: string is not stack allocated: %w", name, ErrNotSupported)
+			}
+
 			if bind != elf.STB_GLOBAL {
 				return fmt.Errorf("load: %s: unsupported binding: %s", name, bind)
 			}
@@ -438,6 +448,11 @@ func (ec *elfCode) loadBTFMaps(maps map[string]*MapSpec, mapSections map[elf.Sec
 	}
 
 	for idx, sec := range mapSections {
+		_, err := io.Copy(internal.DiscardZeroes{}, bufio.NewReader(sec.Open()))
+		if err != nil {
+			return fmt.Errorf("section %v: initializing BTF map definitions: %w", sec.Name, internal.ErrNotSupported)
+		}
+
 		syms := ec.symbolsPerSection[idx]
 		if len(syms) == 0 {
 			return fmt.Errorf("section %v: no symbols", sec.Name)

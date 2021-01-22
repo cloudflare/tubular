@@ -53,7 +53,7 @@ type btfHeader struct {
 //
 // Returns a nil Spec and no error if no BTF was present.
 func LoadSpecFromReader(rd io.ReaderAt) (*Spec, error) {
-	file, err := elf.NewFile(rd)
+	file, err := internal.NewSafeELFFile(rd)
 	if err != nil {
 		return nil, err
 	}
@@ -78,6 +78,10 @@ func LoadSpecFromReader(rd io.ReaderAt) (*Spec, error) {
 		if idx := symbol.Section; idx >= elf.SHN_LORESERVE && idx <= elf.SHN_HIRESERVE {
 			// Ignore things like SHN_ABS
 			continue
+		}
+
+		if int(symbol.Section) >= len(file.Sections) {
+			return nil, fmt.Errorf("symbol %s: invalid section %d", symbol.Name, symbol.Section)
 		}
 
 		secName := file.Sections[symbol.Section].Name
@@ -109,7 +113,7 @@ func LoadSpecFromReader(rd io.ReaderAt) (*Spec, error) {
 	return spec, nil
 }
 
-func findBtfSections(file *elf.File) (*elf.Section, *elf.Section, map[string]uint32, error) {
+func findBtfSections(file *internal.SafeELFFile) (*elf.Section, *elf.Section, map[string]uint32, error) {
 	var (
 		btfSection    *elf.Section
 		btfExtSection *elf.Section
@@ -138,7 +142,7 @@ func findBtfSections(file *elf.File) (*elf.Section, *elf.Section, map[string]uin
 }
 
 func loadSpecFromVmlinux(rd io.ReaderAt) (*Spec, error) {
-	file, err := elf.NewFile(rd)
+	file, err := internal.NewSafeELFFile(rd)
 	if err != nil {
 		return nil, err
 	}
@@ -311,7 +315,7 @@ func fixupDatasec(rawTypes []rawType, rawStrings stringTable, sectionSizes map[s
 			return err
 		}
 
-		if name == ".kconfig" || name == ".ksym" {
+		if name == ".kconfig" || name == ".ksyms" {
 			return fmt.Errorf("reference to %s: %w", name, ErrNotSupported)
 		}
 
@@ -718,7 +722,7 @@ func marshalBTF(types interface{}, strings []byte, bo binary.ByteOrder) []byte {
 	return buf.Bytes()
 }
 
-var haveBTF = internal.FeatureTest("BTF", "5.1", func() (bool, error) {
+var haveBTF = internal.FeatureTest("BTF", "5.1", func() error {
 	var (
 		types struct {
 			Integer btfType
@@ -742,15 +746,20 @@ var haveBTF = internal.FeatureTest("BTF", "5.1", func() (bool, error) {
 		btf:     internal.NewSlicePointer(btf),
 		btfSize: uint32(len(btf)),
 	})
-	if err == nil {
-		fd.Close()
+	if errors.Is(err, unix.EINVAL) {
+		// Check for EINVAL specifically, rather than err != nil since we
+		// otherwise misdetect due to insufficient permissions.
+		return internal.ErrNotSupported
 	}
-	// Check for EINVAL specifically, rather than err != nil since we
-	// otherwise misdetect due to insufficient permissions.
-	return !errors.Is(err, unix.EINVAL), nil
+	if err != nil {
+		return err
+	}
+
+	fd.Close()
+	return nil
 })
 
-var haveFuncLinkage = internal.FeatureTest("BTF func linkage", "5.6", func() (bool, error) {
+var haveFuncLinkage = internal.FeatureTest("BTF func linkage", "5.6", func() error {
 	var (
 		types struct {
 			FuncProto btfType
@@ -771,11 +780,15 @@ var haveFuncLinkage = internal.FeatureTest("BTF func linkage", "5.6", func() (bo
 		btf:     internal.NewSlicePointer(btf),
 		btfSize: uint32(len(btf)),
 	})
-	if err == nil {
-		fd.Close()
+	if errors.Is(err, unix.EINVAL) {
+		// Check for EINVAL specifically, rather than err != nil since we
+		// otherwise misdetect due to insufficient permissions.
+		return internal.ErrNotSupported
+	}
+	if err != nil {
+		return err
 	}
 
-	// Check for EINVAL specifically, rather than err != nil since we
-	// otherwise misdetect due to insufficient permissions.
-	return !errors.Is(err, unix.EINVAL), nil
+	fd.Close()
+	return nil
 })

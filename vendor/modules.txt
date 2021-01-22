@@ -1,4 +1,4 @@
-# github.com/cilium/ebpf v0.2.1-0.20201120101629-7b4896c06aa8
+# github.com/cilium/ebpf v0.3.1-0.20210122141139-ecae18d62764
 ## explicit
 github.com/cilium/ebpf
 github.com/cilium/ebpf/asm
@@ -10,7 +10,7 @@ github.com/cilium/ebpf/link
 # github.com/containernetworking/plugins v0.8.6
 ## explicit
 github.com/containernetworking/plugins/pkg/ns
-# github.com/google/go-cmp v0.5.2
+# github.com/google/go-cmp v0.5.4
 ## explicit
 github.com/google/go-cmp/cmp
 github.com/google/go-cmp/cmp/internal/diff

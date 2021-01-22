@@ -7,27 +7,28 @@ import (
 	"github.com/cilium/ebpf/link"
 )
 
-func isLinkCompatible(link *link.NetNsLink, prog *ebpf.Program) (bool, error) {
-	info, err := link.Info()
+func isLinkCompatible(link *link.NetNsLink, prog *ebpf.Program, spec *ebpf.ProgramSpec) (bool, error) {
+	linkInfo, err := link.Info()
 	if err != nil {
-		return false, fmt.Errorf("get link info: %s", err)
+		return false, fmt.Errorf("link info: %s", err)
 	}
 
-	linkProg, err := ebpf.NewProgramFromID(info.Program)
-	if err != nil {
-		return false, fmt.Errorf("get link program from id: %s", err)
-	}
-	defer linkProg.Close()
-
+	// We could retrieve prog via linkInfo.Program, but that requires more
+	// privileges than reading a pinned program. So we have the caller pass in
+	// the pinned program and compare the IDs to make sure we have the correct one.
 	progInfo, err := prog.Info()
-	if err != nil {
-		return false, fmt.Errorf("get program info: %s", err)
-	}
-
-	linkProgInfo, err := linkProg.Info()
 	if err != nil {
 		return false, fmt.Errorf("get dispatcher program info: %s", err)
 	}
 
-	return progInfo.Tag == linkProgInfo.Tag, nil
+	if progID, _ := progInfo.ID(); progID != linkInfo.Program {
+		return false, fmt.Errorf("program id %v doesn't match link %v", progID, linkInfo.Program)
+	}
+
+	tag, err := spec.Tag()
+	if err != nil {
+		return false, fmt.Errorf("calculate dispatcher tag: %s", err)
+	}
+
+	return tag == progInfo.Tag, nil
 }

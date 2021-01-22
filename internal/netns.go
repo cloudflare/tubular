@@ -25,9 +25,12 @@ func openNetNS(path, bpfFsPath string) (ns.NetNS, string, error) {
 
 	var stat unix.Stat_t
 	if err := unix.Fstat(int(ns.Fd()), &stat); err != nil {
-		return nil, "", fmt.Errorf("can't stat netns: %s", err)
+		return nil, "", fmt.Errorf("stat netns: %s", err)
 	}
 
-	statePath := filepath.Join(bpfFsPath, fmt.Sprintf("%d_dispatcher", stat.Ino))
-	return ns, statePath, nil
+	dir := fmt.Sprintf("%d_dispatcher", stat.Ino)
+	return ns, filepath.Join(bpfFsPath, dir), nil
 }
+
+func linkPath(base string) string    { return filepath.Join(base, "link") }
+func programPath(base string) string { return filepath.Join(base, "program") }

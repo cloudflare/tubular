@@ -33,6 +33,26 @@ var (
 	ErrBadSocketState    = syscall.EBADFD
 )
 
+// TODO: Remove this once https://github.com/cilium/ebpf/pull/195 is merged.
+type dispatcherMaps struct {
+	Bindings           *ebpf.Map `ebpf:"bindings"`
+	DestinationMetrics *ebpf.Map `ebpf:"destination_metrics"`
+	Sockets            *ebpf.Map `ebpf:"sockets"`
+}
+
+func (dm *dispatcherMaps) Close() error {
+	for _, closer := range []io.Closer{
+		dm.Bindings,
+		dm.DestinationMetrics,
+		dm.Sockets,
+	} {
+		if err := closer.Close(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Dispatcher manipulates the socket dispatch data plane.
 type Dispatcher struct {
 	stateMu      sync.Locker
@@ -65,7 +85,7 @@ func CreateDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 	}
 	defer closeOnError(netns)
 
-	tempDir, err := ioutil.TempDir(filepath.Dir(pinPath), "tubular")
+	tempDir, err := ioutil.TempDir(filepath.Dir(string(pinPath)), "tubular-*")
 	if err != nil {
 		return nil, fmt.Errorf("can't create temp directory: %s", err)
 	}
@@ -93,11 +113,19 @@ func CreateDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 	}
 	defer bpf.Close()
 
-	dests, err := newDestinations(bpf, tempDir)
+	dests, err := newDestinations(dispatcherMaps{
+		bpf.MapBindings,
+		bpf.MapDestinationMetrics,
+		bpf.MapSockets,
+	}, tempDir)
 	if err != nil {
 		return nil, err
 	}
 	defer closeOnError(dests)
+
+	if err := bpf.ProgramDispatcher.Pin(programPath(tempDir)); err != nil {
+		return nil, fmt.Errorf("pin program: %s", err)
+	}
 
 	// The dispatcher is active after this call. Since we've not taken any
 	// lock, this can lead to two programs being active. We rely on the socket
@@ -108,7 +136,7 @@ func CreateDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 	}
 	defer closeOnError(link)
 
-	if err := link.Pin(filepath.Join(tempDir, "link")); err != nil {
+	if err := link.Pin(linkPath(tempDir)); err != nil {
 		return nil, fmt.Errorf("can't pin link: %s", err)
 	}
 
@@ -166,34 +194,40 @@ func OpenDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 		return nil, err
 	}
 
-	bpf, err := specs.Load(&ebpf.CollectionOptions{
-		Maps: ebpf.MapOptions{PinPath: pinPath},
-	})
+	link, err := link.LoadPinnedNetNs(linkPath(pinPath))
 	if err != nil {
-		return nil, fmt.Errorf("load BPF: %s", err)
-	}
-	defer bpf.Close()
-
-	dests, err := newDestinations(bpf, pinPath)
-	if err != nil {
-		return nil, err
-	}
-	defer closeOnError(dests)
-
-	linkPath := filepath.Join(pinPath, "link")
-	link, err := link.LoadPinnedNetNs(linkPath)
-	if err != nil {
-		return nil, fmt.Errorf("load dispatcher: %s", err)
+		return nil, fmt.Errorf("load link: %s", err)
 	}
 	defer closeOnError(link)
 
-	if compat, err := isLinkCompatible(link, bpf.ProgramDispatcher); err != nil {
+	prog, err := ebpf.LoadPinnedProgram(programPath(pinPath))
+	if err != nil {
+		return nil, fmt.Errorf("load dispatcher: %s", err)
+	}
+	defer prog.Close()
+
+	if compat, err := isLinkCompatible(link, prog, specs.ProgramDispatcher); err != nil {
 		return nil, fmt.Errorf("check dispatcher compatibility: %s", err)
 	} else if !compat {
 		return nil, fmt.Errorf("loaded dispatcher is incompatible")
 	}
 
-	mapBindings, err := bpf.MapBindings.Clone()
+	var maps dispatcherMaps
+	err = specs.CollectionSpec().LoadAndAssign(&maps, &ebpf.CollectionOptions{
+		Maps: ebpf.MapOptions{PinPath: pinPath},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("load BPF: %s", err)
+	}
+	defer maps.Close()
+
+	dests, err := newDestinations(maps, pinPath)
+	if err != nil {
+		return nil, err
+	}
+	defer closeOnError(dests)
+
+	mapBindings, err := maps.Bindings.Clone()
 	if err != nil {
 		return nil, fmt.Errorf("can't clone bindings map: %s", err)
 	}

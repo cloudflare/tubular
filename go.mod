@@ -3,9 +3,9 @@ module code.cfops.it/sys/tubular
 go 1.14
 
 require (
-	github.com/cilium/ebpf v0.2.1-0.20201120101629-7b4896c06aa8
+	github.com/cilium/ebpf v0.3.1-0.20210122141139-ecae18d62764
 	github.com/containernetworking/plugins v0.8.6
-	github.com/google/go-cmp v0.5.2
+	github.com/google/go-cmp v0.5.4
 	golang.org/x/sys v0.0.0-20200805065543-0cf7623e9dbd
 	kernel.org/pub/linux/libs/security/libcap/cap v0.2.46
 )

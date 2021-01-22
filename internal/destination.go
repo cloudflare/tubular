@@ -201,9 +201,9 @@ var destinationsSpec = &ebpf.MapSpec{
 	MaxEntries: 512,
 }
 
-func newDestinations(bpf *dispatcherObjects, pinPath string) (*destinations, error) {
-	maxEntries := bpf.MapSockets.MaxEntries()
-	if destMax := bpf.MapDestinationMetrics.MaxEntries(); destMax != maxEntries {
+func newDestinations(maps dispatcherMaps, pinPath string) (*destinations, error) {
+	maxEntries := maps.Sockets.MaxEntries()
+	if destMax := maps.DestinationMetrics.MaxEntries(); destMax != maxEntries {
 		return nil, fmt.Errorf("socket and metrics map size doesn't match: %d != %d", maxEntries, destMax)
 	}
 
@@ -217,13 +217,13 @@ func newDestinations(bpf *dispatcherObjects, pinPath string) (*destinations, err
 		return nil, fmt.Errorf("create destinations map: %s", err)
 	}
 
-	mapSockets, err := bpf.MapSockets.Clone()
+	mapSockets, err := maps.Sockets.Clone()
 	if err != nil {
 		allocs.Close()
 		return nil, fmt.Errorf("can't clone sockets map: %s", err)
 	}
 
-	mapDestinationMetrics, err := bpf.MapDestinationMetrics.Clone()
+	mapDestinationMetrics, err := maps.DestinationMetrics.Clone()
 	if err != nil {
 		allocs.Close()
 		mapSockets.Close()
