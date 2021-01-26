@@ -292,7 +292,10 @@ func (dests *destinations) HasID(dest *Destination, want destinationID) bool {
 	return alloc.ID == want
 }
 
-func (dests *destinations) AcquireID(dest *Destination) (destinationID, error) {
+// Acquire a reference on a destination.
+//
+// Allocates a new ID if no reference exists yet.
+func (dests *destinations) Acquire(dest *Destination) (destinationID, error) {
 	key, err := newDestinationKey(dest)
 	if err != nil {
 		return 0, err
@@ -390,7 +393,31 @@ func (dests *destinations) getAllocation(key *destinationKey) (*destinationAlloc
 	return alloc, nil
 }
 
-func (dests *destinations) ReleaseID(dest *Destination) error {
+// ReleaseByID releases a reference on a destination by its ID.
+//
+// This function is linear to the number of destinations and should be avoided
+// if possible.
+func (dests *destinations) ReleaseByID(id destinationID) error {
+	var (
+		key   destinationKey
+		alloc destinationAlloc
+		iter  = dests.allocs.Iterate()
+	)
+	for iter.Next(&key, &alloc) {
+		if alloc.ID != id {
+			continue
+		}
+
+		return dests.releaseAllocation(&key, alloc)
+	}
+	if err := iter.Err(); err != nil {
+		return err
+	}
+	return fmt.Errorf("release reference: no allocation for id %d", id)
+}
+
+// Release a reference on a destination.
+func (dests *destinations) Release(dest *Destination) error {
 	key, err := newDestinationKey(dest)
 	if err != nil {
 		return err
@@ -402,20 +429,24 @@ func (dests *destinations) ReleaseID(dest *Destination) error {
 		return fmt.Errorf("release id for %s: %s", key, err)
 	}
 
+	return dests.releaseAllocation(key, alloc)
+}
+
+func (dests *destinations) releaseAllocation(key *destinationKey, alloc destinationAlloc) error {
 	if alloc.Count == 0 {
 		return fmt.Errorf("release id: underflow")
 	}
 
 	alloc.Count--
 	if dests.allocationInUse(&alloc) {
-		if err = dests.allocs.Update(key, &alloc, ebpf.UpdateExist); err != nil {
+		if err := dests.allocs.Update(key, &alloc, ebpf.UpdateExist); err != nil {
 			return fmt.Errorf("release id for %s: %s", key, err)
 		}
 		return nil
 	}
 
 	// There are no more references, and no socket. We can release the allocation.
-	if err = dests.allocs.Delete(key); err != nil {
+	if err := dests.allocs.Delete(key); err != nil {
 		return fmt.Errorf("delete allocation: %s", err)
 	}
 	return nil

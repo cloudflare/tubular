@@ -18,7 +18,7 @@ func TestDestinationsHasID(t *testing.T) {
 		t.Fatal("HasID returns true for non-existing destination")
 	}
 
-	id, err := dests.AcquireID(foo)
+	id, err := dests.Acquire(foo)
 	if err != nil {
 		t.Fatal("Can't allocate ID:", err)
 	}
@@ -35,7 +35,7 @@ func TestDestinationIDAllocation(t *testing.T) {
 	acquire := func(t *testing.T, dests *destinations, dest *Destination, expectedID destinationID) {
 		t.Helper()
 
-		id, err := dests.AcquireID(dest)
+		id, err := dests.Acquire(dest)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -47,7 +47,7 @@ func TestDestinationIDAllocation(t *testing.T) {
 	release := func(t *testing.T, dests *destinations, dest *Destination) {
 		t.Helper()
 
-		if err := dests.ReleaseID(dest); err != nil {
+		if err := dests.Release(dest); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -62,47 +62,62 @@ func TestDestinationIDAllocation(t *testing.T) {
 	)
 
 	t.Run("release non-existing", func(t *testing.T) {
-		lbls := mustNewDestinations(t)
-		if err := lbls.ReleaseID(foo); err == nil {
+		dests := mustNewDestinations(t)
+		if err := dests.Release(foo); err == nil {
 			t.Error("Release doesn't return an error for non-existing labels")
 		}
 	})
 
 	t.Run("sequential allocation", func(t *testing.T) {
-		lbls := mustNewDestinations(t)
-		acquire(t, lbls, foo, 0)
-		acquire(t, lbls, bar, 1)
-		acquire(t, lbls, baz, 2)
-		checkDestinations(t, lbls, foo, bar, baz)
+		dests := mustNewDestinations(t)
+		acquire(t, dests, foo, 0)
+		acquire(t, dests, bar, 1)
+		acquire(t, dests, baz, 2)
+		checkDestinations(t, dests, foo, bar, baz)
 	})
 
 	t.Run("usage counting", func(t *testing.T) {
-		lbls := mustNewDestinations(t)
-		acquire(t, lbls, foo, 0)
-		acquire(t, lbls, foo, 0)
-		release(t, lbls, foo)
-		checkDestinations(t, lbls, foo)
-		acquire(t, lbls, foo, 0)
-		release(t, lbls, foo)
-		checkDestinations(t, lbls, foo)
-		release(t, lbls, foo)
-		checkDestinations(t, lbls)
+		dests := mustNewDestinations(t)
+		acquire(t, dests, foo, 0)
+		acquire(t, dests, foo, 0)
+		release(t, dests, foo)
+		checkDestinations(t, dests, foo)
+		acquire(t, dests, foo, 0)
+		release(t, dests, foo)
+		checkDestinations(t, dests, foo)
+		release(t, dests, foo)
+		checkDestinations(t, dests)
 	})
 
 	t.Run("allocate unused ids", func(t *testing.T) {
-		lbls := mustNewDestinations(t)
-		acquire(t, lbls, foo, 0)
-		acquire(t, lbls, bar, 1)
-		acquire(t, lbls, baz, 2)
-		checkDestinations(t, lbls, foo, bar, baz)
-		release(t, lbls, foo)
-		checkDestinations(t, lbls, bar, baz)
-		release(t, lbls, bar)
-		checkDestinations(t, lbls, baz)
-		acquire(t, lbls, bingo, 0)
-		acquire(t, lbls, quux, 1)
-		acquire(t, lbls, frood, 3)
-		checkDestinations(t, lbls, baz, bingo, quux, frood)
+		dests := mustNewDestinations(t)
+		acquire(t, dests, foo, 0)
+		acquire(t, dests, bar, 1)
+		acquire(t, dests, baz, 2)
+		checkDestinations(t, dests, foo, bar, baz)
+		release(t, dests, foo)
+		checkDestinations(t, dests, bar, baz)
+		release(t, dests, bar)
+		checkDestinations(t, dests, baz)
+		acquire(t, dests, bingo, 0)
+		acquire(t, dests, quux, 1)
+		acquire(t, dests, frood, 3)
+		checkDestinations(t, dests, baz, bingo, quux, frood)
+	})
+
+	t.Run("release by id", func(t *testing.T) {
+		dests := mustNewDestinations(t)
+		acquire(t, dests, foo, 0)
+
+		if dests.ReleaseByID(1) == nil {
+			t.Error("ReleaseByID accepts an unallocated ID")
+		}
+
+		if err := dests.ReleaseByID(0); err != nil {
+			t.Fatal("ReleaseByID doesn't release valid ID:", err)
+		}
+
+		checkDestinations(t, dests)
 	})
 }
 

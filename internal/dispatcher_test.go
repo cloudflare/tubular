@@ -130,6 +130,41 @@ func TestAddAndRemoveBindings(t *testing.T) {
 	}
 }
 
+func TestUpdateBinding(t *testing.T) {
+	foo := mustNewBinding(t, "foo", TCP, "127.0.0.0/8", 8080)
+	bar := mustNewBinding(t, "bar", TCP, "127.0.0.0/8", 8080)
+	bar32 := mustNewBinding(t, "bar", TCP, "127.0.0.0/32", 8080)
+	fooDest := newDestinationFromBinding(foo)
+	barDest := newDestinationFromBinding(bar)
+
+	testcases := []struct {
+		name          string
+		first, second *Binding
+		result        []*Destination
+	}{
+		{"overwrite", foo, bar, []*Destination{barDest}},
+		{"more specific", foo, bar32, []*Destination{fooDest, barDest}},
+		{"less specific", bar32, foo, []*Destination{fooDest, barDest}},
+	}
+
+	for _, test := range testcases {
+		t.Run(test.name, func(t *testing.T) {
+			netns := testutil.NewNetNS(t)
+			dp := mustCreateDispatcher(t, netns.Path())
+
+			if err := dp.AddBinding(test.first); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := dp.AddBinding(test.second); err != nil {
+				t.Fatal(err)
+			}
+
+			checkDestinations(t, dp.destinations, test.result...)
+		})
+	}
+}
+
 func TestRemoveBinding(t *testing.T) {
 	netns := testutil.NewNetNS(t)
 	dp := mustCreateDispatcher(t, netns.Path())

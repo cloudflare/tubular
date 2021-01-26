@@ -316,35 +316,42 @@ func (p Protocol) String() string {
 //
 // Traffic for the binding is dropped by the data plane if no matching
 // destination exists.
-//
-// Returns an error if the binding is already pointing at the specified label.
 func (d *Dispatcher) AddBinding(bind *Binding) (err error) {
 	d.stateMu.Lock()
 	defer d.stateMu.Unlock()
 
-	onError := func(fn func()) {
-		if err != nil {
-			fn()
-		}
-	}
-
 	dest := newDestinationFromBinding(bind)
-
-	id, err := d.destinations.AcquireID(dest)
-	if err != nil {
-		return fmt.Errorf("add binding: %s", err)
-	}
-	defer onError(func() { _ = d.destinations.ReleaseID(dest) })
 
 	key, err := newBindingKey(bind)
 	if err != nil {
 		return err
 	}
 
-	value := bindingValue{id, key.PrefixLen}
-	err = d.bindings.Update(key, &value, 0)
+	var old bindingValue
+	var releaseOldID bool
+	if err := d.bindings.Lookup(key, &old); err == nil {
+		// Since the LPM trie will return the "best" match we have to make sure
+		// that the prefix length matches to ensure that we're replacing a binding,
+		// not just installing a more specific one.
+		releaseOldID = old.PrefixLen == key.PrefixLen
+	} else if !errors.Is(err, ebpf.ErrKeyNotExist) {
+		return fmt.Errorf("lookup binding: %s", err)
+	}
+
+	id, err := d.destinations.Acquire(dest)
 	if err != nil {
+		return fmt.Errorf("acquire destination: %s", err)
+	}
+
+	new := bindingValue{id, key.PrefixLen}
+	err = d.bindings.Update(key, &new, 0)
+	if err != nil {
+		_ = d.destinations.Release(dest)
 		return fmt.Errorf("create binding: %s", err)
+	}
+
+	if releaseOldID {
+		_ = d.destinations.ReleaseByID(old.ID)
 	}
 
 	return nil
@@ -378,7 +385,7 @@ func (d *Dispatcher) RemoveBinding(bind *Binding) error {
 
 	// We err on the side of caution here: if this release fails
 	// we can have unused destinations, but we can't have re-used IDs.
-	if err := d.destinations.ReleaseID(dest); err != nil {
+	if err := d.destinations.Release(dest); err != nil {
 		return fmt.Errorf("remove binding: %s", err)
 	}
 
