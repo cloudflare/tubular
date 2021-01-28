@@ -7,13 +7,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"os"
 	"sync"
 	"syscall"
 	"time"
 
+	"code.cfops.it/sys/tubular/internal/log"
 	"code.cfops.it/sys/tubular/internal/utils"
 )
 
@@ -77,7 +77,7 @@ Examples:
 		if err != nil {
 			// Log all unexpected errors
 			if !utils.IsErrNetClosed(err) {
-				log.Printf("Accept(%v) error: %v", ln.Addr(), err)
+				e.stderr.Logf("Accept(%v) error: %v", ln.Addr(), err)
 			}
 
 			// Treat max FDs error as not temporary
@@ -93,7 +93,7 @@ Examples:
 
 		// TODO: Recover from panics in goroutine
 		wg.Add(1)
-		go serveConn(ctx, &wg, e.log, conn)
+		go serveConn(ctx, &wg, e.stderr, conn)
 	}
 	wg.Wait()
 
@@ -120,12 +120,12 @@ func resolveUnixAddr(network, address string) *net.UnixAddr {
 
 }
 
-func serveConn(ctx context.Context, wg *sync.WaitGroup, errorLog *log.Logger, conn *net.UnixConn) {
+func serveConn(ctx context.Context, wg *sync.WaitGroup, errorLog log.Logger, conn *net.UnixConn) {
 	defer wg.Done()
 
 	err := serveLoop(ctx, conn)
 	if err != nil {
-		errorLog.Printf("serve error: %v", err)
+		errorLog.Logf("serve error: %v", err)
 	}
 }
 

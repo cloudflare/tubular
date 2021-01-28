@@ -65,7 +65,7 @@ LISTEN_PID is ignored, so is LISTEN_FDNAMES.
 	} else {
 		msg = fmt.Sprintf("updated destination %s", dst.String())
 	}
-	fmt.Fprintf(e.stdout, "registered socket ino:%d: %s\n", inode, msg)
+	e.stdout.Logf("registered socket ino:%d: %s\n", inode, msg)
 
 	return nil
 }

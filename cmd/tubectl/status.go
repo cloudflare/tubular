@@ -37,7 +37,7 @@ Show current bindings and destinations.
 	}
 
 	w := tabwriter.NewWriter(e.stdout, 0, 0, 1, ' ', tabwriter.AlignRight)
-	fmt.Fprintln(e.stdout, "Bindings:")
+	e.stdout.Log("Bindings:")
 	fmt.Fprintln(w, "label\tprotocol\tprefix\tport\t")
 
 	for _, bind := range bindings {
@@ -63,7 +63,7 @@ Show current bindings and destinations.
 
 	sortDestinations(dests)
 
-	fmt.Fprintln(e.stdout, "\nDestinations:")
+	e.stdout.Log("\nDestinations:")
 	fmt.Fprintln(w, "label\tdomain\tprotocol\tsocket\tpackets\tdropped\t")
 
 	for _, dest := range dests {

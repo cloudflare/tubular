@@ -6,12 +6,11 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
-	"log"
 	"os"
 	"syscall"
 
 	"code.cfops.it/sys/tubular/internal"
+	"code.cfops.it/sys/tubular/internal/log"
 	"code.cfops.it/sys/tubular/internal/rlimit"
 
 	"golang.org/x/sys/unix"
@@ -19,11 +18,10 @@ import (
 )
 
 type env struct {
-	stdout, stderr io.Writer
+	stdout, stderr log.Logger
 	netns          string
 	bpfFs          string
 	ctx            context.Context
-	log            *log.Logger
 	osFns
 }
 
@@ -36,10 +34,9 @@ type osFns struct {
 
 var (
 	defaultEnv = env{
-		stdout: os.Stdout,
-		stderr: os.Stderr,
+		stdout: log.NewStdLogger(os.Stdout),
+		stderr: log.NewStdLogger(os.Stderr),
 		ctx:    context.Background(),
-		log:    log.New(log.Writer(), "", log.LstdFlags),
 		osFns: osFns{
 			getenv:  os.Getenv,
 			newFile: os.NewFile,
@@ -78,7 +75,7 @@ func (e *env) createDispatcher() (*internal.Dispatcher, error) {
 		return nil, fmt.Errorf("can't load dispatcher: %w", err)
 	}
 
-	fmt.Fprintf(e.stdout, "created dispatcher in %v\n", dp.Path)
+	e.stdout.Logf("created dispatcher in %v\n", dp.Path)
 	return dp, nil
 }
 
@@ -92,7 +89,7 @@ func (e *env) openDispatcher() (*internal.Dispatcher, error) {
 		return nil, fmt.Errorf("can't open dispatcher: %w", err)
 	}
 
-	fmt.Fprintf(e.stdout, "opened dispatcher at %v\n", dp.Path)
+	e.stdout.Logf("opened dispatcher at %v\n", dp.Path)
 	return dp, nil
 }
 
@@ -109,7 +106,7 @@ func (e *env) newFlagSet(name, usage string) *flag.FlagSet {
 func tubectl(e env, args []string) (err error) {
 	defer func() {
 		if err != nil {
-			fmt.Fprintln(e.stderr, "Error:", err)
+			e.stderr.Log("Error:", err)
 		}
 	}()
 

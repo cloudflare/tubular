@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"log"
 	"os"
 	"runtime"
 	"strings"
@@ -11,6 +10,7 @@ import (
 	"testing"
 
 	"code.cfops.it/sys/tubular/internal"
+	"code.cfops.it/sys/tubular/internal/log"
 	"code.cfops.it/sys/tubular/internal/testutil"
 	_ "code.cfops.it/sys/tubular/internal/testutil"
 	"github.com/containernetworking/plugins/pkg/ns"
@@ -138,12 +138,11 @@ type tubectlTestCall struct {
 func (tc *tubectlTestCall) Run(tb testing.TB) (*bytes.Buffer, error) {
 	tb.Helper()
 
-	output := new(bytes.Buffer)
+	output := new(log.Buffer)
 	env := env{
 		stdout: output,
 		stderr: output,
 		ctx:    tc.ctx,
-		log:    log.New(&testLogWriter{tb}, "", log.LstdFlags),
 		osFns: osFns{
 			getenv:  func(key string) string { return tc.getenv(key) },
 			newFile: func(fd uintptr, name string) *os.File { return tc.newFile(fd, name) },
@@ -160,7 +159,7 @@ func (tc *tubectlTestCall) Run(tb testing.TB) (*bytes.Buffer, error) {
 
 	err := tubectl(env, args)
 	tb.Logf("tubectl %s\n%s", strings.Join(args, " "), output)
-	return output, err
+	return &output.Buffer, err
 }
 
 func (tc *tubectlTestCall) MustRun(tb testing.TB) *bytes.Buffer {
@@ -172,15 +171,6 @@ func (tc *tubectlTestCall) MustRun(tb testing.TB) *bytes.Buffer {
 	}
 
 	return output
-}
-
-type testLogWriter struct {
-	tb testing.TB
-}
-
-func (w *testLogWriter) Write(p []byte) (int, error) {
-	w.tb.Log(string(p))
-	return len(p), nil
 }
 
 func (tc *tubectlTestCall) Start(tb testing.TB) {

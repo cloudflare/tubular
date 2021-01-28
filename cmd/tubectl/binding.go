@@ -60,7 +60,7 @@ Remove a previously created binding.
 		return err
 	}
 
-	fmt.Fprintln(e.stdout, "Removed", bind)
+	e.stdout.Log("Removed", bind)
 	return nil
 }
 
