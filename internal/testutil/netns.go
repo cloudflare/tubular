@@ -114,27 +114,17 @@ func JoinNetNS(tb testing.TB, netns ns.NetNS, fn func()) {
 	fn()
 }
 
-// Listen listens on a given address in a specific network namespace.
-//
-// Uses a local address if address is empty.
-func Listen(tb testing.TB, netns ns.NetNS, network, address string) (sys syscall.Conn) {
-	return ListenWithName(tb, netns, network, address, "default")
-}
-
-// Same as Listen but connections are also accepted / packets read until the test ends.
+// ListenAndEcho calls Listen and then starts an echo server on the returned connection.
 func ListenAndEcho(tb testing.TB, netns ns.NetNS, network, address string) (sys syscall.Conn) {
 	return ListenAndEchoWithName(tb, netns, network, address, "default")
 }
 
 const maxNameLen = 128
 
-// ListenWithName listens on a given address in a specific network namespace, and
-// gives the listener a name.
-func ListenWithName(tb testing.TB, netns ns.NetNS, network, address, name string) (sys syscall.Conn) {
-	if len(name) > maxNameLen {
-		tb.Fatalf("name exceeds %d bytes", maxNameLen)
-
-	}
+// Listen listens on a given address in a specific network namespace.
+//
+// Uses a local address if address is empty.
+func Listen(tb testing.TB, netns ns.NetNS, network, address string) (sys syscall.Conn) {
 	if address == "" {
 		switch network {
 		case "tcp", "tcp4", "udp", "udp4":
@@ -179,12 +169,14 @@ func ListenWithName(tb testing.TB, netns ns.NetNS, network, address, name string
 	return
 }
 
-// Same as ListenWithName but also accepts connections / reads packets from the
-// listener unti the end of test.
-//
-// Use this with CanDialName to ensure that you're reaching the correct listener.
+// ListenAndEchoWithName is like ListenAndEcho, except that you can distinguish
+// multiple listeners by using CanDialName.
 func ListenAndEchoWithName(tb testing.TB, netns ns.NetNS, network, address, name string) (sys syscall.Conn) {
-	sys = ListenWithName(tb, netns, network, address, name)
+	if len(name) > maxNameLen {
+		tb.Fatalf("name exceeds %d bytes", maxNameLen)
+	}
+
+	sys = Listen(tb, netns, network, address)
 	go echo(tb, network, sys, name)
 	return
 }
