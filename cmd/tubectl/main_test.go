@@ -17,9 +17,20 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func testTubectl(tb testing.TB, netns ns.NetNS, cmd string, args ...string) (*bytes.Buffer, error) {
-	tb.Helper()
+func TestHelp(t *testing.T) {
+	cmd := tubectlTestCall{
+		Args: []string{"-help"},
+	}
 
+	a := cmd.MustRun(t)
+	b := cmd.MustRun(t)
+
+	if !bytes.Equal(a.Bytes(), b.Bytes()) {
+		t.Error("-help output isn't stable")
+	}
+}
+
+func testTubectl(tb testing.TB, netns ns.NetNS, cmd string, args ...string) (*bytes.Buffer, error) {
 	tc := tubectlTestCall{
 		NetNS: netns,
 		Cmd:   cmd,
@@ -29,11 +40,12 @@ func testTubectl(tb testing.TB, netns ns.NetNS, cmd string, args ...string) (*by
 }
 
 func mustTestTubectl(tb testing.TB, netns ns.NetNS, cmd string, args ...string) {
-	tb.Helper()
-
-	if _, err := testTubectl(tb, netns, cmd, args...); err != nil {
-		tb.Fatal("Can't execute tubectl:", err)
+	tc := tubectlTestCall{
+		NetNS: netns,
+		Cmd:   cmd,
+		Args:  args,
 	}
+	tc.MustRun(tb)
 }
 
 func mustReadyNetNS(tb testing.TB) ns.NetNS {
@@ -137,12 +149,29 @@ func (tc *tubectlTestCall) Run(tb testing.TB) (*bytes.Buffer, error) {
 			newFile: func(fd uintptr, name string) *os.File { return tc.newFile(fd, name) },
 		},
 	}
-	args := []string{"-netns", tc.NetNS.Path(), tc.Cmd}
+	var args []string
+	if tc.NetNS != nil {
+		args = append(args, "-netns", tc.NetNS.Path())
+	}
+	if tc.Cmd != "" {
+		args = append(args, tc.Cmd)
+	}
 	args = append(args, tc.Args...)
 
 	err := tubectl(env, args)
 	tb.Logf("tubectl %s\n%s", strings.Join(args, " "), output)
 	return output, err
+}
+
+func (tc *tubectlTestCall) MustRun(tb testing.TB) *bytes.Buffer {
+	tb.Helper()
+
+	output, err := tc.Run(tb)
+	if err != nil {
+		tb.Fatal("Error from tubectl:", err)
+	}
+
+	return output
 }
 
 type testLogWriter struct {

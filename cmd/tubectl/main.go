@@ -106,8 +106,6 @@ func (e *env) newFlagSet(name, usage string) *flag.FlagSet {
 	return set
 }
 
-type cmdFunc func(*env, ...string) error
-
 func tubectl(e env, args []string) (err error) {
 	defer func() {
 		if err != nil {
@@ -120,15 +118,18 @@ func tubectl(e env, args []string) (err error) {
 	set.StringVar(&e.netns, "netns", "/proc/self/ns/net", "`path` to the network namespace")
 	set.StringVar(&e.bpfFs, "bpffs", "/sys/fs/bpf", "`path` to a BPF filesystem for state")
 
-	cmds := map[string]cmdFunc{
-		"version":  version,
-		"load":     load,
-		"unload":   unload,
-		"bind":     bind,
-		"unbind":   unbind,
-		"list":     list,
-		"register": register,
-		"serve":    serve,
+	cmds := []struct {
+		name string
+		fn   func(*env, ...string) error
+	}{
+		{"version", version},
+		{"load", load},
+		{"unload", unload},
+		{"bind", bind},
+		{"unbind", unbind},
+		{"list", list},
+		{"register", register},
+		{"serve", serve},
 	}
 
 	set.Usage = func() {
@@ -140,8 +141,8 @@ func tubectl(e env, args []string) (err error) {
 		fmt.Fprintln(out)
 
 		fmt.Fprintln(out, "Available commands:")
-		for cmd := range cmds {
-			fmt.Fprintln(out, "  "+cmd)
+		for _, cmd := range cmds {
+			fmt.Fprintln(out, "  "+cmd.name)
 		}
 		fmt.Fprintln(out)
 	}
@@ -166,21 +167,25 @@ func tubectl(e env, args []string) (err error) {
 	}
 
 	var (
-		cmd     = set.Arg(0)
+		cmdName = set.Arg(0)
 		cmdArgs = set.Args()[1:]
-		cmdFn   = cmds[cmd]
 	)
 
-	if cmdFn == nil {
-		set.Usage()
-		return fmt.Errorf("unknown command '%s'", cmd)
+	for _, cmd := range cmds {
+		if cmd.name != cmdName {
+			continue
+		}
+
+		err := cmd.fn(&e, cmdArgs...)
+		if err != nil {
+			return fmt.Errorf("%s: %w", cmdName, err)
+		}
+
+		return nil
 	}
 
-	if err := cmdFn(&e, cmdArgs...); err != nil {
-		return fmt.Errorf("%s: %w", cmd, err)
-	}
-
-	return nil
+	set.Usage()
+	return fmt.Errorf("unknown command '%s'", cmdName)
 }
 
 func main() {
