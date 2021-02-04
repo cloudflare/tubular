@@ -2,12 +2,8 @@ github.com/Microsoft/go-winio v0.4.11/go.mod h1:VhR8bwka0BXejwEJY73c50VrPtXAaKcy
 github.com/Microsoft/hcsshim v0.8.6/go.mod h1:Op3hHsoHPAvb6lceZHDtd9OkTew38wNoXnJs8iY7rUg=
 github.com/alexflint/go-filemutex v0.0.0-20171022225611-72bdc8eae2ae/go.mod h1:CgnQgUtFrFz9mxFNtED3jI5tLDjKlOM+oUF/sTk6ps0=
 github.com/buger/jsonparser v0.0.0-20180808090653-f4dd9f5a6b44/go.mod h1:bbYlZJ7hK1yFx9hf58LP0zeX7UjIGs20ufpu3evjr+s=
-github.com/cilium/ebpf v0.3.0 h1:LI3lsl5GmTh+OFYamrj8sp+R0yam38zHG6NTDhSlNmQ=
-github.com/cilium/ebpf v0.3.0/go.mod h1:To2CFviqOWL/M0gIMsvSMlqe7em/l1ALkX1PyjrX2Qs=
-github.com/cilium/ebpf v0.3.1-0.20210121143754-ed4af55dd0de h1:aTdNO8Lrh60q0O6nTCyhrscFHWlSwhIi3VIKpT+Dsk0=
-github.com/cilium/ebpf v0.3.1-0.20210121143754-ed4af55dd0de/go.mod h1:tW67IUhq6DONN7DtnuzCC/OLtju9FNkniOVRyMh1470=
-github.com/cilium/ebpf v0.3.1-0.20210122141139-ecae18d62764 h1:SYUa8RsxL4YhzSTA/Lh51Ygn6ydgYtZADThYGwWLZao=
-github.com/cilium/ebpf v0.3.1-0.20210122141139-ecae18d62764/go.mod h1:tW67IUhq6DONN7DtnuzCC/OLtju9FNkniOVRyMh1470=
+github.com/cilium/ebpf v0.3.1-0.20210203221021-e21b84917241 h1:nqn/Gg5GOzl5jBVWvbA5jXFiONhMKrOvdHnMb81HmsE=
+github.com/cilium/ebpf v0.3.1-0.20210203221021-e21b84917241/go.mod h1:tW67IUhq6DONN7DtnuzCC/OLtju9FNkniOVRyMh1470=
 github.com/containernetworking/cni v0.7.1 h1:fE3r16wpSEyaqY4Z4oFrLMmIGfBYIKpPrHK31EJ9FzE=
 github.com/containernetworking/cni v0.7.1/go.mod h1:LGwApLUm2FpoOfxTDEeq8T9ipbpZ61X79hmU3w8FmsY=
 github.com/containernetworking/plugins v0.8.6 h1:npZTLiMa4CRn6m5P9+1Dz4O1j0UeFbm8VYN6dlsw568=
@@ -22,7 +18,6 @@ github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSs
 github.com/godbus/dbus v0.0.0-20180201030542-885f9cc04c9c/go.mod h1:/YcGZj5zSblfDWMMoOzV4fas9FZnQYTkDnsGvmh2Grw=
 github.com/golang/protobuf v1.3.1 h1:YF8+flBXS5eO826T4nzqPrxfhQThhXl0YzfuUPu4SBg=
 github.com/golang/protobuf v1.3.1/go.mod h1:6lQm79b+lXiMfvg/cZm0SGofjICqVBUtrP5yJMmIC1U=
-github.com/google/go-cmp v0.5.2/go.mod h1:v8dTdLbMG2kIc/vJvl+f65V22dbkXbowE6jgT/gNBxE=
 github.com/google/go-cmp v0.5.4 h1:L8R9j+yAqZuZjsqh/z+F1NCffTKKLShY6zXTItVIZ8M=
 github.com/google/go-cmp v0.5.4/go.mod h1:v8dTdLbMG2kIc/vJvl+f65V22dbkXbowE6jgT/gNBxE=
 github.com/j-keck/arping v0.0.0-20160618110441-2cf9dc699c56/go.mod h1:ymszkNOg6tORTn+6F6j+Jc8TOr5osrynvN6ivFWZ2GA=
