@@ -34,6 +34,12 @@ tubular_$(VERSION)_%.deb: clean all
 test:
 	$(GO) test -race -short -v ./...
 
+.PHONY: cover
+cover:
+	A="$$(mktemp)"; \
+		$(GO) test -coverpkg=./... -coverprofile="$$A" ./...; \
+		$(GO) tool cover -html "$$A" -o coverage.html
+
 .PHONY: build-tests
 build-tests:
 	$(GO) list ./... | while read pkg; do $(GO) test -c $${pkg} || exit; done
