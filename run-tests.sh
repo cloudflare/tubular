@@ -1,6 +1,14 @@
 #!/bin/bash
 # Test the current package under a different kernel.
 # Requires virtme and qemu to be installed.
+#
+# Run all tests with the default kernel:
+#     run-tests.sh
+# Run a command with the default kernel:
+#     run-tests.sh make cover
+# Use a custom kernel:
+#     KERNEL=/path/to/kernel run-test.sh
+#     KERNEL=5.10.8 run-tests.sh
 
 set -eu
 set -o pipefail
@@ -16,8 +24,8 @@ if [[ "${1:-}" = "--in-vm" ]]; then
   export GOPROXY=file:///run/go-root/pkg/mod/cache/download
   export GOCACHE=/run/go-cache
 
-  make test
-  touch "$1/success"
+  "$@"
+  touch "/run/output/success"
   exit 0
 fi
 
@@ -41,21 +49,27 @@ readonly input="$(mktemp -d)"
 readonly output="$(mktemp -d)"
 readonly tmp_dir="${TMPDIR:-/tmp}"
 
-if [[ -e "${1:-}" ]]; then
-  readonly kernel="${1}"
+if [[ -e "${KERNEL:-}" ]]; then
+  readonly kernel="${KERNEL}"
 else
-  readonly version="${1:-$default_version}"
+  readonly version="${KERNEL:-$default_version}"
   fetch "linux-${version}.bz" "${tmp_dir}"
   readonly kernel="${tmp_dir}/linux-${version}.bz"
 fi
 
+if (( $# > 0 )); then
+  printf -v cmd " %q" "$@"
+else
+  printf -v cmd " %q" "make" "test"
+fi
+
 echo Testing on "${kernel}"
-$sudo virtme-run --kimg "${kernel}" --memory 512M --pwd \
+$sudo virtme-run --kimg "${kernel}" --memory 512M --pwd --rw \
   --rwdir=/run/input="${input}" \
   --rwdir=/run/output="${output}" \
   --rodir=/run/go-path="$(go env GOPATH)" \
   --rwdir=/run/go-cache="$(go env GOCACHE)" \
-  --script-sh "PATH=\"$PATH\" $(realpath "$0") --in-vm /run/output" \
+  --script-sh "PATH=\"$PATH\" $(realpath "$0") --in-vm $cmd" \
   --qemu-opts -smp 2 # need at least two CPUs for some tests
 
 if [[ ! -e "${output}/success" ]]; then
