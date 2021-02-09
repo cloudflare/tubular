@@ -18,6 +18,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"code.cfops.it/sys/tubular/internal/lock"
+	"code.cfops.it/sys/tubular/internal/log"
 )
 
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc "$CLANG" -makebase "$MAKEDIR" dispatcher ../ebpf/inet-kern.c -- -mcpu=v2 -O2 -g -nostdinc -Wall -Werror -I../ebpf/include
@@ -62,12 +63,13 @@ type Dispatcher struct {
 	bindings     *ebpf.Map
 	destinations *destinations
 	dir          *os.File
+	log          log.Logger
 }
 
 // CreateDispatcher loads the dispatcher into a network namespace.
 //
 // Returns ErrLoaded if the namespace already has the dispatcher enabled.
-func CreateDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
+func CreateDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 	closeOnError := func(c io.Closer) {
 		if err != nil {
 			c.Close()
@@ -154,13 +156,13 @@ func CreateDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 		return nil, fmt.Errorf("can't create dispatcher: %s", err)
 	}
 
-	return &Dispatcher{stateMu, netns, link, pinPath, mapBindings, dests, dir}, nil
+	return &Dispatcher{stateMu, netns, link, pinPath, mapBindings, dests, dir, logger}, nil
 }
 
 // OpenDispatcher loads an existing dispatcher from a namespace.
 //
 // Returns ErrNotLoaded if the dispatcher is not loaded yet.
-func OpenDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
+func OpenDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 	closeOnError := func(c io.Closer) {
 		if err != nil {
 			c.Close()
@@ -232,7 +234,7 @@ func OpenDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 		return nil, fmt.Errorf("can't clone bindings map: %s", err)
 	}
 
-	return &Dispatcher{stateMu, netns, link, pinPath, mapBindings, dests, dir}, nil
+	return &Dispatcher{stateMu, netns, link, pinPath, mapBindings, dests, dir, logger}, nil
 }
 
 // Close frees associated resources.
@@ -320,6 +322,10 @@ func (d *Dispatcher) AddBinding(bind *Binding) (err error) {
 	d.stateMu.Lock()
 	defer d.stateMu.Unlock()
 
+	return d.addBinding(bind)
+}
+
+func (d *Dispatcher) addBinding(bind *Binding) (err error) {
 	dest := newDestinationFromBinding(bind)
 
 	key, err := newBindingKey(bind)
@@ -364,6 +370,10 @@ func (d *Dispatcher) RemoveBinding(bind *Binding) error {
 	d.stateMu.Lock()
 	defer d.stateMu.Unlock()
 
+	return d.removeBinding(bind)
+}
+
+func (d *Dispatcher) removeBinding(bind *Binding) error {
 	key, err := newBindingKey(bind)
 	if err != nil {
 		return err
@@ -392,6 +402,88 @@ func (d *Dispatcher) RemoveBinding(bind *Binding) error {
 	return nil
 }
 
+// ReplaceBindings changes the currently active bindings to a new set.
+//
+// It is conceptually identical to repeatedly calling AddBinding and RemoveBinding
+// and therefore not atomic: the function may return without applying all changes.
+//
+// Returns a boolean indicating whether any changes were made.
+func (d *Dispatcher) ReplaceBindings(bindings []*Binding) (bool, error) {
+	d.stateMu.Lock()
+	defer d.stateMu.Unlock()
+
+	want := make(map[bindingKey]string)
+	for _, bind := range bindings {
+		key, err := newBindingKey(bind)
+		if err != nil {
+			return false, fmt.Errorf("binding %s: %s", bind, err)
+		}
+
+		if label := want[*key]; label != "" {
+			return false, fmt.Errorf("duplicate binding %s: already assigned to %s", bind, label)
+		}
+
+		want[*key] = bind.Label
+	}
+
+	have := make(map[bindingKey]string)
+	err := d.iterBindings(func(key bindingKey, label string) {
+		have[key] = label
+	})
+	if err != nil {
+		return false, fmt.Errorf("get existing bindings: %s", err)
+	}
+
+	// TUBE-45: we should add bindings in most to least, and remove them
+	// in least to most specific order. Instead, we can replace this code
+	// with an atomic map swap in the future.
+	added, removed := diffBindings(have, want)
+
+	for _, bind := range added {
+		if err := d.addBinding(bind); err != nil {
+			return false, fmt.Errorf("add binding %s: %s", bind, err)
+		}
+		d.log.Log("added binding", bind)
+	}
+
+	for _, bind := range removed {
+		if err := d.removeBinding(bind); err != nil {
+			return false, fmt.Errorf("remove binding %s: %s", bind, err)
+		}
+		d.log.Log("removed binding", bind)
+	}
+
+	return len(added) > 0 || len(removed) > 0, nil
+}
+
+func (d *Dispatcher) iterBindings(fn func(bindingKey, string)) error {
+	// Must be called with the state lock held.
+
+	dests, err := d.destinations.List()
+	if err != nil {
+		return fmt.Errorf("list destination IDs: %s", err)
+	}
+
+	var (
+		key   bindingKey
+		value bindingValue
+		iter  = d.bindings.Iterate()
+	)
+	for iter.Next(&key, &value) {
+		dest := dests[value.ID]
+		if dest == nil {
+			return fmt.Errorf("no destination for id %d", value.ID)
+		}
+
+		fn(key, dest.Label)
+	}
+	if err := iter.Err(); err != nil {
+		return fmt.Errorf("iterate bindings: %s", err)
+	}
+
+	return nil
+}
+
 // Bindings lists known bindings.
 //
 // The returned slice is sorted.
@@ -399,27 +491,12 @@ func (d *Dispatcher) Bindings() ([]*Binding, error) {
 	d.stateMu.Lock()
 	defer d.stateMu.Unlock()
 
-	dests, err := d.destinations.List()
+	var bindings []*Binding
+	err := d.iterBindings(func(key bindingKey, label string) {
+		bindings = append(bindings, newBindingFromBPF(label, &key))
+	})
 	if err != nil {
-		return nil, fmt.Errorf("list destination IDs: %s", err)
-	}
-
-	var (
-		key      bindingKey
-		value    bindingValue
-		bindings []*Binding
-		iter     = d.bindings.Iterate()
-	)
-	for iter.Next(&key, &value) {
-		dest := dests[value.ID]
-		if dest == nil {
-			return nil, fmt.Errorf("no destination for id %d", value.ID)
-		}
-
-		bindings = append(bindings, newBindingFromBPF(dest.Label, &key))
-	}
-	if err := iter.Err(); err != nil {
-		return nil, fmt.Errorf("can't iterate bindings: %s", err)
+		return nil, err
 	}
 
 	sort.Slice(bindings, func(i, j int) bool {

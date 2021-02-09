@@ -59,7 +59,7 @@ func mustReadyNetNS(tb testing.TB) ns.NetNS {
 func mustLoadDispatcher(tb testing.TB, netns ns.NetNS) {
 	tb.Helper()
 
-	dp, err := internal.CreateDispatcher(netns.Path(), "/sys/fs/bpf")
+	dp, err := internal.CreateDispatcher(log.Discard, netns.Path(), "/sys/fs/bpf")
 	if err != nil {
 		tb.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func mustLoadDispatcher(tb testing.TB, netns ns.NetNS) {
 
 func mustOpenDispatcher(tb testing.TB, netns ns.NetNS) *internal.Dispatcher {
 	tb.Helper()
-	dp, err := internal.OpenDispatcher(netns.Path(), "/sys/fs/bpf")
+	dp, err := internal.OpenDispatcher(log.Discard, netns.Path(), "/sys/fs/bpf")
 	if err != nil {
 		tb.Fatal(err)
 	}

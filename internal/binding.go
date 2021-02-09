@@ -122,3 +122,19 @@ type bindingValue struct {
 	ID        destinationID
 	PrefixLen uint32
 }
+
+func diffBindings(have, want map[bindingKey]string) (added, removed []*Binding) {
+	for key, label := range want {
+		if have[key] != label {
+			added = append(added, newBindingFromBPF(label, &key))
+		}
+	}
+
+	for key, label := range have {
+		if want[key] == "" {
+			removed = append(removed, newBindingFromBPF(label, &key))
+		}
+	}
+
+	return
+}

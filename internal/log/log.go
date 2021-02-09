@@ -52,3 +52,11 @@ func (b *Buffer) Log(args ...interface{}) {
 func (b *Buffer) Logf(format string, args ...interface{}) {
 	fmt.Fprintf(b, format, args...)
 }
+
+var Discard Logger = discard{}
+
+type discard struct{}
+
+func (d discard) Log(args ...interface{})                 {}
+func (d discard) Logf(format string, args ...interface{}) {}
+func (d discard) Write(buf []byte) (int, error)           { return len(buf), nil }
