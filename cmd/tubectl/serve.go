@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"code.cfops.it/sys/tubular/internal/log"
-	"code.cfops.it/sys/tubular/internal/utils"
 )
 
 const (
@@ -76,7 +75,7 @@ Examples:
 		conn, err := ln.AcceptUnix()
 		if err != nil {
 			// Log all unexpected errors
-			if !utils.IsErrNetClosed(err) {
+			if !errors.Is(err, net.ErrClosed) {
 				e.stderr.Logf("Accept(%v) error: %v", ln.Addr(), err)
 			}
 
@@ -174,7 +173,7 @@ func serveLoop(ctx context.Context, conn *net.UnixConn) error {
 }
 
 func isClosedOrTimeout(e error) bool {
-	return utils.IsErrNetClosed(e) || errors.Is(e, io.EOF) || os.IsTimeout(e)
+	return errors.Is(e, net.ErrClosed) || errors.Is(e, io.EOF) || os.IsTimeout(e)
 }
 
 func handleRequest(req []byte) []byte {

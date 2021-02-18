@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"code.cfops.it/sys/tubular/internal/utils"
 	"github.com/containernetworking/plugins/pkg/ns"
 	"golang.org/x/sys/unix"
 )
@@ -188,7 +187,7 @@ func echo(tb testing.TB, network string, sys syscall.Conn, name string) {
 		for {
 			conn, err := ln.Accept()
 			if err != nil {
-				if !utils.IsErrNetClosed(err) {
+				if !errors.Is(err, net.ErrClosed) {
 					tb.Error("Can't accept:", err)
 				}
 				return
@@ -217,7 +216,7 @@ func echo(tb testing.TB, network string, sys syscall.Conn, name string) {
 			var buf [1]byte
 			_, from, err := conn.ReadFrom(buf[:])
 			if err != nil {
-				if !utils.IsErrNetClosed(err) {
+				if !errors.Is(err, net.ErrClosed) {
 					tb.Error("Can't read UDP packets:", err)
 				}
 				return
