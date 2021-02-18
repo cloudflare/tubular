@@ -1,6 +1,6 @@
 module code.cfops.it/sys/tubular
 
-go 1.14
+go 1.16
 
 require (
 	github.com/cilium/ebpf v0.3.1-0.20210203221021-e21b84917241
