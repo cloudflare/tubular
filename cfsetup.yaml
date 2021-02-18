@@ -5,13 +5,12 @@ buster: &buster
     builddeps:
       - build-essential
       - crossbuild-essential-arm64
-      - libc6-dev-arm64-cross
       - rubygem-fpm
       - clang-9
       - go
     post-cache:
       - CC=x86_64-linux-gnu-gcc ARCH=amd64 make package
-      - CGO_ENABLED=1 CC=aarch64-linux-gnu-gcc ARCH=arm64 make package
+      - CC=aarch64-linux-gnu-gcc ARCH=arm64 make package
       - git diff --exit-code || { echo "generated files are not up to date" >&2; false; }
   test:
     privileged:
