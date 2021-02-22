@@ -64,18 +64,18 @@ Show current bindings and destinations.
 	sortDestinations(dests)
 
 	e.stdout.Log("\nDestinations:")
-	fmt.Fprintln(w, "label\tdomain\tprotocol\tsocket\tpackets\tdropped\t")
+	fmt.Fprintln(w, "label\tdomain\tprotocol\tsocket\tlookups\tmisses\terrors\t")
 
 	for _, dest := range dests {
-		destMestrics := metrics.Destinations[dest]
-		dropped := destMestrics.DroppedPacketsIncompatibleSocket + destMestrics.DroppedPacketsMissingSocket
+		destMetrics := metrics.Destinations[dest]
 		_, err := fmt.Fprint(w,
 			dest.Label, "\t",
 			dest.Domain, "\t",
 			dest.Protocol, "\t",
 			dest.Socket, "\t",
-			destMestrics.ReceivedPackets, "\t",
-			dropped, "\t",
+			destMetrics.Lookups, "\t",
+			destMetrics.Misses, "\t",
+			destMetrics.TotalErrors(), "\t",
 			"\n",
 		)
 		if err != nil {

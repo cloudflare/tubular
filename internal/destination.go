@@ -503,13 +503,18 @@ func (dests *destinations) Metrics() (map[Destination]DestinationMetrics, error)
 }
 
 type DestinationMetrics struct {
-	// Total number of packets sent to this destination.
-	ReceivedPackets uint64
-	// Total number of packets dropped due to no socket being available.
-	DroppedPacketsMissingSocket uint64
-	// Total number of packets dropped due to the socket being incompatible
+	// Total number of times traffic matched a destination.
+	Lookups uint64
+	// Total number of failed lookups since no socket was registered.
+	Misses uint64
+	// Total number of failed lookups since the socket was incompatible
 	// with the incoming traffic.
-	DroppedPacketsIncompatibleSocket uint64
+	ErrorBadSocket uint64
+}
+
+// TotalErrors sums all errors.
+func (dm *DestinationMetrics) TotalErrors() uint64 {
+	return dm.ErrorBadSocket
 }
 
 func sumDestinationMetrics(in []DestinationMetrics) DestinationMetrics {
@@ -519,9 +524,9 @@ func sumDestinationMetrics(in []DestinationMetrics) DestinationMetrics {
 
 	sum := in[0]
 	for _, metrics := range in[1:] {
-		sum.ReceivedPackets += metrics.ReceivedPackets
-		sum.DroppedPacketsMissingSocket += metrics.DroppedPacketsMissingSocket
-		sum.DroppedPacketsIncompatibleSocket += metrics.DroppedPacketsIncompatibleSocket
+		sum.Lookups += metrics.Lookups
+		sum.Misses += metrics.Misses
+		sum.ErrorBadSocket += metrics.ErrorBadSocket
 	}
 
 	return sum

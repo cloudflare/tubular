@@ -32,9 +32,9 @@ struct binding {
 };
 
 struct destination_metrics {
-	__u64 received_packets;
-	__u64 dropped_packets__missing_socket;
-	__u64 dropped_packets__incompatible_socket;
+	__u64 lookups;
+	__u64 misses;
+	__u64 errors__bad_socket;
 };
 
 struct {
@@ -134,7 +134,7 @@ int dispatcher(struct bpf_sk_lookup *ctx)
 		return SK_DROP;
 	}
 
-	metrics->received_packets++;
+	metrics->lookups++;
 
 	struct bpf_sock *sk __cleanup_sk = bpf_map_lookup_elem(&sockets, &bind->id);
 	if (!sk) {
@@ -145,7 +145,7 @@ int dispatcher(struct bpf_sk_lookup *ctx)
 		 * bound to the address/port reserved
 		 * for this service.
 		 */
-		metrics->dropped_packets__missing_socket++;
+		metrics->misses++;
 		return SK_DROP;
 	}
 
@@ -157,7 +157,7 @@ int dispatcher(struct bpf_sk_lookup *ctx)
 		 * for the address/port it is mapped
 		 * to. Service misconfigured.
 		 */
-		metrics->dropped_packets__incompatible_socket++;
+		metrics->errors__bad_socket++;
 		return SK_DROP;
 	}
 

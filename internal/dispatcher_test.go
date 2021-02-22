@@ -378,9 +378,7 @@ func TestMetrics(t *testing.T) {
 		t.Fatal("Could dial before adding socket")
 	}
 
-	if _, _, err := dp.RegisterSocket("foo", ln); err != nil {
-		t.Fatal("Can't add socket:", err)
-	}
+	mustRegisterSocket(t, dp, "foo", ln)
 
 	if !testutil.CanDial(t, netns, "tcp4", "127.0.0.1:8080") {
 		t.Fatal("Can't dial after adding socket")
@@ -406,16 +404,16 @@ func TestMetrics(t *testing.T) {
 		t.Fatal("No metrics for", dest)
 	}
 
-	if destMetrics.ReceivedPackets != 2 {
-		t.Error("Expected two packets, got", destMetrics.ReceivedPackets)
+	if destMetrics.Lookups != 2 {
+		t.Error("Expected two packets, got", destMetrics.Lookups)
 	}
 
-	if destMetrics.DroppedPacketsMissingSocket != 1 {
-		t.Error("Expected one missing socket packet, got", destMetrics.DroppedPacketsMissingSocket)
+	if destMetrics.Misses != 1 {
+		t.Error("Expected one missing socket packet, got", destMetrics.Misses)
 	}
 
-	if destMetrics.DroppedPacketsIncompatibleSocket != 0 {
-		t.Error("Expected no incompatible socket packet, got", destMetrics.DroppedPacketsIncompatibleSocket)
+	if destMetrics.ErrorBadSocket != 0 {
+		t.Error("Expected no incompatible socket packet, got", destMetrics.ErrorBadSocket)
 	}
 
 	// Remove the socket from the sockmap
@@ -442,16 +440,16 @@ func TestMetrics(t *testing.T) {
 		t.Fatal("No metrics for", dest)
 	}
 
-	if destMetrics.ReceivedPackets != 0 {
-		t.Error("Expected zero packets, got", destMetrics.ReceivedPackets)
+	if destMetrics.Lookups != 0 {
+		t.Error("Expected zero packets, got", destMetrics.Lookups)
 	}
 
-	if destMetrics.DroppedPacketsMissingSocket != 0 {
-		t.Error("Expected zero missing socket packet, got", destMetrics.DroppedPacketsMissingSocket)
+	if destMetrics.Misses != 0 {
+		t.Error("Expected zero missing socket packet, got", destMetrics.Misses)
 	}
 
-	if destMetrics.DroppedPacketsIncompatibleSocket != 0 {
-		t.Error("Expected zero incompatible socket packet, got", destMetrics.DroppedPacketsIncompatibleSocket)
+	if destMetrics.ErrorBadSocket != 0 {
+		t.Error("Expected zero incompatible socket packet, got", destMetrics.ErrorBadSocket)
 	}
 }
 
@@ -484,9 +482,7 @@ func TestBindingPrecedence(t *testing.T) {
 		ln := testutil.ListenAndEchoWithName(t, netns, bind.Protocol.String(), "127.0.0.1:0", bind.Label)
 		listeners[bind.Label] = ln
 
-		if _, _, err := dp.RegisterSocket(bind.Label, ln); err != nil {
-			t.Fatal("Can't register listener:", err)
-		}
+		mustRegisterSocket(t, dp, bind.Label, ln)
 	}
 
 	for _, test := range []struct {
@@ -514,6 +510,22 @@ func mustNewBinding(tb testing.TB, label string, proto Protocol, prefix string, 
 	}
 
 	return bdg
+}
+
+func mustAddBinding(tb testing.TB, dp *Dispatcher, bind *Binding) {
+	tb.Helper()
+
+	if err := dp.AddBinding(bind); err != nil {
+		tb.Fatal("Can't add binding:", err)
+	}
+}
+
+func mustRegisterSocket(tb testing.TB, dp *Dispatcher, label string, conn syscall.Conn) {
+	tb.Helper()
+
+	if _, _, err := dp.RegisterSocket(label, conn); err != nil {
+		tb.Fatal("Register socket:", err)
+	}
 }
 
 func mustCreateDispatcher(tb testing.TB, logger log.Logger, netns string) *Dispatcher {
