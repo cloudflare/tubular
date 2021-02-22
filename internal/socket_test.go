@@ -50,7 +50,7 @@ func TestReadWriteSocket(t *testing.T) {
 	}
 
 	if rcvStat.Sys().(*syscall.Stat_t).Ino != sendStat.Sys().(*syscall.Stat_t).Ino {
-		t.Error("File inodes do not match")
+		t.Error("File inodes do not match", rcvStat.Sys().(*syscall.Stat_t).Ino, sendStat.Sys().(*syscall.Stat_t).Ino)
 	}
 }
 

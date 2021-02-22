@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 
+	"code.cfops.it/sys/tubular/internal/sysconn"
 	"github.com/cilium/ebpf"
 	"golang.org/x/sys/unix"
 )
@@ -164,21 +165,15 @@ func newDestinationFromFd(label string, fd uintptr) (*Destination, error) {
 	}, nil
 }
 
-func newDestinationFromConn(label string, conn syscall.RawConn) (*Destination, error) {
-	var (
-		dest  *Destination
-		opErr error
-	)
-	err := conn.Control(func(fd uintptr) {
-		dest, opErr = newDestinationFromFd(label, fd)
+func newDestinationFromConn(label string, conn syscall.Conn) (*Destination, error) {
+	var dest *Destination
+	err := sysconn.Control(conn, func(fd int) (err error) {
+		dest, err = newDestinationFromFd(label, uintptr(fd))
+		return
 	})
 	if err != nil {
-		return nil, fmt.Errorf("access fd: %s", err)
+		return nil, err
 	}
-	if opErr != nil {
-		return nil, opErr
-	}
-
 	return dest, nil
 }
 
@@ -248,7 +243,7 @@ func (dests *destinations) Close() error {
 	return dests.sockets.Close()
 }
 
-func (dests *destinations) AddSocket(dest *Destination, conn syscall.RawConn) (created bool, err error) {
+func (dests *destinations) AddSocket(dest *Destination, conn syscall.Conn) (created bool, err error) {
 	key, err := newDestinationKey(dest)
 	if err != nil {
 		return false, err
@@ -259,19 +254,16 @@ func (dests *destinations) AddSocket(dest *Destination, conn syscall.RawConn) (c
 		return false, err
 	}
 
-	var opErr error
-	err = conn.Control(func(fd uintptr) {
-		opErr = dests.sockets.Update(alloc.ID, uint64(fd), ebpf.UpdateExist)
-		if errors.Is(opErr, ebpf.ErrKeyNotExist) {
+	err = sysconn.Control(conn, func(fd int) error {
+		err := dests.sockets.Update(alloc.ID, uint64(fd), ebpf.UpdateExist)
+		if errors.Is(err, ebpf.ErrKeyNotExist) {
 			created = true
-			opErr = dests.sockets.Update(alloc.ID, uint64(fd), ebpf.UpdateNoExist)
+			err = dests.sockets.Update(alloc.ID, uint64(fd), ebpf.UpdateNoExist)
 		}
+		return err
 	})
 	if err != nil {
-		return false, fmt.Errorf("access fd: %s", err)
-	}
-	if opErr != nil {
-		return false, fmt.Errorf("map update failed: %s", opErr)
+		return false, fmt.Errorf("update socket map: %s", err)
 	}
 
 	return

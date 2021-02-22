@@ -4,27 +4,20 @@ import (
 	"syscall"
 	"testing"
 
+	"code.cfops.it/sys/tubular/internal/sysconn"
 	"golang.org/x/sys/unix"
 )
 
 // FileStatusFlags returns flags for the open file description onderlying conn.
-func FileStatusFlags(tb testing.TB, conn syscall.Conn) (flags int) {
+func FileStatusFlags(tb testing.TB, conn syscall.Conn) int {
 	tb.Helper()
 
-	raw, err := conn.SyscallConn()
-	if err != nil {
-		tb.Fatal(err)
-	}
-
-	err = raw.Control(func(fd uintptr) {
-		flags, err = unix.FcntlInt(fd, unix.F_GETFL, 0)
-		if err != nil {
-			tb.Fatal("fcntl(F_GETFL):", err)
-		}
+	flags, err := sysconn.ControlInt(conn, func(fd int) (int, error) {
+		return unix.FcntlInt(uintptr(fd), unix.F_GETFL, 0)
 	})
 	if err != nil {
-		tb.Fatal("Control:", err)
+		tb.Fatal("fcntl(F_GETFL):", err)
 	}
 
-	return
+	return flags
 }

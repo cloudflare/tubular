@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"code.cfops.it/sys/tubular/internal"
+	"code.cfops.it/sys/tubular/internal/sysconn"
 	"code.cfops.it/sys/tubular/internal/testutil"
 
 	"github.com/containernetworking/plugins/pkg/ns"
@@ -169,21 +170,14 @@ func makeDualStackSocket(tb testing.TB, netns ns.NetNS) syscall.Conn {
 	tb.Helper()
 
 	ln := testutil.Listen(tb, netns, "tcp", ":0")
-	rc, err := ln.SyscallConn()
-	if err != nil {
-		tb.Fatal("SyscallConn failed: ", err)
-	}
-	err = rc.Control(func(fd uintptr) {
-		v6only, err := syscall.GetsockoptInt(int(fd), syscall.SOL_IPV6, syscall.IPV6_V6ONLY)
-		if err != nil {
-			tb.Fatal("Getsockopt failed: ", err)
-		}
-		if v6only != 0 {
-			tb.Fatal("socket is in V6ONLY mode")
-		}
+	v6only, err := sysconn.ControlInt(ln, func(fd int) (int, error) {
+		return unix.GetsockoptInt(fd, syscall.SOL_IPV6, syscall.IPV6_V6ONLY)
 	})
 	if err != nil {
-		tb.Fatal("RawConn.Control failed: ", err)
+		tb.Fatal(err)
+	}
+	if v6only != 0 {
+		tb.Fatal("socket is in V6ONLY mode")
 	}
 
 	return ln

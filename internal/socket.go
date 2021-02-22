@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 
+	"code.cfops.it/sys/tubular/internal/sysconn"
 	"golang.org/x/sys/unix"
 )
 
@@ -18,32 +19,17 @@ func WriteToSocket(conn *net.UnixConn, p []byte, file *os.File) (int, error) {
 		return conn.Write(p)
 	}
 
-	sys, err := file.SyscallConn()
-	if err != nil {
-		return 0, fmt.Errorf("syscall conn: %s", err)
-	}
-
-	var writeErr error
-	var n int
-	err = sys.Control(func(fd uintptr) {
-		oob := unix.UnixRights(int(fd))
-		var oobn int
-		n, oobn, writeErr = conn.WriteMsgUnix(p, oob, nil)
-		if writeErr != nil {
-			return
+	return sysconn.ControlInt(file, func(fd int) (int, error) {
+		oob := unix.UnixRights(fd)
+		n, oobn, err := conn.WriteMsgUnix(p, oob, nil)
+		if err != nil {
+			return n, err
 		}
-
 		if oobn != len(oob) {
-			writeErr = fmt.Errorf("short write of out-of-band data")
+			return n, fmt.Errorf("short write of out-of-band data")
 		}
+		return n, nil
 	})
-	if err != nil {
-		return 0, fmt.Errorf("control: %s", err)
-	}
-	if writeErr != nil {
-		return 0, writeErr
-	}
-	return n, nil
 }
 
 // ReadFromSocket reads a message, between zero and one file descriptors and

@@ -130,7 +130,7 @@ func TestDestinationsAddSocket(t *testing.T) {
 	}
 	defer ln.Close()
 
-	conn := mustRawConn(t, ln.(syscall.Conn))
+	conn := ln.(syscall.Conn)
 	dest, err := newDestinationFromConn("foo", conn)
 	if err != nil {
 		t.Fatal(err)

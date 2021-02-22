@@ -545,12 +545,7 @@ func (c SocketCookie) String() string {
 // Returns the Destination with which the socket was registered, and a boolean
 // indicating whether the Destination was created or updated, or an error.
 func (d *Dispatcher) RegisterSocket(label string, conn syscall.Conn) (dest *Destination, created bool, _ error) {
-	raw, err := conn.SyscallConn()
-	if err != nil {
-		return nil, false, fmt.Errorf("raw conn: %s", err)
-	}
-
-	dest, err = newDestinationFromConn(label, raw)
+	dest, err := newDestinationFromConn(label, conn)
 	if err != nil {
 		return nil, false, err
 	}
@@ -558,7 +553,7 @@ func (d *Dispatcher) RegisterSocket(label string, conn syscall.Conn) (dest *Dest
 	d.stateMu.Lock()
 	defer d.stateMu.Unlock()
 
-	created, err = d.destinations.AddSocket(dest, raw)
+	created, err = d.destinations.AddSocket(dest, conn)
 	if err != nil {
 		return nil, false, fmt.Errorf("add socket: %s", err)
 	}

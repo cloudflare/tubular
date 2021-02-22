@@ -384,12 +384,7 @@ func TestMetrics(t *testing.T) {
 		t.Fatal("Can't dial after adding socket")
 	}
 
-	raw, err := ln.SyscallConn()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	dest, err := newDestinationFromConn("foo", raw)
+	dest, err := newDestinationFromConn("foo", ln)
 	if err != nil {
 		t.Fatal(err)
 	}

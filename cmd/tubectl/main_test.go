@@ -11,6 +11,7 @@ import (
 
 	"code.cfops.it/sys/tubular/internal"
 	"code.cfops.it/sys/tubular/internal/log"
+	"code.cfops.it/sys/tubular/internal/sysconn"
 	"code.cfops.it/sys/tubular/internal/testutil"
 	_ "code.cfops.it/sys/tubular/internal/testutil"
 	"github.com/containernetworking/plugins/pkg/ns"
@@ -229,23 +230,11 @@ func (tc *tubectlTestCall) newFile(fd uintptr, name string) *os.File {
 // Creates an os.File for the same file _description_, but not the same file
 // _descriptor_, as represented by passed syscall.Conn.
 func dupFile(old syscall.Conn) (*os.File, error) {
-	raw, err := old.SyscallConn()
-	if err != nil {
-		return nil, err
-	}
-
-	var (
-		newFd int
-		opErr error
-	)
-	err = raw.Control(func(fd uintptr) {
-		newFd, opErr = unix.FcntlInt(fd, unix.F_DUPFD_CLOEXEC, 0)
+	newFd, err := sysconn.ControlInt(old, func(fd int) (int, error) {
+		return unix.FcntlInt(uintptr(fd), unix.F_DUPFD_CLOEXEC, 0)
 	})
 	if err != nil {
 		return nil, err
-	}
-	if opErr != nil {
-		return nil, opErr
 	}
 
 	return os.NewFile(uintptr(newFd), ""), nil
