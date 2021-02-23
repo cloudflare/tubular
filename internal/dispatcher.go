@@ -1,14 +1,12 @@
 package internal
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"sort"
 	"sync"
 	"syscall"
 
@@ -408,7 +406,7 @@ func (d *Dispatcher) removeBinding(bind *Binding) error {
 // and therefore not atomic: the function may return without applying all changes.
 //
 // Returns a boolean indicating whether any changes were made.
-func (d *Dispatcher) ReplaceBindings(bindings []*Binding) (bool, error) {
+func (d *Dispatcher) ReplaceBindings(bindings Bindings) (bool, error) {
 	d.stateMu.Lock()
 	defer d.stateMu.Unlock()
 
@@ -485,43 +483,17 @@ func (d *Dispatcher) iterBindings(fn func(bindingKey, string)) error {
 }
 
 // Bindings lists known bindings.
-//
-// The returned slice is sorted.
-func (d *Dispatcher) Bindings() ([]*Binding, error) {
+func (d *Dispatcher) Bindings() (Bindings, error) {
 	d.stateMu.Lock()
 	defer d.stateMu.Unlock()
 
-	var bindings []*Binding
+	var bindings Bindings
 	err := d.iterBindings(func(key bindingKey, label string) {
 		bindings = append(bindings, newBindingFromBPF(label, &key))
 	})
 	if err != nil {
 		return nil, err
 	}
-
-	sort.Slice(bindings, func(i, j int) bool {
-		a, b := bindings[i], bindings[j]
-
-		if a.Label != b.Label {
-			return a.Label < b.Label
-		}
-
-		if a.Protocol != b.Protocol {
-			return a.Protocol < b.Protocol
-		}
-
-		if a.Port != b.Port {
-			return a.Port < b.Port
-		}
-
-		if c := bytes.Compare(a.Prefix.IP.To16(), b.Prefix.IP.To16()); c != 0 {
-			return c < 0
-		}
-
-		aBits, _ := a.Prefix.Mask.Size()
-		bBits, _ := b.Prefix.Mask.Size()
-		return aBits < bBits
-	})
 
 	return bindings, nil
 }

@@ -36,12 +36,15 @@ Show current bindings and destinations.
 		return fmt.Errorf("can't get bindings: %s", err)
 	}
 
+	// Output from most specific to least specific.
+	sort.Sort(bindings)
+
 	w := tabwriter.NewWriter(e.stdout, 0, 0, 1, ' ', tabwriter.AlignRight)
 	e.stdout.Log("Bindings:")
-	fmt.Fprintln(w, "label\tprotocol\tprefix\tport\t")
+	fmt.Fprintln(w, "protocol\tprefix\tport\tlabel\t")
 
 	for _, bind := range bindings {
-		_, err := fmt.Fprintf(w, "%s\t%v\t%s\t%d\t\n", bind.Label, bind.Protocol, bind.Prefix, bind.Port)
+		_, err := fmt.Fprintf(w, "%v\t%s\t%d\t%s\t\n", bind.Protocol, bind.Prefix, bind.Port, bind.Label)
 		if err != nil {
 			return err
 		}

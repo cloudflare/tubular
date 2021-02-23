@@ -219,21 +219,21 @@ func TestReplaceBindings(t *testing.T) {
 		netns := testutil.NewNetNS(t)
 		dp := mustCreateDispatcher(t, nil, netns.Path())
 
-		if _, err := dp.ReplaceBindings([]*Binding{a, aRelabeled}); err == nil {
+		if _, err := dp.ReplaceBindings(Bindings{a, aRelabeled}); err == nil {
 			t.Error("ReplaceBindings doesn't reject multiple labels for the same binding")
 		}
 	})
 
 	testcases := []struct {
-		initial, replacement []*Binding
+		initial, replacement Bindings
 	}{
 		{nil, nil},
-		{nil, []*Binding{a}},
-		{[]*Binding{a}, []*Binding{a}},
-		{nil, []*Binding{a, b}},
-		{[]*Binding{a}, []*Binding{b}},
-		{[]*Binding{a}, []*Binding{aRelabeled}},
-		{[]*Binding{a, b}, nil},
+		{nil, Bindings{a}},
+		{Bindings{a}, Bindings{a}},
+		{nil, Bindings{a, b}},
+		{Bindings{a}, Bindings{b}},
+		{Bindings{a}, Bindings{aRelabeled}},
+		{Bindings{a, b}, nil},
 	}
 
 	for _, test := range testcases {
