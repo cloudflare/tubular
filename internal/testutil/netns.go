@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -36,6 +37,16 @@ func NewNetNS(tb testing.TB, networks ...string) ns.NetNS {
 			return
 		}
 
+		for _, file := range []string{
+			"/proc/sys/net/ipv4/ip_nonlocal_bind",
+			"/proc/sys/net/ipv6/ip_nonlocal_bind",
+		} {
+			if err := os.WriteFile(file, []byte("1\n"), 0666); err != nil {
+				errs <- fmt.Errorf("enable nonlocal bind: %s", err)
+				return
+			}
+		}
+
 		ip := exec.Command("/sbin/ip", "link", "set", "dev", "lo", "up")
 		if out, err := ip.CombinedOutput(); err != nil {
 			if len(out) > 0 {
@@ -46,7 +57,18 @@ func NewNetNS(tb testing.TB, networks ...string) ns.NetNS {
 		}
 
 		for _, network := range networks {
-			ip := exec.Command("/sbin/ip", "addr", "add", "dev", "lo", network)
+			ip := exec.Command("/sbin/ip", "route", "add", "local", network, "dev", "lo")
+			if out, err := ip.CombinedOutput(); err != nil {
+				if len(out) > 0 {
+					tb.Log(string(out))
+				}
+				errs <- fmt.Errorf("add routes: %s", err)
+				return
+			}
+		}
+
+		for _, network := range networks {
+			ip := exec.Command("/sbin/ip", "addr", "add", "dev", "lo", network, "nodad", "noprefixroute")
 			if out, err := ip.CombinedOutput(); err != nil {
 				if len(out) > 0 {
 					tb.Log(string(out))

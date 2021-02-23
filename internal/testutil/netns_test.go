@@ -33,32 +33,37 @@ func TestNetNS(t *testing.T) {
 }
 
 func TestCanDial(t *testing.T) {
-	netns := NewNetNS(t)
+	netns := NewNetNS(t, "ab::/64", "192.0.2.0/24")
 
-	for _, network := range []string{"tcp", "udp"} {
+	for network, addr := range map[string]string{
+		"tcp":  "192.0.2.1:4242",
+		"udp":  "192.0.2.1:4242",
+		"tcp4": "192.0.2.1:4242",
+		"udp4": "192.0.2.1:4242",
+		"tcp6": "[ab::1]:4242",
+		"udp6": "[ab::1]:4242",
+	} {
 		t.Run(network, func(t *testing.T) {
-			if CanDial(t, netns, network, "127.0.0.1:8080") {
+			if CanDial(t, netns, network, addr) {
 				t.Fatal("Can dial in empty network namespace")
 			}
 
-			if CanDial(t, netns, network, "127.0.0.1:8080") {
+			if CanDial(t, netns, network, addr) {
 				t.Fatal("Can dial a second time in empty network namespace")
 			}
 
-			ListenAndEcho(t, netns, network, "127.0.0.1:8080")
+			ListenAndEchoWithName(t, netns, network, addr, "testing")
 
-			if !CanDial(t, netns, network, "127.0.0.1:8080") {
+			if !CanDial(t, netns, network, addr) {
 				t.Fatal("Can't dial with listener present")
 			}
 
-			if !CanDial(t, netns, network, "127.0.0.1:8080") {
+			if !CanDial(t, netns, network, addr) {
 				t.Fatal("Can't dial a second time with listener present")
 			}
 
-			Dial(t, netns, network, "127.0.0.1:8080")
-
-			ListenAndEchoWithName(t, netns, network, "127.0.0.1:9090", "testing")
-			CanDialName(t, netns, network, "127.0.0.1:9090", "testing")
+			Dial(t, netns, network, addr)
+			CanDialName(t, netns, network, addr, "testing")
 		})
 	}
 }
