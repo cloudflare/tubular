@@ -1,0 +1,12 @@
+{
+	"bindings": [
+		{
+			"label": "foo",
+			"prefix": "127.0.0.1"
+		},
+		{
+			"label": "bar",
+			"prefix": "::1/64"
+		}
+	]
+}

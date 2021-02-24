@@ -134,6 +134,19 @@ func TestAddAndRemoveBindings(t *testing.T) {
 	}
 }
 
+func TestBindingWithEmptyLabel(t *testing.T) {
+	netns := testutil.NewNetNS(t)
+	dp := mustCreateDispatcher(t, nil, netns.Path())
+
+	if err := dp.AddBinding(mustNewBinding(t, "", TCP, "::1", 80)); err == nil {
+		t.Fatal("AddBinding accepts empty label")
+	}
+
+	if err := dp.RemoveBinding(mustNewBinding(t, "", TCP, "::1", 80)); err == nil {
+		t.Fatal("RemoveBinding accepts empty label")
+	}
+}
+
 func TestUpdateBinding(t *testing.T) {
 	foo := mustNewBinding(t, "foo", TCP, "127.0.0.0/8", 8080)
 	bar := mustNewBinding(t, "bar", TCP, "127.0.0.0/8", 8080)

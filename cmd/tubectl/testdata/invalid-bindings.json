@@ -1,0 +1,9 @@
+{
+	"bindings": [
+		{
+			"label": "foo",
+			"prefix": "127.0.0.1",
+			"bogus": false
+		}
+	]
+}

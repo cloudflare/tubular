@@ -301,6 +301,18 @@ const (
 	UDP Protocol = unix.IPPROTO_UDP
 )
 
+func (p *Protocol) UnmarshalText(text []byte) error {
+	switch v := string(text); v {
+	case "tcp":
+		*p = TCP
+	case "udp":
+		*p = UDP
+	default:
+		return fmt.Errorf("unknown protocol %q", v)
+	}
+	return nil
+}
+
 func (p Protocol) String() string {
 	switch p {
 	case TCP:

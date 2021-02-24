@@ -14,7 +14,7 @@ import (
 type Binding struct {
 	Label    string
 	Protocol Protocol
-	Prefix   *net.IPNet
+	Prefix   *IPNet
 	Port     uint16
 }
 
@@ -23,28 +23,9 @@ type Binding struct {
 // prefix may either be in CIDR notation (::1/128) or a plain IP address.
 // Specifying ::1 is equivalent to passing ::1/128.
 func NewBinding(label string, proto Protocol, prefix string, port uint16) (*Binding, error) {
-	var ipn *net.IPNet
-	if strings.Index(prefix, "/") != -1 {
-		var err error
-		_, ipn, err = net.ParseCIDR(prefix)
-		if err != nil {
-			return nil, fmt.Errorf("invalid prefix: %s", err)
-		}
-		if len(ipn.IP) == net.IPv6len && ipn.IP.To4() != nil {
-			ipn.IP = ipn.IP.To4()
-			ipn.Mask = ipn.Mask[net.IPv6len-net.IPv4len:]
-		}
-	} else {
-		ip := net.ParseIP(prefix)
-		if ip == nil {
-			return nil, fmt.Errorf("invalid prefix: %s", prefix)
-		}
-		if ip.To4() != nil {
-			ip = ip.To4()
-		}
-
-		bits := len(ip) * 8
-		ipn = &net.IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)}
+	ipn, err := parseCIDR(prefix)
+	if err != nil {
+		return nil, err
 	}
 
 	return &Binding{
@@ -60,14 +41,14 @@ func newBindingFromBPF(label string, key *bindingKey) *Binding {
 	ip := make(net.IP, len(key.IP))
 	copy(ip, key.IP[:])
 
-	var prefix *net.IPNet
+	var prefix *IPNet
 	if v4 := ip.To4(); v4 != nil {
-		prefix = &net.IPNet{
+		prefix = &IPNet{
 			IP:   v4,
 			Mask: net.CIDRMask(ones-(128-32), 32),
 		}
 	} else {
-		prefix = &net.IPNet{
+		prefix = &IPNet{
 			IP:   ip,
 			Mask: net.CIDRMask(ones, 128),
 		}
@@ -216,4 +197,46 @@ func diffBindings(have, want map[bindingKey]string) (added, removed []*Binding) 
 	}
 
 	return
+}
+
+type IPNet net.IPNet
+
+func parseCIDR(prefix string) (*IPNet, error) {
+	if strings.Index(prefix, "/") != -1 {
+		var err error
+		_, ipn, err := net.ParseCIDR(prefix)
+		if err != nil {
+			return nil, fmt.Errorf("invalid prefix: %s", err)
+		}
+		if len(ipn.IP) == net.IPv6len && ipn.IP.To4() != nil {
+			ipn.IP = ipn.IP.To4()
+			ipn.Mask = ipn.Mask[net.IPv6len-net.IPv4len:]
+		}
+		return (*IPNet)(ipn), nil
+	}
+
+	ip := net.ParseIP(prefix)
+	if ip == nil {
+		return nil, fmt.Errorf("invalid prefix: %s", prefix)
+	}
+	if ip.To4() != nil {
+		ip = ip.To4()
+	}
+
+	bits := len(ip) * 8
+	return &IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)}, nil
+}
+
+func (ipn *IPNet) UnmarshalText(text []byte) error {
+	v, err := parseCIDR(string(text))
+	if err != nil {
+		return err
+	}
+
+	*ipn = *v
+	return nil
+}
+
+func (ipn *IPNet) String() string {
+	return (*net.IPNet)(ipn).String()
 }
