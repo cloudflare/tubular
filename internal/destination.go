@@ -71,7 +71,6 @@ type Destination struct {
 	Label    string
 	Domain   Domain
 	Protocol Protocol
-	Socket   SocketCookie
 }
 
 func newDestinationFromBinding(bind *Binding) *Destination {
@@ -80,7 +79,7 @@ func newDestinationFromBinding(bind *Binding) *Destination {
 		domain = AF_INET6
 	}
 
-	return &Destination{bind.Label, domain, bind.Protocol, 0}
+	return &Destination{bind.Label, domain, bind.Protocol}
 }
 
 func newDestinationFromFd(label string, fd uintptr) (*Destination, error) {
@@ -122,11 +121,6 @@ func newDestinationFromFd(label string, fd uintptr) (*Destination, error) {
 		unconnected = true
 	}
 
-	cookie, err := unix.GetsockoptUint64(int(fd), unix.SOL_SOCKET, unix.SO_COOKIE)
-	if err != nil {
-		return nil, fmt.Errorf("get SO_COOKIE: %w", err)
-	}
-
 	if domain != unix.AF_INET && domain != unix.AF_INET6 {
 		return nil, fmt.Errorf("unsupported socket domain %v: %w", domain, ErrBadSocketDomain)
 	}
@@ -157,12 +151,13 @@ func newDestinationFromFd(label string, fd uintptr) (*Destination, error) {
 		}
 	}
 
-	return &Destination{
+	dest := &Destination{
 		label,
 		Domain(domain),
 		Protocol(proto),
-		SocketCookie(cookie),
-	}, nil
+	}
+
+	return dest, nil
 }
 
 func newDestinationFromConn(label string, conn syscall.Conn) (*Destination, error) {
@@ -178,7 +173,7 @@ func newDestinationFromConn(label string, conn syscall.Conn) (*Destination, erro
 }
 
 func (dest *Destination) String() string {
-	return fmt.Sprintf("%s:%s:%s->%s", dest.Domain, dest.Protocol, dest.Label, dest.Socket)
+	return fmt.Sprintf("%s:%s:%s", dest.Domain, dest.Protocol, dest.Label)
 }
 
 type destinations struct {
@@ -452,27 +447,47 @@ func (dests *destinations) List() (map[destinationID]*Destination, error) {
 		iter   = dests.allocs.Iterate()
 	)
 	for iter.Next(&key, &alloc) {
-		var cookie SocketCookie
-		err := dests.sockets.Lookup(alloc.ID, &cookie)
-		if errors.Is(err, ebpf.ErrKeyNotExist) {
-			if alloc.Count == 0 {
+		if alloc.Count == 0 {
+			var cookie SocketCookie
+			err := dests.sockets.Lookup(alloc.ID, &cookie)
+			if errors.Is(err, ebpf.ErrKeyNotExist) {
+				// This destination has no bindings referencing it and no
+				// socket registered.
 				continue
 			}
-		} else if err != nil {
-			return nil, fmt.Errorf("lookup cookie for id %d: %s", alloc.ID, err)
+			if err != nil {
+				return nil, fmt.Errorf("lookup socket for id %d: %s", alloc.ID, err)
+			}
 		}
 
 		result[alloc.ID] = &Destination{
 			key.Label.String(),
 			key.Domain,
 			key.Protocol,
-			cookie,
 		}
 	}
 	if err := iter.Err(); err != nil {
 		return nil, fmt.Errorf("can't iterate allocations: %s", err)
 	}
 	return result, nil
+}
+
+func (dests *destinations) Sockets() (map[destinationID]SocketCookie, error) {
+	var (
+		id      destinationID
+		cookie  SocketCookie
+		sockets = make(map[destinationID]SocketCookie)
+		iter    = dests.sockets.Iterate()
+	)
+	for iter.Next(&id, &cookie) {
+		if cookie != 0 {
+			sockets[id] = cookie
+		}
+	}
+	if iter.Err() != nil {
+		return nil, fmt.Errorf("iterate sockets: %s", iter.Err())
+	}
+	return sockets, nil
 }
 
 func (dests *destinations) Metrics() (map[Destination]DestinationMetrics, error) {

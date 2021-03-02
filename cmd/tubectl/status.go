@@ -54,17 +54,17 @@ Show current bindings and destinations.
 		return err
 	}
 
+	dests, cookies, err := dp.Destinations()
+	if err != nil {
+		return fmt.Errorf("get destinations: %s", err)
+	}
+
+	sortDestinations(dests)
+
 	metrics, err := dp.Metrics()
 	if err != nil {
 		return fmt.Errorf("get metrics: %s", err)
 	}
-
-	dests := make([]internal.Destination, 0, len(metrics.Destinations))
-	for dest := range metrics.Destinations {
-		dests = append(dests, dest)
-	}
-
-	sortDestinations(dests)
 
 	e.stdout.Log("\nDestinations:")
 	fmt.Fprintln(w, "label\tdomain\tprotocol\tsocket\tlookups\tmisses\terrors\t")
@@ -75,7 +75,7 @@ Show current bindings and destinations.
 			dest.Label, "\t",
 			dest.Domain, "\t",
 			dest.Protocol, "\t",
-			dest.Socket, "\t",
+			cookies[dest], "\t",
 			destMetrics.Lookups, "\t",
 			destMetrics.Misses, "\t",
 			destMetrics.TotalErrors(), "\t",
@@ -104,10 +104,6 @@ func sortDestinations(dests []internal.Destination) {
 			return a.Domain < b.Domain
 		}
 
-		if a.Protocol != b.Protocol {
-			return a.Protocol < b.Protocol
-		}
-
-		return a.Socket < b.Socket
+		return a.Protocol < b.Protocol
 	})
 }

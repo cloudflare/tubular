@@ -564,18 +564,25 @@ func (d *Dispatcher) Metrics() (*Metrics, error) {
 }
 
 // Destinations returns a set of existing destinations, i.e. sockets and labels.
-func (d *Dispatcher) Destinations() ([]Destination, error) {
+func (d *Dispatcher) Destinations() ([]Destination, map[Destination]SocketCookie, error) {
 	d.stateMu.Lock()
 	defer d.stateMu.Unlock()
 
-	dstMap, err := d.destinations.List()
+	destsByID, err := d.destinations.List()
 	if err != nil {
-		return nil, fmt.Errorf("list destinations: %s", err)
+		return nil, nil, fmt.Errorf("list destinations: %s", err)
 	}
 
-	dstVec := make([]Destination, 0, len(dstMap))
-	for _, d := range dstMap {
-		dstVec = append(dstVec, *d)
+	socketsByID, err := d.destinations.Sockets()
+	if err != nil {
+		return nil, nil, fmt.Errorf("list sockets: %s", err)
 	}
-	return dstVec, nil
+
+	dests := make([]Destination, 0, len(destsByID))
+	cookies := make(map[Destination]SocketCookie)
+	for id, dest := range destsByID {
+		dests = append(dests, *dest)
+		cookies[*dest] = socketsByID[id]
+	}
+	return dests, cookies, nil
 }

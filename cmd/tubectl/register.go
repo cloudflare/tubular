@@ -7,6 +7,10 @@ import (
 	"os"
 	"strconv"
 	"syscall"
+
+	"code.cfops.it/sys/tubular/internal"
+	"code.cfops.it/sys/tubular/internal/sysconn"
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -65,8 +69,9 @@ LISTEN_PID is ignored, so is LISTEN_FDNAMES.
 	} else {
 		msg = fmt.Sprintf("updated destination %s", dst.String())
 	}
-	e.stdout.Logf("registered socket ino:%d: %s\n", inode, msg)
 
+	cookie, _ := socketCookie(file)
+	e.stdout.Logf("registered socket ino:%d %s: %s\n", inode, cookie, msg)
 	return nil
 }
 
@@ -95,4 +100,16 @@ func firstListenFd(e *env, name string) (*os.File, error) {
 	}
 
 	return file, nil
+}
+
+func socketCookie(conn syscall.Conn) (internal.SocketCookie, error) {
+	var cookie uint64
+	err := sysconn.Control(conn, func(fd int) (err error) {
+		cookie, err = unix.GetsockoptUint64(fd, unix.SOL_SOCKET, unix.SO_COOKIE)
+		return
+	})
+	if err != nil {
+		return 0, fmt.Errorf("getsockopt(SO_COOKIE): %v", err)
+	}
+	return internal.SocketCookie(cookie), nil
 }

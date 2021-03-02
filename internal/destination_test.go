@@ -12,7 +12,7 @@ import (
 
 func TestDestinationsHasID(t *testing.T) {
 	dests := mustNewDestinations(t)
-	foo := &Destination{"foo", AF_INET, TCP, 0}
+	foo := &Destination{"foo", AF_INET, TCP}
 
 	if dests.HasID(foo, 0) {
 		t.Fatal("HasID returns true for non-existing destination")
@@ -53,12 +53,12 @@ func TestDestinationIDAllocation(t *testing.T) {
 	}
 
 	var (
-		foo   = &Destination{"foo", AF_INET, TCP, 0}
-		bar   = &Destination{"bar", AF_INET, TCP, 0}
-		baz   = &Destination{"baz", AF_INET, UDP, 0}
-		bingo = &Destination{"bingo", AF_INET, UDP, 0}
-		quux  = &Destination{"quux", AF_INET, UDP, 0}
-		frood = &Destination{"frood", AF_INET, UDP, 0}
+		foo   = &Destination{"foo", AF_INET, TCP}
+		bar   = &Destination{"bar", AF_INET, TCP}
+		baz   = &Destination{"baz", AF_INET, UDP}
+		bingo = &Destination{"bingo", AF_INET, UDP}
+		quux  = &Destination{"quux", AF_INET, UDP}
+		frood = &Destination{"frood", AF_INET, UDP}
 	)
 
 	t.Run("release non-existing", func(t *testing.T) {
@@ -124,6 +124,14 @@ func TestDestinationIDAllocation(t *testing.T) {
 func TestDestinationsAddSocket(t *testing.T) {
 	dests := mustNewDestinations(t)
 
+	sockets, err := dests.Sockets()
+	if err != nil {
+		t.Fatal("Can't get sockets:", err)
+	}
+	if len(sockets) != 0 {
+		t.Fatal("Expected no sockets, got", len(sockets))
+	}
+
 	ln, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -148,6 +156,14 @@ func TestDestinationsAddSocket(t *testing.T) {
 		t.Fatal("Can't add socket:", err)
 	} else if created {
 		t.Error("Adding a socket for the second time sets created to true")
+	}
+
+	sockets, err = dests.Sockets()
+	if err != nil {
+		t.Fatal("Can't get sockets:", err)
+	}
+	if len(sockets) != 1 {
+		t.Fatal("Expected one sockets, got", len(sockets))
 	}
 
 	// TODO: Remove socket

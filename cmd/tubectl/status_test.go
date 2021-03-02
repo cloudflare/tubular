@@ -12,7 +12,8 @@ func TestList(t *testing.T) {
 
 	dp := mustOpenDispatcher(t, netns)
 	mustAddBinding(t, dp, "foo", internal.TCP, "::1", 80)
-	dest := mustRegisterSocket(t, dp, "foo", makeListeningSocket(t, netns, "tcp"))
+	sock := makeListeningSocket(t, netns, "tcp")
+	mustRegisterSocket(t, dp, "foo", sock)
 	dp.Close()
 
 	output, err := testTubectl(t, netns, "list")
@@ -25,8 +26,9 @@ func TestList(t *testing.T) {
 		t.Error("Output of list doesn't contain label foo")
 	}
 
-	if !strings.Contains(outputStr, dest.Socket.String()) {
-		t.Error("Output of list doesn't contain", dest.Socket.String())
+	cookie := mustSocketCookie(t, sock)
+	if !strings.Contains(outputStr, cookie.String()) {
+		t.Error("Output of list doesn't contain", cookie)
 	}
 
 	output2, err := testTubectl(t, netns, "list")

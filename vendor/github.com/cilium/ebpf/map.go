@@ -4,7 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	"github.com/cilium/ebpf/internal"
@@ -125,6 +127,7 @@ type Map struct {
 	valueSize  uint32
 	maxEntries uint32
 	flags      uint32
+	pinnedPath string
 	// Per CPU maps return values larger than the size in the spec
 	fullValueSize int
 }
@@ -354,6 +357,7 @@ func newMap(fd *internal.FD, name string, typ MapType, keySize, valueSize, maxEn
 		valueSize,
 		maxEntries,
 		flags,
+		"",
 		int(valueSize),
 	}
 
@@ -412,10 +416,9 @@ func (m *Map) Info() (*MapInfo, error) {
 // Calls Close() on valueOut if it is of type **Map or **Program,
 // and *valueOut is not nil.
 //
-// Returns an error if the key doesn't exist, see IsNotExist.
+// Returns an error if the key doesn't exist, see ErrKeyNotExist.
 func (m *Map) Lookup(key, valueOut interface{}) error {
 	valuePtr, valueBytes := makeBuffer(valueOut, m.fullValueSize)
-
 	if err := m.lookup(key, valuePtr); err != nil {
 		return err
 	}
@@ -579,6 +582,158 @@ func (m *Map) nextKey(key interface{}, nextKeyOut internal.Pointer) error {
 	return nil
 }
 
+// BatchLookup looks up many elements in a map at once.
+//
+// "keysOut" and "valuesOut" must be of type slice, a pointer
+// to a slice or buffer will not work.
+// "prevKey" is the key to start the batch lookup from, it will
+// *not* be included in the results. Use nil to start at the first key.
+//
+// ErrKeyNotExist is returned when the batch lookup has reached
+// the end of all possible results, even when partial results
+// are returned. It should be used to evaluate when lookup is "done".
+func (m *Map) BatchLookup(prevKey, nextKeyOut, keysOut, valuesOut interface{}, opts *BatchOptions) (int, error) {
+	return m.batchLookup(internal.BPF_MAP_LOOKUP_BATCH, prevKey, nextKeyOut, keysOut, valuesOut, opts)
+}
+
+// BatchLookupAndDelete looks up many elements in a map at once,
+//
+// It then deletes all those elements.
+// "keysOut" and "valuesOut" must be of type slice, a pointer
+// to a slice or buffer will not work.
+// "prevKey" is the key to start the batch lookup from, it will
+// *not* be included in the results. Use nil to start at the first key.
+//
+// ErrKeyNotExist is returned when the batch lookup has reached
+// the end of all possible results, even when partial results
+// are returned. It should be used to evaluate when lookup is "done".
+func (m *Map) BatchLookupAndDelete(prevKey, nextKeyOut, keysOut, valuesOut interface{}, opts *BatchOptions) (int, error) {
+	return m.batchLookup(internal.BPF_MAP_LOOKUP_AND_DELETE_BATCH, prevKey, nextKeyOut, keysOut, valuesOut, opts)
+}
+
+func (m *Map) batchLookup(cmd internal.BPFCmd, startKey, nextKeyOut, keysOut, valuesOut interface{}, opts *BatchOptions) (int, error) {
+	if err := haveBatchAPI(); err != nil {
+		return 0, err
+	}
+	if m.typ.hasPerCPUValue() {
+		return 0, ErrNotSupported
+	}
+	keysValue := reflect.ValueOf(keysOut)
+	if keysValue.Kind() != reflect.Slice {
+		return 0, fmt.Errorf("keys must be a slice")
+	}
+	valuesValue := reflect.ValueOf(valuesOut)
+	if valuesValue.Kind() != reflect.Slice {
+		return 0, fmt.Errorf("valuesOut must be a slice")
+	}
+	count := keysValue.Len()
+	if count != valuesValue.Len() {
+		return 0, fmt.Errorf("keysOut and valuesOut must be the same length")
+	}
+	keyBuf := make([]byte, count*int(m.keySize))
+	keyPtr := internal.NewSlicePointer(keyBuf)
+	valueBuf := make([]byte, count*int(m.fullValueSize))
+	valuePtr := internal.NewSlicePointer(valueBuf)
+
+	var (
+		startPtr internal.Pointer
+		err      error
+		retErr   error
+	)
+	if startKey != nil {
+		startPtr, err = marshalPtr(startKey, int(m.keySize))
+		if err != nil {
+			return 0, err
+		}
+	}
+	nextPtr, nextBuf := makeBuffer(nextKeyOut, int(m.keySize))
+
+	ct, err := bpfMapBatch(cmd, m.fd, startPtr, nextPtr, keyPtr, valuePtr, uint32(count), opts)
+	if err != nil {
+		if !errors.Is(err, ErrKeyNotExist) {
+			return 0, err
+		}
+		retErr = ErrKeyNotExist
+	}
+
+	err = m.unmarshalKey(nextKeyOut, nextBuf)
+	if err != nil {
+		return 0, err
+	}
+	err = unmarshalBytes(keysOut, keyBuf)
+	if err != nil {
+		return 0, err
+	}
+	err = unmarshalBytes(valuesOut, valueBuf)
+	if err != nil {
+		retErr = err
+	}
+	return int(ct), retErr
+}
+
+// BatchUpdate updates the map with multiple keys and values
+// simultaneously.
+// "keys" and "values" must be of type slice, a pointer
+// to a slice or buffer will not work.
+func (m *Map) BatchUpdate(keys, values interface{}, opts *BatchOptions) (int, error) {
+	if err := haveBatchAPI(); err != nil {
+		return 0, err
+	}
+	if m.typ.hasPerCPUValue() {
+		return 0, ErrNotSupported
+	}
+	keysValue := reflect.ValueOf(keys)
+	if keysValue.Kind() != reflect.Slice {
+		return 0, fmt.Errorf("keys must be a slice")
+	}
+	valuesValue := reflect.ValueOf(values)
+	if valuesValue.Kind() != reflect.Slice {
+		return 0, fmt.Errorf("values must be a slice")
+	}
+	var (
+		count    = keysValue.Len()
+		valuePtr internal.Pointer
+		err      error
+	)
+	if count != valuesValue.Len() {
+		return 0, fmt.Errorf("keys and values must be the same length")
+	}
+	keyPtr, err := marshalPtr(keys, count*int(m.keySize))
+	if err != nil {
+		return 0, err
+	}
+	valuePtr, err = marshalPtr(values, count*int(m.valueSize))
+	if err != nil {
+		return 0, err
+	}
+	var nilPtr internal.Pointer
+	ct, err := bpfMapBatch(internal.BPF_MAP_UPDATE_BATCH, m.fd, nilPtr, nilPtr, keyPtr, valuePtr, uint32(count), opts)
+	return int(ct), err
+}
+
+// BatchDelete batch deletes entries in the map by keys.
+// "keys" must be of type slice, a pointer to a slice or buffer will not work.
+func (m *Map) BatchDelete(keys interface{}, opts *BatchOptions) (int, error) {
+	if err := haveBatchAPI(); err != nil {
+		return 0, err
+	}
+	if m.typ.hasPerCPUValue() {
+		return 0, ErrNotSupported
+	}
+	keysValue := reflect.ValueOf(keys)
+	if keysValue.Kind() != reflect.Slice {
+		return 0, fmt.Errorf("keys must be a slice")
+	}
+	count := keysValue.Len()
+	keyPtr, err := marshalPtr(keys, count*int(m.keySize))
+	if err != nil {
+		return 0, fmt.Errorf("cannot marshal keys: %v", err)
+	}
+	var nilPtr internal.Pointer
+	ct, err := bpfMapBatch(internal.BPF_MAP_DELETE_BATCH, m.fd, nilPtr, nilPtr, keyPtr, nilPtr, uint32(count), opts)
+	return int(ct), err
+}
+
 // Iterate traverses a map.
 //
 // It's safe to create multiple iterators at the same time.
@@ -618,6 +773,7 @@ func (m *Map) FD() int {
 //
 // Closing the duplicate does not affect the original, and vice versa.
 // Changes made to the map are reflected by both instances however.
+// If the original map was pinned, the cloned map will not be pinned by default.
 //
 // Cloning a nil Map returns nil.
 func (m *Map) Clone() (*Map, error) {
@@ -638,15 +794,63 @@ func (m *Map) Clone() (*Map, error) {
 		m.valueSize,
 		m.maxEntries,
 		m.flags,
+		"",
 		m.fullValueSize,
 	}, nil
 }
 
 // Pin persists the map past the lifetime of the process that created it.
 //
+// Calling Pin on a previously pinned map will override the path.
+// You can Clone a map to pin it to a different path.
+//
 // This requires bpffs to be mounted above fileName. See https://docs.cilium.io/en/k8s-doc/admin/#admin-mount-bpffs
 func (m *Map) Pin(fileName string) error {
-	return internal.BPFObjPin(fileName, m.fd)
+	if fileName == "" {
+		return fmt.Errorf("pinned path cannot be empty")
+	}
+	if m.IsPinned() {
+		path := m.pinnedPath
+		if path == fileName {
+			return nil
+		}
+		if err := os.Rename(m.pinnedPath, fileName); err != nil {
+			if !os.IsNotExist(err) {
+				return fmt.Errorf("unable to pin the map at new path %v: %w", fileName, err)
+			}
+		} else {
+			m.pinnedPath = fileName
+			return nil
+		}
+	}
+	err := internal.BPFObjPin(fileName, m.fd)
+	if err == nil {
+		m.pinnedPath = fileName
+	}
+	return err
+}
+
+// Unpin removes the persisted state for the map.
+//
+// Unpinning an un-pinned Map returns nil.
+func (m *Map) Unpin() error {
+	if m.pinnedPath == "" {
+		return nil
+	}
+	err := os.Remove(m.pinnedPath)
+	if err == nil || os.IsNotExist(err) {
+		m.pinnedPath = ""
+		return nil
+	}
+	return err
+}
+
+// IsPinned returns true if the map has non-empty pinned path.
+func (m *Map) IsPinned() bool {
+	if m.pinnedPath == "" {
+		return false
+	}
+	return true
 }
 
 // Freeze prevents a map to be modified from user space.
@@ -789,7 +993,12 @@ func LoadPinnedMap(fileName string) (*Map, error) {
 		return nil, err
 	}
 
-	return newMapFromFD(fd)
+	m, err := newMapFromFD(fd)
+	if err == nil {
+		m.pinnedPath = fileName
+	}
+
+	return m, err
 }
 
 // unmarshalMap creates a map from a map ID encoded in host endianness.
@@ -907,7 +1116,9 @@ func (mi *MapIterator) Next(keyOut, valueOut interface{}) bool {
 		return false
 	}
 
-	for ; mi.count < mi.maxEntries; mi.count++ {
+	// For array-like maps NextKeyBytes returns nil only on after maxEntries
+	// iterations.
+	for mi.count <= mi.maxEntries {
 		var nextBytes []byte
 		nextBytes, mi.err = mi.target.NextKeyBytes(mi.prevKey)
 		if mi.err != nil {
@@ -926,6 +1137,7 @@ func (mi *MapIterator) Next(keyOut, valueOut interface{}) bool {
 		copy(mi.prevBytes, nextBytes)
 		mi.prevKey = mi.prevBytes
 
+		mi.count++
 		mi.err = mi.target.Lookup(nextBytes, valueOut)
 		if errors.Is(mi.err, ErrKeyNotExist) {
 			// Even though the key should be valid, we couldn't look up

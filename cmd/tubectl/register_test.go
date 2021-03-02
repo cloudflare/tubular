@@ -87,7 +87,8 @@ func TestSingleRegisterCommand(t *testing.T) {
 				t.Fatalf("unexpected error: want %v, have %v", tc.wantErr, err)
 			}
 
-			dests := destinations(t, netns)
+			dp := mustOpenDispatcher(t, netns)
+			dests := destinations(t, dp)
 			if tc.wantErr != nil {
 				if len(dests) != 0 {
 					t.Fatalf("expected no registered destinations, have %v", len(dests))
@@ -100,7 +101,7 @@ func TestSingleRegisterCommand(t *testing.T) {
 			}
 
 			for _, f := range tc.extraFds {
-				cookie := socketCookie(t, f)
+				cookie := mustSocketCookie(t, f)
 				if _, ok := dests[cookie]; !ok {
 					t.Fatalf("expected registered destination for socket %v", cookie)
 				}
@@ -113,44 +114,30 @@ func TestSingleRegisterCommand(t *testing.T) {
 	}
 }
 
-func destinations(tb testing.TB, netns ns.NetNS) map[internal.SocketCookie]internal.Destination {
+func destinations(tb testing.TB, dp *internal.Dispatcher) map[internal.SocketCookie]internal.Destination {
 	tb.Helper()
-	dp := mustOpenDispatcher(tb, netns)
 
-	dstVec, err := dp.Destinations()
+	_, cookies, err := dp.Destinations()
 	if err != nil {
 		tb.Fatalf("dispatcher destinations: %s", err)
 	}
-	dstMap := make(map[internal.SocketCookie]internal.Destination, len(dstVec))
-	for _, d := range dstVec {
-		dstMap[d.Socket] = d
+
+	destsByCookie := make(map[internal.SocketCookie]internal.Destination)
+	for dest, cookie := range cookies {
+		destsByCookie[cookie] = dest
 	}
-	return dstMap
+	return destsByCookie
 }
 
-func socketCookie(tb testing.TB, conn syscall.Conn) internal.SocketCookie {
+func mustSocketCookie(tb testing.TB, conn syscall.Conn) internal.SocketCookie {
 	tb.Helper()
 
-	raw, err := conn.SyscallConn()
+	cookie, err := socketCookie(conn)
 	if err != nil {
-		tb.Fatalf("SyscallConn: %v", err)
+		tb.Fatal(err)
 	}
 
-	var (
-		cookie uint64
-		opErr  error
-	)
-	err = raw.Control(func(fd uintptr) {
-		cookie, opErr = unix.GetsockoptUint64(int(fd), unix.SOL_SOCKET, unix.SO_COOKIE)
-	})
-	if err != nil {
-		tb.Fatalf("RawConn.Control: %v", err)
-	}
-	if opErr != nil {
-		tb.Fatalf("Getsockopt(SO_COOKIE): %v", err)
-	}
-
-	return internal.SocketCookie(cookie)
+	return cookie
 }
 
 func makeNonSocket(tb testing.TB) syscall.Conn {
