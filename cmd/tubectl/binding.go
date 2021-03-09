@@ -92,6 +92,34 @@ func loadBindings(e *env, args ...string) error {
 
 Load a set of bindings from a JSON formatted file and replace the currently
 active bindings with the ones from the file.
+
+Example:
+
+  $ jq . bindings.json
+  {
+    "bindings": [
+      {
+        "label": "foo",
+        "prefix": "127.0.0.1"
+      },
+      {
+        "label": "bar",
+        "prefix": "::1/64"
+      }
+    ]
+  }
+  $ tubectl load-bindings bindings.json
+  …
+  $ tubectl list
+  …
+  Bindings:
+   protocol       prefix port label
+        tcp 127.0.0.1/32    0   foo
+        tcp        ::/64    0   bar
+        udp 127.0.0.1/32    0   foo
+        udp        ::/64    0   bar
+  …
+
 `)
 	if err := set.Parse(args); errors.Is(err, flag.ErrHelp) {
 		return nil
