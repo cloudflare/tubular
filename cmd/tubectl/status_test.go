@@ -1,10 +1,17 @@
 package main
 
 import (
+	"bytes"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"code.cfops.it/sys/tubular/internal"
+	"github.com/containernetworking/plugins/pkg/ns"
 )
 
 func TestList(t *testing.T) {
@@ -41,5 +48,67 @@ func TestList(t *testing.T) {
 		t.Log(outputStr)
 		t.Log(output2Str)
 		t.Error("The output of list isn't stable across invocations")
+	}
+}
+
+func TestMetrics(t *testing.T) {
+	netns := mustReadyNetNS(t)
+
+	tubectl := tubectlTestCall{
+		NetNS:     netns,
+		Cmd:       "metrics",
+		Args:      []string{"127.0.0.1", "0"},
+		Listeners: make(chan net.Listener, 1),
+	}
+
+	tubectl.Start(t)
+
+	var ln net.Listener
+	select {
+	case ln = <-tubectl.Listeners:
+	case <-time.After(time.Second):
+		t.Fatal("tubectl isn't listening after one second")
+	}
+
+	client := http.Client{Timeout: 5 * time.Second}
+	addr := fmt.Sprintf("http://%s/metrics", ln.Addr().String())
+	for i := 0; i < 3; i++ {
+		t.Run(fmt.Sprint(i), func(t *testing.T) {
+			res, err := client.Get(addr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer res.Body.Close()
+
+			body, err := io.ReadAll(res.Body)
+			if err != nil {
+				t.Fatal("Can't ready body:", err)
+			}
+
+			if !bytes.Contains(body, []byte(" HELP ")) {
+				t.Error("Output doesn't contain prometheus export format")
+			}
+		})
+	}
+
+	if err := tubectl.Stop(); err != nil {
+		t.Error("Stopping metrics returns an error:", err)
+	}
+}
+
+func TestMetricsInvalidArgs(t *testing.T) {
+	netns, err := ns.GetCurrentNS()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = testTubectl(t, netns, "metrics")
+	if err == nil {
+		t.Error("metrics command accepts no arguments")
+	}
+
+	_, err = testTubectl(t, netns, "metrics", "127.0.0.1")
+	if err == nil {
+		t.Error("metrics command accepts missing port")
 	}
 }

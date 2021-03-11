@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"syscall"
 
@@ -22,25 +23,22 @@ type env struct {
 	netns          string
 	bpfFs          string
 	ctx            context.Context
-	osFns
-}
-
-type osFns struct {
 	// Override for os.Getenv
 	getenv func(key string) string
 	// Override for os.NewFile
 	newFile func(fd uintptr, name string) *os.File
+	// Override for net.Listen
+	listen func(network, addr string) (net.Listener, error)
 }
 
 var (
 	defaultEnv = env{
-		stdout: log.NewStdLogger(os.Stdout),
-		stderr: log.NewStdLogger(os.Stderr),
-		ctx:    context.Background(),
-		osFns: osFns{
-			getenv:  os.Getenv,
-			newFile: os.NewFile,
-		},
+		stdout:  log.NewStdLogger(os.Stdout),
+		stderr:  log.NewStdLogger(os.Stderr),
+		ctx:     context.Background(),
+		getenv:  os.Getenv,
+		newFile: os.NewFile,
+		listen:  net.Listen,
 	}
 
 	// Errors returned by tubectl
@@ -126,6 +124,7 @@ func tubectl(e env, args []string) (err error) {
 		{"unbind", unbind},
 		{"load-bindings", loadBindings},
 		{"list", list},
+		{"metrics", metrics},
 		{"register", register},
 		{"serve", serve},
 	}

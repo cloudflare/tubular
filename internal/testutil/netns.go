@@ -47,6 +47,8 @@ func NewNetNS(tb testing.TB, networks ...string) ns.NetNS {
 			}
 		}
 
+		// TODO: Executing ip fails when securebits are set, since the process
+		// doesn't get the necessary capabilities.
 		ip := exec.Command("/sbin/ip", "link", "set", "dev", "lo", "up")
 		if out, err := ip.CombinedOutput(); err != nil {
 			if len(out) > 0 {

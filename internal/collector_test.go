@@ -19,8 +19,9 @@ func TestCollector(t *testing.T) {
 
 	mustAddBinding(t, dp, mustNewBinding(t, "foo", TCP, "::1/64", 8080))
 	mustAddBinding(t, dp, mustNewBinding(t, "bar", UDP, "127.0.0.1", 443))
+	dp.Close()
 
-	c := NewCollector(log.Discard, dp)
+	c := NewCollector(log.Discard, netns.Path(), "/sys/fs/bpf")
 	reg := prometheus.NewPedanticRegistry()
 
 	if err := reg.Register(c); err != nil {
@@ -40,9 +41,11 @@ func TestCollector(t *testing.T) {
 
 	// Register an unconnected UDP socket and connect it afterwards to
 	// trigger bad-socket.
+	dp = mustOpenDispatcher(t, nil, netns.Path())
 	conn := testutil.Listen(t, netns, "udp4", "").(*net.UDPConn)
 	mustRegisterSocket(t, dp, "bar", conn)
 	testutil.ConnectSocket(t, conn)
+	dp.Close()
 
 	t.Run("misses", func(t *testing.T) {
 		for i := float64(0); i < 2; i++ {
@@ -88,7 +91,9 @@ func TestCollector(t *testing.T) {
 func TestLintCollector(t *testing.T) {
 	netns := testutil.NewNetNS(t)
 	dp := mustCreateDispatcher(t, nil, netns.Path())
-	c := NewCollector(log.Discard, dp)
+	dp.Close()
+
+	c := NewCollector(log.Discard, netns.Path(), "/sys/fs/bpf")
 
 	lints, err := promtest.CollectAndLint(c)
 	if err != nil {

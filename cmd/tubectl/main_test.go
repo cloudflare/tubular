@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"net"
 	"os"
 	"runtime"
 	"strings"
@@ -40,13 +41,13 @@ func testTubectl(tb testing.TB, netns ns.NetNS, cmd string, args ...string) (*by
 	return tc.Run(tb)
 }
 
-func mustTestTubectl(tb testing.TB, netns ns.NetNS, cmd string, args ...string) {
+func mustTestTubectl(tb testing.TB, netns ns.NetNS, cmd string, args ...string) *bytes.Buffer {
 	tc := tubectlTestCall{
 		NetNS: netns,
 		Cmd:   cmd,
 		Args:  args,
 	}
-	tc.MustRun(tb)
+	return tc.MustRun(tb)
 }
 
 func mustReadyNetNS(tb testing.TB) ns.NetNS {
@@ -128,6 +129,9 @@ type tubectlTestCall struct {
 	// becomes file descriptor 3+i.
 	ExtraFds testFds
 
+	// Listeners receives the created listeners if the channel is not nil.
+	Listeners chan net.Listener
+
 	// Context cancelled when test call should return. Controlled with Start() and Stop().
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -140,13 +144,30 @@ func (tc *tubectlTestCall) Run(tb testing.TB) (*bytes.Buffer, error) {
 	tb.Helper()
 
 	output := new(log.Buffer)
+	ctx := tc.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	env := env{
 		stdout: output,
 		stderr: output,
-		ctx:    tc.ctx,
-		osFns: osFns{
-			getenv:  func(key string) string { return tc.getenv(key) },
-			newFile: func(fd uintptr, name string) *os.File { return tc.newFile(fd, name) },
+		ctx:    ctx,
+		getenv: func(key string) string { return tc.getenv(key) },
+		newFile: func(fd uintptr, name string) *os.File {
+			return tc.newFile(fd, name)
+		},
+		listen: func(network, addr string) (net.Listener, error) {
+			ln, err := net.Listen(network, addr)
+			if err != nil {
+				tb.Error("Listen failed:", err)
+				return nil, err
+			}
+
+			if tc.Listeners != nil {
+				tc.Listeners <- ln
+			}
+			return ln, nil
 		},
 	}
 	var args []string

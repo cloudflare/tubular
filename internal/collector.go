@@ -1,6 +1,8 @@
 package internal
 
 import (
+	"fmt"
+
 	"code.cfops.it/sys/tubular/internal/log"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -8,7 +10,8 @@ import (
 // Collector exposes metrics from a Dispatcher in the Prometheus format.
 type Collector struct {
 	logger           log.Logger
-	dp               *Dispatcher
+	netnsPath        string
+	bpffsPath        string
 	collectionErrors prometheus.Counter
 	lookups          *prometheus.Desc
 	misses           *prometheus.Desc
@@ -17,10 +20,11 @@ type Collector struct {
 
 var _ prometheus.Collector = (*Collector)(nil)
 
-func NewCollector(logger log.Logger, dp *Dispatcher) *Collector {
+func NewCollector(logger log.Logger, netnsPath, bpfFsPath string) *Collector {
 	return &Collector{
 		logger,
-		dp,
+		netnsPath,
+		bpfFsPath,
 		prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "collection_errors_total",
 			Help: "The number of times metrics collection encountered an error.",
@@ -59,7 +63,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 	// Collect last, so that errors during this collection are reflected.
 	defer c.collectionErrors.Collect(ch)
 
-	metrics, err := c.dp.Metrics()
+	metrics, err := c.metrics()
 	if err != nil {
 		c.logger.Log("Failed to collect metrics:", err)
 		c.collectionErrors.Inc()
@@ -94,4 +98,14 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 			append(commonLabels, "bad-socket")...,
 		)
 	}
+}
+
+func (c *Collector) metrics() (*Metrics, error) {
+	dp, err := OpenDispatcher(c.logger, c.netnsPath, c.bpffsPath)
+	if err != nil {
+		return nil, fmt.Errorf("open dispatcher: %s", err)
+	}
+	defer dp.Close()
+
+	return dp.Metrics()
 }
