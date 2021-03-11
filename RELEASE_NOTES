@@ -1,3 +1,25 @@
+2021.3.0
+- 2021-03-10 run-tests: use go mod tidy
+- 2021-03-11 TUBE-43: Add metrics command for export to Prometheus
+- 2021-03-02 remove SocketCookie from Destination
+- 2021-03-09 TUBE-41: Provide an example use for load-bindings
+- 2021-02-22 TUBE-43: dispatcher: add a Prometheus collector
+- 2021-02-22 sysconn: add a wrapper for SyscallConn.Control
+- 2021-02-23 testutil: fix network namespace set up
+- 2021-02-23 TUBE-46: cmd/tubectl: list: output bindings according to dataplane
+- 2021-02-24 TUBE-38: cmd/tubectl: add load-bindings command
+- 2021-02-18 Require Go 1.16
+- 2021-02-18 Revert "TUBE-37: Enable CGo when cross-compiling"
+- 2021-02-18 remove utils.IsErrNetClosed
+- 2021-02-01 cmd/tubectl: make -help output stable
+- 2021-02-01 testutil: remove name argument from Listen
+- 2021-02-05 TUBE-44: Add cover target
+- 2021-02-04 TUBE-37: Update github.com/cilium/ebpf
+- 2021-02-08 TUBE-44: Generate coverage on CI
+- 2021-02-09 TUBE-38: dispatcher: add ReplaceBindings
+- 2021-01-26 dispatcher: release destination when replacing a binding
+- 2021-01-28 cmd/tubectl: introduce a custom Logger interface
+
 2021.1.0
 - 2021-01-20 TUBE-37: Enable CGo when cross-compiling
 - 2021-01-21 cmd/tubectl: check that register doesn't change file status flags
