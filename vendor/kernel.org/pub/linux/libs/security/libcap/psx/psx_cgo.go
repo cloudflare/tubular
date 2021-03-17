@@ -32,11 +32,21 @@ func setErrno(v int) int {
 	return int(C.__errno_too(C.long(v)))
 }
 
-// Syscall3 performs a 3 argument syscall using the libpsx C function
-// psx_syscall3(). Syscall3 differs from syscall.[Raw]Syscall()
-// insofar as it is simultaneously executed on every pthread of the
-// combined Go and CGo runtimes.
+//go:uintptrescapes
+
+// Syscall3 performs a 3 argument syscall. Syscall3 differs from
+// syscall.[Raw]Syscall() insofar as it is simultaneously executed on
+// every thread of the combined Go and CGo runtimes. It works
+// differently depending on whether CGO_ENABLED is 1 or 0 at compile
+// time.
+//
+// If CGO_ENABLED=1 it uses the libpsx function C.psx_syscall3().
+//
+// If CGO_ENABLED=0 it redirects to the go1.16+
+// syscall.AllThreadsSyscall() function.
 func Syscall3(syscallnr, arg1, arg2, arg3 uintptr) (uintptr, uintptr, syscall.Errno) {
+	// We lock to the OSThread here because we may need errno to
+	// be the one for this thread.
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
@@ -48,11 +58,15 @@ func Syscall3(syscallnr, arg1, arg2, arg3 uintptr) (uintptr, uintptr, syscall.Er
 	return uintptr(v), uintptr(v), errno
 }
 
-// Syscall6 performs a 6 argument syscall using the libpsx C function
-// psx_syscall6(). Syscall6 differs from syscall.[Raw]Syscall6() insofar as
-// it is simultaneously executed on every pthread of the combined Go
-// and CGo runtimes.
+//go:uintptrescapes
+
+// Syscall6 performs a 6 argument syscall on every thread of the
+// combined Go and CGo runtimes. Other than the number of syscall
+// arguments, its behavior is identical to that of Syscall3() - see
+// above for the full documentation.
 func Syscall6(syscallnr, arg1, arg2, arg3, arg4, arg5, arg6 uintptr) (uintptr, uintptr, syscall.Errno) {
+	// We lock to the OSThread here because we may need errno to
+	// be the one for this thread.
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 

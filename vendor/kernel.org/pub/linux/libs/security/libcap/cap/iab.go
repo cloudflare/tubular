@@ -193,9 +193,9 @@ func (sc *syscaller) iabSetProc(iab *IAB) (err error) {
 // other bits, so this function carefully performs the the combined
 // operation in the most flexible manner.
 func (iab *IAB) SetProc() error {
-	scwMu.Lock()
-	defer scwMu.Unlock()
-	return multisc.iabSetProc(iab)
+	state, sc := scwStateSC()
+	defer scwSetState(launchBlocked, state, -1)
+	return sc.iabSetProc(iab)
 }
 
 // GetVector returns the raised state of the specific capability bit

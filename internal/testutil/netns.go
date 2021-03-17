@@ -9,13 +9,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/containernetworking/plugins/pkg/ns"
 	"golang.org/x/sys/unix"
+	"kernel.org/pub/linux/libs/security/libcap/cap"
 )
 
 // NewNetNS creates a pristine network namespace.
@@ -25,72 +25,11 @@ func NewNetNS(tb testing.TB, networks ...string) ns.NetNS {
 	quit := make(chan struct{})
 	result := make(chan ns.NetNS, 1)
 	errs := make(chan error, 1)
+
 	go func() {
-		// We never unlock the OS thread, which has the effect
-		// of terminating the thread after the current goroutine
-		// exits. This is desirable to avoid other goroutines
-		// executing in the wrong namespace.
-		runtime.LockOSThread()
-
-		if err := unix.Unshare(unix.CLONE_NEWNET); err != nil {
-			errs <- fmt.Errorf("unshare: %s", err)
-			return
-		}
-
-		for _, file := range []string{
-			"/proc/sys/net/ipv4/ip_nonlocal_bind",
-			"/proc/sys/net/ipv6/ip_nonlocal_bind",
-		} {
-			if err := os.WriteFile(file, []byte("1\n"), 0666); err != nil {
-				errs <- fmt.Errorf("enable nonlocal bind: %s", err)
-				return
-			}
-		}
-
-		// TODO: Executing ip fails when securebits are set, since the process
-		// doesn't get the necessary capabilities.
-		ip := exec.Command("/sbin/ip", "link", "set", "dev", "lo", "up")
-		if out, err := ip.CombinedOutput(); err != nil {
-			if len(out) > 0 {
-				tb.Log(string(out))
-			}
-			errs <- fmt.Errorf("set up loopback: %s", err)
-			return
-		}
-
-		for _, network := range networks {
-			ip := exec.Command("/sbin/ip", "route", "add", "local", network, "dev", "lo")
-			if out, err := ip.CombinedOutput(); err != nil {
-				if len(out) > 0 {
-					tb.Log(string(out))
-				}
-				errs <- fmt.Errorf("add routes: %s", err)
-				return
-			}
-		}
-
-		for _, network := range networks {
-			ip := exec.Command("/sbin/ip", "addr", "add", "dev", "lo", network, "nodad", "noprefixroute")
-			if out, err := ip.CombinedOutput(); err != nil {
-				if len(out) > 0 {
-					tb.Log(string(out))
-				}
-				errs <- fmt.Errorf("add networks: %s", err)
-				return
-			}
-		}
-
-		netns, err := ns.GetCurrentNS()
-		if err != nil {
-			errs <- fmt.Errorf("get current network namespace: %s", err)
-			return
-		}
-
-		result <- netns
-
-		// Block the goroutine (and the thread) until the
-		// network namespace isn't needed anymore.
-		<-quit
+		errs <- WithCapabilities(func() error {
+			return setupNetNS(networks, result, quit)
+		}, cap.SYS_ADMIN)
 	}()
 
 	select {
@@ -108,6 +47,74 @@ func NewNetNS(tb testing.TB, networks ...string) ns.NetNS {
 	}
 }
 
+func setupNetNS(networks []string, result chan<- ns.NetNS, quit <-chan struct{}) error {
+	if err := unix.Unshare(unix.CLONE_NEWNET); err != nil {
+		return fmt.Errorf("unshare: %s", err)
+	}
+
+	if err := changeEffectiveCaps(nil); err != nil {
+		return err
+	}
+
+	for _, file := range []string{
+		"/proc/sys/net/ipv4/ip_nonlocal_bind",
+		"/proc/sys/net/ipv6/ip_nonlocal_bind",
+	} {
+		if err := os.WriteFile(file, []byte("1\n"), 0666); err != nil {
+			return fmt.Errorf("enable nonlocal bind: %s", err)
+		}
+	}
+
+	caps := &syscall.SysProcAttr{
+		AmbientCaps: []uintptr{
+			uintptr(cap.NET_ADMIN),
+		},
+	}
+
+	ip := exec.Command("/sbin/ip", "link", "set", "dev", "lo", "up")
+	ip.SysProcAttr = caps
+	if out, err := ip.CombinedOutput(); err != nil {
+		if len(out) > 0 {
+			fmt.Println(string(out))
+		}
+		return fmt.Errorf("set up loopback: %s", err)
+	}
+
+	for _, network := range networks {
+		ip := exec.Command("/sbin/ip", "route", "add", "local", network, "dev", "lo")
+		ip.SysProcAttr = caps
+		if out, err := ip.CombinedOutput(); err != nil {
+			if len(out) > 0 {
+				fmt.Println(string(out))
+			}
+			return fmt.Errorf("add routes: %s", err)
+		}
+	}
+
+	for _, network := range networks {
+		ip := exec.Command("/sbin/ip", "addr", "add", "dev", "lo", network, "nodad", "noprefixroute")
+		ip.SysProcAttr = caps
+		if out, err := ip.CombinedOutput(); err != nil {
+			if len(out) > 0 {
+				fmt.Println(string(out))
+			}
+			return fmt.Errorf("add networks: %s", err)
+		}
+	}
+
+	netns, err := ns.GetCurrentNS()
+	if err != nil {
+		return fmt.Errorf("get current network namespace: %s", err)
+	}
+
+	result <- netns
+
+	// Block the goroutine (and the thread) until the
+	// network namespace isn't needed anymore.
+	<-quit
+	return nil
+}
+
 // JoinNetNS executes a function in a different network namespace.
 //
 // Any goroutines invoked from the function will still execute in the
@@ -115,26 +122,21 @@ func NewNetNS(tb testing.TB, networks ...string) ns.NetNS {
 func JoinNetNS(tb testing.TB, netns ns.NetNS, fn func()) {
 	tb.Helper()
 
-	current, err := ns.GetCurrentNS()
-	if err != nil {
-		tb.Fatal(err)
-	}
-	defer current.Close()
-
-	runtime.LockOSThread()
-
-	if err := netns.Set(); err != nil {
-		tb.Fatal("Can't join namespace:", err)
-	}
-
-	defer func() {
-		if err := current.Set(); err != nil {
-			tb.Fatal("Can't switch to original namespace:", err)
+	err := WithCapabilities(func() error {
+		if err := netns.Set(); err != nil {
+			return fmt.Errorf("set netns: %s", err)
 		}
-		runtime.UnlockOSThread()
-	}()
 
-	fn()
+		if err := changeEffectiveCaps(nil); err != nil {
+			return err
+		}
+
+		fn()
+		return nil
+	}, cap.SYS_ADMIN)
+	if err != nil {
+		tb.Fatal("Can't switch namespace:", err)
+	}
 }
 
 // ListenAndEcho calls Listen and then starts an echo server on the returned connection.

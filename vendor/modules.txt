@@ -87,8 +87,8 @@ google.golang.org/protobuf/runtime/protoimpl
 google.golang.org/protobuf/types/known/anypb
 google.golang.org/protobuf/types/known/durationpb
 google.golang.org/protobuf/types/known/timestamppb
-# kernel.org/pub/linux/libs/security/libcap/cap v0.2.46
+# kernel.org/pub/linux/libs/security/libcap/cap v1.2.49
 ## explicit
 kernel.org/pub/linux/libs/security/libcap/cap
-# kernel.org/pub/linux/libs/security/libcap/psx v0.2.46
+# kernel.org/pub/linux/libs/security/libcap/psx v1.2.49
 kernel.org/pub/linux/libs/security/libcap/psx

@@ -17,7 +17,12 @@ import (
 	_ "code.cfops.it/sys/tubular/internal/testutil"
 	"github.com/containernetworking/plugins/pkg/ns"
 	"golang.org/x/sys/unix"
+	"kernel.org/pub/linux/libs/security/libcap/cap"
 )
+
+func init() {
+	testutil.EnterUnprivilegedMode()
+}
 
 func TestHelp(t *testing.T) {
 	cmd := tubectlTestCall{
@@ -61,7 +66,11 @@ func mustReadyNetNS(tb testing.TB) ns.NetNS {
 func mustLoadDispatcher(tb testing.TB, netns ns.NetNS) {
 	tb.Helper()
 
-	dp, err := internal.CreateDispatcher(log.Discard, netns.Path(), "/sys/fs/bpf")
+	var dp *internal.Dispatcher
+	err := testutil.WithCapabilities(func() (err error) {
+		dp, err = internal.CreateDispatcher(log.Discard, netns.Path(), "/sys/fs/bpf")
+		return
+	}, cap.SYS_ADMIN, cap.NET_ADMIN)
 	if err != nil {
 		tb.Fatal(err)
 	}
@@ -132,6 +141,10 @@ type tubectlTestCall struct {
 	// Listeners receives the created listeners if the channel is not nil.
 	Listeners chan net.Listener
 
+	// Effective lists the capabilities required for this call. The effective
+	// set isn't changed if the slice is empty.
+	Effective []cap.Value
+
 	// Context cancelled when test call should return. Controlled with Start() and Stop().
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -179,7 +192,15 @@ func (tc *tubectlTestCall) Run(tb testing.TB) (*bytes.Buffer, error) {
 	}
 	args = append(args, tc.Args...)
 
-	err := tubectl(env, args)
+	var err error
+	if len(tc.Effective) > 0 {
+		err = testutil.WithCapabilities(func() error {
+			return tubectl(env, args)
+		}, tc.Effective...)
+	} else {
+		err = tubectl(env, args)
+	}
+
 	tb.Logf("tubectl %s\n%s", strings.Join(args, " "), output)
 	return &output.Buffer, err
 }

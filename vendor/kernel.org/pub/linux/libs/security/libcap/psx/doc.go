@@ -12,9 +12,9 @@
 //
 // In the former case, psx is a low overhead wrapper for the two
 // native go calls: syscall.AllThreadsSyscall() and
-// syscall.AllThreadsSyscall6() [expected to be] introduced in
-// go1.16. We provide this wrapping to minimize client source code
-// changes when compiling with or without CGo enabled.
+// syscall.AllThreadsSyscall6() introduced in go1.16. We provide this
+// wrapping to minimize client source code changes when compiling with
+// or without CGo enabled.
 //
 // In the latter case, and toolchains prior to go1.16, it works via
 // CGo wrappers for system call functions that call the C [lib]psx

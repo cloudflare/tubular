@@ -187,7 +187,7 @@ var ErrBadText = errors.New("bad text")
 //
 //    "=p all+ei"  "all=pie"   "=pi all+e"   "=eip"
 //
-//    "cap_chown=p cap_setuid=i"  "cap_chown=ip-p"   "cap_chown=i"
+//    "cap_setuid=p cap_chown=i"  "cap_chown=ip-p"   "cap_chown=i"
 //
 //    "cap_chown=-p"   "all="   "cap_setuid=pie-pie"   "="
 //

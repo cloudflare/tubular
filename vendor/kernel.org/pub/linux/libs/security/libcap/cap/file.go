@@ -170,7 +170,7 @@ func (c *Set) GetNSOwner() (int, error) {
 // use file capabilities to become capable inside a namespace to be
 // administered by that UID. If capability aware code within that
 // namespace writes file capabilities without explicitly setting such
-// a UID, the kernel will fixup the capabilities to be specific to
+// a UID, the kernel will fix-up the capabilities to be specific to
 // that owner. In this way, the kernel prevents filesystem
 // capabilities from leaking out of that restricted namespace.
 func (c *Set) SetNSOwner(uid int) {
@@ -228,8 +228,8 @@ func (c *Set) packFileCap() ([]byte, error) {
 //
 // Note, Linux does not store the full Effective Value Flag in the
 // metadata for the file. Only a single Effective bit is stored in
-// this metadata. This single bit is non-zero if the Permitted vector
-// has any overlapping bits with the Effective or Inheritable vector
+// this metadata. This single bit is non-zero if the Effective vector
+// has any overlapping bits with the Permitted or Inheritable vector
 // of c. This may appear suboptimal, but the reasoning behind it is
 // sound. Namely, the purpose of the Effective bit it to support
 // capabability unaware binaries that will only work if they magically
@@ -237,10 +237,10 @@ func (c *Set) packFileCap() ([]byte, error) {
 // referred to simply as the 'legacy' bit). Without *full* support for
 // capability manipulation, as it is provided in this "../libcap/cap"
 // package, this was the only way for Go programs to make use of
-// capabilities.
+// file capabilities.
 //
 // The preferred way a binary will actually manipulate its
-// file-acquired capabilities is to carefully and deliberately using
+// file-acquired capabilities is to carefully and deliberately use
 // this package (or libcap, assisted by libpsx, for threaded C/C++
 // family code).
 func (c *Set) SetFd(file *os.File) error {

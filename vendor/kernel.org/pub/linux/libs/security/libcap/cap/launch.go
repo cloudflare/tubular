@@ -8,19 +8,22 @@ import (
 	"unsafe"
 )
 
-// Launcher holds a configuration for launching a child process with
-// capability state different from (generally more restricted than)
-// the parent.
+// Launcher holds a configuration for executing an optional callback
+// function and/or launching a child process with capability state
+// different from the parent.
 //
 // Note, go1.10 is the earliest version of the Go toolchain that can
 // support this abstraction.
 type Launcher struct {
+	// Note, path and args must be set, or callbackFn. They cannot
+	// both be empty. In such cases .Launch() will error out.
 	path string
 	args []string
 	env  []string
 
 	callbackFn func(pa *syscall.ProcAttr, data interface{}) error
 
+	// The following are only honored when path is non empty.
 	changeUIDs bool
 	uid        int
 
@@ -46,14 +49,54 @@ func NewLauncher(path string, args []string, env []string) *Launcher {
 	}
 }
 
-// Callback specifies a callback for Launch() to call before changing
-// privilege. The only thing that is assumed is that the OS thread in
-// use to call this callback function at launch time will be the one
-// that ultimately calls fork. Any returned error value of said
-// function will terminate the launch process. A nil callback (the
-// default) is ignored. The specified callback fn should not call any
-// "cap" package functions since this may deadlock or generate
-// undefined behavior for the parent process.
+// FuncLauncher returns a new launcher whose purpose is to only
+// execute fn in a disposable security context. This is a more bare
+// bones variant of the more elaborate program launcher returned by
+// cap.NewLauncher().
+//
+// The properties of fn are similar to those supplied via
+// (*Launcher).Callback(fn) method. However, this launcher is bare
+// bones because, when launching, all privilege management performed
+// by the fn() is fully discarded when the fn() completes exection.
+func FuncLauncher(fn func(interface{}) error) *Launcher {
+	return &Launcher{
+		callbackFn: func(ignored *syscall.ProcAttr, data interface{}) error {
+			return fn(data)
+		},
+	}
+}
+
+// Callback changes the callback function for Launch() to call before
+// changing privilege. The only thing that is assumed is that the OS
+// thread in use to call this callback function at launch time will be
+// the one that ultimately calls fork to complete the launch of a path
+// specified executable. Any returned error value of said function
+// will terminate the launch process.
+//
+// A nil fn causes there to be no callback function invoked during a
+// Launch() sequence - it will remove any pre-existing callback.
+//
+// If the non-nil fn requires any effective capabilities in order to
+// run, they can be raised prior to calling .Launch() or inside the
+// callback function itself.
+//
+// If the specified callback fn should call any "cap" package
+// functions that change privilege state, these calls will only affect
+// the launch goroutine itself. While the launch is in progress, other
+// (non-launch) goroutines will block if they attempt to change
+// privilege state. These routines will unblock once there are no
+// in-flight launches.
+//
+// Note, the first argument provided to the callback function is the
+// *syscall.ProcAttr value to be used when a process launch is taking
+// place. A non-nil structure pointer can be modified by the callback
+// to enhance the launch. For example, the .Files field can be
+// overriden to affect how the launched process' stdin/out/err are
+// handled.
+//
+// Further, the 2nd argument to the callback function is provided at
+// Launch() invocation and can communicate contextual info to and from
+// the callback and the main process.
 func (attr *Launcher) Callback(fn func(*syscall.ProcAttr, interface{}) error) {
 	attr.callbackFn = fn
 }
@@ -93,7 +136,17 @@ func (attr *Launcher) SetChroot(root string) {
 
 // lResult is used to get the result from the doomed launcher thread.
 type lResult struct {
+	// tid holds the tid of the locked launching thread which dies
+	// as the launch completes.
+	tid int
+
+	// pid is the pid of the launched program (path, args). In
+	// the case of a FuncLaunch() this value is zero on success.
+	// pid holds -1 in the case of error.
 	pid int
+
+	// err is nil on success, but otherwise holds the reason the
+	// launch failed.
 	err error
 }
 
@@ -106,18 +159,18 @@ var ErrLaunchFailed = errors.New("launch failed")
 var ErrNoLaunch = errors.New("launch not supported")
 
 // ErrAmbiguousChroot indicates that the Launcher is being used in
-// addition to callback supplied Chroot. The former should be used
+// addition to a callback supplied Chroot. The former should be used
 // exclusively for this.
 var ErrAmbiguousChroot = errors.New("use Launcher for chroot")
 
 // ErrAmbiguousIDs indicates that the Launcher is being used in
-// addition to callback supplied Credentials. The former should be
+// addition to a callback supplied Credentials. The former should be
 // used exclusively for this.
 var ErrAmbiguousIDs = errors.New("use Launcher for uids and gids")
 
 // ErrAmbiguousAmbient indicates that the Launcher is being used in
-// addition callback supplied ambient set and the former should be
-// used exclusively in a Launch call.
+// addition to a callback supplied ambient set and the former should
+// be used exclusively in a Launch call.
 var ErrAmbiguousAmbient = errors.New("use Launcher for ambient caps")
 
 // lName is the name we temporarily give to the launcher thread. Note,
@@ -135,13 +188,21 @@ func launch(result chan<- lResult, attr *Launcher, data interface{}, quit chan<-
 	}
 
 	pid := syscall.Getpid()
-	// Wait until we are not scheduled on the parent thread.  We
-	// will exit this thread once the child has launched, and
-	// don't want other goroutines to use this thread afterwards.
+	// This code waits until we are not scheduled on the parent
+	// thread.  We will exit this thread once the child has
+	// launched.
 	runtime.LockOSThread()
 	tid := syscall.Gettid()
 	if tid == pid {
-		// Force the go runtime to find a new thread to run on.
+		// Force the go runtime to find a new thread to run
+		// on.  (It is really awkward to have a process'
+		// PID=TID thread in effectively a zomebie state. The
+		// Go runtime has support for it, but pstree gives
+		// ugly output since the prSetName value sticks around
+		// after launch completion...
+		//
+		// (Optimize for time to debug by reducing ugly spam
+		// like this.)
 		quit := make(chan struct{})
 		go launch(result, attr, data, quit)
 
@@ -154,6 +215,7 @@ func launch(result chan<- lResult, attr *Launcher, data interface{}, quit chan<-
 	// By never releasing the LockOSThread here, we guarantee that
 	// the runtime will terminate the current OS thread once this
 	// function returns.
+	scwSetState(launchIdle, launchActive, tid)
 
 	// Name the launcher thread - transient, but helps to debug if
 	// the callbackFn or something else hangs up.
@@ -163,20 +225,31 @@ func launch(result chan<- lResult, attr *Launcher, data interface{}, quit chan<-
 	// completing.
 	defer close(result)
 
-	pa := &syscall.ProcAttr{
-		Files: []uintptr{0, 1, 2},
-	}
+	var pa *syscall.ProcAttr
 	var err error
 	var needChroot bool
 
-	if len(attr.env) != 0 {
-		pa.Env = attr.env
-	} else {
-		pa.Env = os.Environ()
+	// Only prepare a non-nil pa value if a path is provided.
+	if attr.path != "" {
+		// By default the following file descriptors are preserved for
+		// the child. The user should modify them in the callback for
+		// stdin/out/err redirection.
+		pa = &syscall.ProcAttr{
+			Files: []uintptr{0, 1, 2},
+		}
+		if len(attr.env) != 0 {
+			pa.Env = attr.env
+		} else {
+			pa.Env = os.Environ()
+		}
 	}
 
 	if attr.callbackFn != nil {
 		if err = attr.callbackFn(pa, data); err != nil {
+			goto abort
+		}
+		if attr.path == "" {
+			pid = 0
 			goto abort
 		}
 	}
@@ -220,29 +293,60 @@ abort:
 	if err != nil {
 		pid = -1
 	}
-	result <- lResult{pid: pid, err: err}
+	result <- lResult{
+		tid: tid,
+		pid: pid,
+		err: err,
+	}
 }
 
-// Launch performs a new program launch with security state specified
-// in the supplied attr settings.
+// Launch performs a callback function and/or new program launch with
+// a disposable security state. The data object, when not nil, can be
+// used to communicate with the callback. It can also be used to
+// return details from the callback functions execution.
+//
+// If the attr was created with NewLauncher(), this present function
+// will return the pid of the launched process, or -1 and a non-nil
+// error.
+//
+// If the attr was created with FuncLauncher(), this present function
+// will return 0, nil if the callback function exits without
+// error. Otherwise it will return -1 and the non-nil error of the
+// callback return value.
+//
+// Note, while the disposable security state thread makes some
+// oprerations seem more isolated - they are *not securely
+// isolated*. Launching is inherently violating the POSIX semantics
+// maintained by the rest of the "libcap/cap" package, so think of
+// launching as a convenience wrapper around fork()ing.
+//
+// Advanced user note: if the caller of this function thinks they know
+// what they are doing by using runtime.LockOSThread() before invoking
+// this function, they should understand that the OS Thread invoking
+// (*Launcher).Launch() is *not guaranteed* to be the one used for the
+// disposable security state to perform the launch. If said caller
+// needs to run something on the disposable security state thread,
+// they should do it via the launch callback function mechanism. (The
+// Go runtime is complicated and this is why this Launch mechanism
+// provides the optional callback function.)
 func (attr *Launcher) Launch(data interface{}) (int, error) {
-	if attr.path == "" || len(attr.args) == 0 {
-		return -1, ErrLaunchFailed
-	}
 	if !LaunchSupported {
 		return -1, ErrNoLaunch
 	}
+	if attr.callbackFn == nil && (attr.path == "" || len(attr.args) == 0) {
+		return -1, ErrLaunchFailed
+	}
 
-	scwMu.Lock()
-	defer scwMu.Unlock()
 	result := make(chan lResult)
-
 	go launch(result, attr, data, nil)
 	for {
 		select {
 		case v, ok := <-result:
 			if !ok {
 				return -1, ErrLaunchFailed
+			}
+			if v.tid != -1 {
+				defer scwSetState(launchActive, launchIdle, v.tid)
 			}
 			return v.pid, v.err
 		default:

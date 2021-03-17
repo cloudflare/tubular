@@ -28,31 +28,52 @@
 //       log.Fatalf("failed to drop privilege: %q -> %q: %v", old, empty, err)
 //   }
 //   now := cap.GetProc()
-//   if cap.Differs(now.Compare(empty)) {
+//   if cf, _ := now.Compare(empty); cf != 0 {
 //       log.Fatalf("failed to fully drop privilege: have=%q, wanted=%q", now, empty)
 //   }
+//
+// The "cap" package operates with POSIX semantics for security
+// state. That is all OS threads are kept in sync at all times. The
+// package "kernel.org/pub/linux/libs/security/libcap/psx" is used to
+// implement POSIX semantics system calls that manipulate thread state
+// uniformly over the whole Go (and any CGo linked) process runtime.
+//
+// Note, if the Go runtime syscall interface contains the Linux
+// variant syscall.AllThreadsSyscall() API (it debuted in go1.16 see
+// https://github.com/golang/go/issues/1435 for its history) then the
+// "libcap/psx" package will use that to invoke Capability setting
+// system calls in pure Go binaries. With such an enhanced Go runtime,
+// to force this behavior, use the CGO_ENABLED=0 environment variable.
+//
+// POSIX semantics are more secure than trying to manage privilege at
+// a thread level when those threads share a common memory image as
+// they do under Linux: it is trivial to exploit a vulnerability in
+// one thread of a process to cause execution on any another
+// thread. So, any imbalance in security state, in such cases will
+// readily create an opportunity for a privilege escalation
+// vulnerability.
+//
+// POSIX semantics also work well with Go, which deliberately tries to
+// insulate the user from worrying about the number of OS threads that
+// are actually running in their program. Indeed, Go can efficiently
+// launch and manage tens of thousands of concurrent goroutines
+// without bogging the program or wider system down. It does this by
+// aggressively migrating idle threads to make progress on unblocked
+// goroutines. So, inconsistent security state across OS threads can
+// also lead to program misbehavior.
+//
+// The only exception to this process-wide common security state is
+// the cap.Launcher related functionality. This briefly locks an OS
+// thread to a goroutine in order to launch another executable - the
+// robust implementation of this kind of support is quite subtle, so
+// please read its documentation carefully, if you find that you need
+// it.
 //
 // See https://sites.google.com/site/fullycapable/ for recent updates,
 // some more complete walk-through examples of ways of using
 // 'cap.Set's etc and information on how to file bugs.
 //
-// For CGo linked binaries, behind the scenes, the package
-// "kernel.org/pub/linux/libs/security/libcap/psx" is used to perform
-// POSIX semantics system calls that manipulate thread state
-// uniformly over the whole Go (and CGo linked) process runtime.
-//
-// Note, if the Go runtime syscall interface contains the Linux
-// variant syscall.AllThreadsSyscall() API (it is not in go1.15
-// for example, but see https://github.com/golang/go/issues/1435 for
-// current status) then this present package can use that to invoke
-// Capability setting system calls in pure Go binaries. In such an
-// enhanced Go runtime, to force this behavior, use the CGO_ENABLED=0
-// environment variable and, for now, a build tag:
-//
-//   CGO_ENABLED=0 go build -tags allthreadssyscall ...
-//
-//
-// Copyright (c) 2019,20 Andrew G. Morgan <morgan@kernel.org>
+// Copyright (c) 2019-21 Andrew G. Morgan <morgan@kernel.org>
 //
 // The cap and psx packages are licensed with a (you choose) BSD
 // 3-clause or GPL2. See LICENSE file for details.
@@ -151,14 +172,6 @@ type header struct {
 	magic uint32
 	pid   int32
 }
-
-// scwMu is used to fully serialize the write system calls. Note, this
-// is generally not necesary, but in the case of Launch we get into a
-// situation where the launching thread is temporarily allowed to
-// deviate from the kernel state of the rest of the runtime and
-// allowing other threads to perform w* syscalls will potentially
-// interfere with the launching process.
-var scwMu sync.Mutex
 
 // syscaller is a type for abstracting syscalls. The r* variants are
 // for reading state, and can be parallelized, the w* variants need to
@@ -341,10 +354,15 @@ func (sc *syscaller) setProc(c *Set) error {
 // process. The kernel will perform permission checks and an error
 // will be returned if the attempt fails. Should the attempt fail
 // no process capabilities will have been modified.
+//
+// Note, the general behavior of this call is to set the
+// process-shared capabilities. However, when called from a callback
+// function as part of a (*Launcher).Launch(), the call only sets the
+// capabilities of the thread being used to perform the launch.
 func (c *Set) SetProc() error {
-	scwMu.Lock()
-	defer scwMu.Unlock()
-	return multisc.setProc(c)
+	state, sc := scwStateSC()
+	defer scwSetState(launchBlocked, state, -1)
+	return sc.setProc(c)
 }
 
 // defines from uapi/linux/prctl.h
@@ -384,9 +402,9 @@ func (sc *syscaller) dropBound(val ...Value) error {
 // ill-defined state. The caller can determine where things went wrong
 // using GetBound().
 func DropBound(val ...Value) error {
-	scwMu.Lock()
-	defer scwMu.Unlock()
-	return multisc.dropBound(val...)
+	state, sc := scwStateSC()
+	defer scwSetState(launchBlocked, state, -1)
+	return sc.dropBound(val...)
 }
 
 // defines from uapi/linux/prctl.h
@@ -431,9 +449,9 @@ func (sc *syscaller) setAmbient(enable bool, val ...Value) error {
 // captures all three inheritable vectors in a single type. Consider
 // using that.
 func SetAmbient(enable bool, val ...Value) error {
-	scwMu.Lock()
-	defer scwMu.Unlock()
-	return multisc.setAmbient(enable, val...)
+	state, sc := scwStateSC()
+	defer scwSetState(launchBlocked, state, -1)
+	return sc.setAmbient(enable, val...)
 }
 
 func (sc *syscaller) resetAmbient() error {
@@ -458,7 +476,7 @@ func (sc *syscaller) resetAmbient() error {
 // already raised in both the Permitted and Inheritable Set is allowed
 // to be raised by the kernel.
 func ResetAmbient() error {
-	scwMu.Lock()
-	defer scwMu.Unlock()
-	return multisc.resetAmbient()
+	state, sc := scwStateSC()
+	defer scwSetState(launchBlocked, state, -1)
+	return sc.resetAmbient()
 }

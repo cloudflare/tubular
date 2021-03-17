@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019,20 Andrew G Morgan <morgan@kernel.org>
+ * Copyright (c) 2019-21 Andrew G Morgan <morgan@kernel.org>
  *
  * This file contains a collection of routines that perform thread
  * synchronization to ensure that a whole process is running as a
@@ -30,12 +30,12 @@
 #include "psx_syscall.h"
 
 /*
- * psx_load_syscalls() is weakly defined so we can have it overridden
- * by libpsx if it is linked. Specifically, when libcap calls
- * psx_load_sycalls it will override their defaut values. As can be
- * seen here this present function is a no-op. However, if libpsx is
- * linked, the one present in that library (not being weak) will
- * replace this one.
+ * psx_load_syscalls() can be weakly defined in dependent libraries to
+ * provide a mechanism for a library to optionally leverage this psx
+ * mechanism. Specifically, when libcap calls psx_load_sycalls() it
+ * provides a weakly declared default that maps its system calls to
+ * the regular system call functions. However, when linked with psx,
+ * this function here overrides the syscalls to be the psx ones.
  */
 void psx_load_syscalls(long int (**syscall_fn)(long int,
 					      long int, long int, long int),
@@ -96,7 +96,8 @@ static struct psx_tracker_s {
 
 /*
  * psx_action_key is used for thread local storage of the thread's
- * registration. */
+ * registration.
+ */
 pthread_key_t psx_action_key;
 
 /*
