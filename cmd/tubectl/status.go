@@ -145,8 +145,9 @@ Examples:
 	}
 
 	reg := prometheus.NewRegistry()
+	tubularReg := prometheus.WrapRegistererWithPrefix("tubular_", reg)
 	coll := internal.NewCollector(e.stderr, e.netns, e.bpfFs)
-	if err := reg.Register(coll); err != nil {
+	if err := tubularReg.Register(coll); err != nil {
 		return fmt.Errorf("register collector: %s", err)
 	}
 

@@ -85,8 +85,16 @@ func TestMetrics(t *testing.T) {
 				t.Fatal("Can't ready body:", err)
 			}
 
-			if !bytes.Contains(body, []byte(" HELP ")) {
+			if !bytes.Contains(body, []byte("# HELP ")) {
 				t.Error("Output doesn't contain prometheus export format")
+			}
+
+			if !bytes.Contains(body, []byte("# TYPE tubular_")) {
+				t.Error("Output doesn't contain tubular prefix")
+			}
+
+			if !bytes.Contains(body, []byte("# TYPE build_info")) {
+				t.Error("Output doesn't contain unprefixed build_info")
 			}
 		})
 	}
