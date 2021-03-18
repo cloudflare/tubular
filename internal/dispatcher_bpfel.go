@@ -11,72 +11,106 @@ import (
 	"github.com/cilium/ebpf"
 )
 
-type dispatcherSpecs struct {
-	ProgramDispatcher     *ebpf.ProgramSpec `ebpf:"dispatcher"`
-	MapBindings           *ebpf.MapSpec     `ebpf:"bindings"`
-	MapDestinationMetrics *ebpf.MapSpec     `ebpf:"destination_metrics"`
-	MapSockets            *ebpf.MapSpec     `ebpf:"sockets"`
-}
-
-func newDispatcherSpecs() (*dispatcherSpecs, error) {
+// loadDispatcher returns the embedded CollectionSpec for dispatcher.
+func loadDispatcher() (*ebpf.CollectionSpec, error) {
 	reader := bytes.NewReader(_DispatcherBytes)
 	spec, err := ebpf.LoadCollectionSpecFromReader(reader)
 	if err != nil {
 		return nil, fmt.Errorf("can't load dispatcher: %w", err)
 	}
 
-	specs := new(dispatcherSpecs)
-	if err := spec.Assign(specs); err != nil {
-		return nil, fmt.Errorf("can't assign dispatcher: %w", err)
-	}
-
-	return specs, nil
+	return spec, err
 }
 
-func (s *dispatcherSpecs) CollectionSpec() *ebpf.CollectionSpec {
-	return &ebpf.CollectionSpec{
-		Programs: map[string]*ebpf.ProgramSpec{
-			"dispatcher": s.ProgramDispatcher,
-		},
-		Maps: map[string]*ebpf.MapSpec{
-			"bindings":            s.MapBindings,
-			"destination_metrics": s.MapDestinationMetrics,
-			"sockets":             s.MapSockets,
-		},
+// loadDispatcherObjects loads dispatcher and converts it into a struct.
+//
+// The following types are suitable as obj argument:
+//
+//     *dispatcherObjects
+//     *dispatcherPrograms
+//     *dispatcherMaps
+//
+// See ebpf.CollectionSpec.LoadAndAssign documentation for details.
+func loadDispatcherObjects(obj interface{}, opts *ebpf.CollectionOptions) error {
+	spec, err := loadDispatcher()
+	if err != nil {
+		return err
 	}
+
+	return spec.LoadAndAssign(obj, opts)
 }
 
-func (s *dispatcherSpecs) Load(opts *ebpf.CollectionOptions) (*dispatcherObjects, error) {
-	var objs dispatcherObjects
-	if err := s.CollectionSpec().LoadAndAssign(&objs, opts); err != nil {
-		return nil, err
-	}
-	return &objs, nil
+// dispatcherSpecs contains maps and programs before they are loaded into the kernel.
+//
+// It can be passed ebpf.CollectionSpec.Assign.
+type dispatcherSpecs struct {
+	dispatcherProgramSpecs
+	dispatcherMapSpecs
 }
 
-func (s *dispatcherSpecs) Copy() *dispatcherSpecs {
-	return &dispatcherSpecs{
-		ProgramDispatcher:     s.ProgramDispatcher.Copy(),
-		MapBindings:           s.MapBindings.Copy(),
-		MapDestinationMetrics: s.MapDestinationMetrics.Copy(),
-		MapSockets:            s.MapSockets.Copy(),
-	}
+// dispatcherSpecs contains programs before they are loaded into the kernel.
+//
+// It can be passed ebpf.CollectionSpec.Assign.
+type dispatcherProgramSpecs struct {
+	Dispatcher *ebpf.ProgramSpec `ebpf:"dispatcher"`
 }
 
+// dispatcherMapSpecs contains maps before they are loaded into the kernel.
+//
+// It can be passed ebpf.CollectionSpec.Assign.
+type dispatcherMapSpecs struct {
+	Bindings           *ebpf.MapSpec `ebpf:"bindings"`
+	DestinationMetrics *ebpf.MapSpec `ebpf:"destination_metrics"`
+	Sockets            *ebpf.MapSpec `ebpf:"sockets"`
+}
+
+// dispatcherObjects contains all objects after they have been loaded into the kernel.
+//
+// It can be passed to loadDispatcherObjects or ebpf.CollectionSpec.LoadAndAssign.
 type dispatcherObjects struct {
-	ProgramDispatcher     *ebpf.Program `ebpf:"dispatcher"`
-	MapBindings           *ebpf.Map     `ebpf:"bindings"`
-	MapDestinationMetrics *ebpf.Map     `ebpf:"destination_metrics"`
-	MapSockets            *ebpf.Map     `ebpf:"sockets"`
+	dispatcherPrograms
+	dispatcherMaps
 }
 
 func (o *dispatcherObjects) Close() error {
-	for _, closer := range []io.Closer{
-		o.ProgramDispatcher,
-		o.MapBindings,
-		o.MapDestinationMetrics,
-		o.MapSockets,
-	} {
+	return _DispatcherClose(
+		&o.dispatcherPrograms,
+		&o.dispatcherMaps,
+	)
+}
+
+// dispatcherMaps contains all maps after they have been loaded into the kernel.
+//
+// It can be passed to loadDispatcherObjects or ebpf.CollectionSpec.LoadAndAssign.
+type dispatcherMaps struct {
+	Bindings           *ebpf.Map `ebpf:"bindings"`
+	DestinationMetrics *ebpf.Map `ebpf:"destination_metrics"`
+	Sockets            *ebpf.Map `ebpf:"sockets"`
+}
+
+func (m *dispatcherMaps) Close() error {
+	return _DispatcherClose(
+		m.Bindings,
+		m.DestinationMetrics,
+		m.Sockets,
+	)
+}
+
+// dispatcherPrograms contains all programs after they have been loaded into the kernel.
+//
+// It can be passed to loadDispatcherObjects or ebpf.CollectionSpec.LoadAndAssign.
+type dispatcherPrograms struct {
+	Dispatcher *ebpf.Program `ebpf:"dispatcher"`
+}
+
+func (p *dispatcherPrograms) Close() error {
+	return _DispatcherClose(
+		p.Dispatcher,
+	)
+}
+
+func _DispatcherClose(closers ...io.Closer) error {
+	for _, closer := range closers {
 		if err := closer.Close(); err != nil {
 			return err
 		}

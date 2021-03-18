@@ -22,14 +22,22 @@ type compileArgs struct {
 	source string
 	// Absolute output file name
 	dest string
+	// Target to compile for, defaults to "bpf".
+	target string
 	// Depfile will be written here if depName is not empty
 	dep io.Writer
 }
 
 func compile(args compileArgs) error {
 	// Default cflags that can be overriden by args.cFlags
-	overrideFlags := []string {
+	overrideFlags := []string{
+		// Code needs to be optimized, otherwise the verifier will often fail
+		// to understand it.
 		"-O2",
+		// Clang defaults to mcpu=probe which checks the kernel that we are
+		// compiling on. This isn't appropriate for ahead of time
+		// compiled code so force the most compatible version.
+		"-mcpu=v1",
 	}
 
 	cmd := exec.Command(args.cc, append(overrideFlags, args.cFlags...)...)
@@ -41,7 +49,13 @@ func compile(args compileArgs) error {
 		return err
 	}
 
+	target := args.target
+	if target == "" {
+		target = "bpf"
+	}
+
 	cmd.Args = append(cmd.Args,
+		"-target", target,
 		"-c", args.source,
 		"-o", args.dest,
 		// Don't include clang version

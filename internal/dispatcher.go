@@ -19,7 +19,7 @@ import (
 	"code.cfops.it/sys/tubular/internal/log"
 )
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc "$CLANG" -makebase "$MAKEDIR" dispatcher ../ebpf/inet-kern.c -- -mcpu=v2 -O2 -g -nostdinc -Wall -Werror -I../ebpf/include
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc "$CLANG" -makebase "$MAKEDIR" dispatcher ../ebpf/inet-kern.c -- -mcpu=v2 -nostdinc -Wall -Werror -I../ebpf/include
 
 // Errors returned by the Dispatcher.
 var (
@@ -31,26 +31,6 @@ var (
 	ErrBadSocketProtocol = syscall.EPROTONOSUPPORT
 	ErrBadSocketState    = syscall.EBADFD
 )
-
-// TODO: Remove this once https://github.com/cilium/ebpf/pull/195 is merged.
-type dispatcherMaps struct {
-	Bindings           *ebpf.Map `ebpf:"bindings"`
-	DestinationMetrics *ebpf.Map `ebpf:"destination_metrics"`
-	Sockets            *ebpf.Map `ebpf:"sockets"`
-}
-
-func (dm *dispatcherMaps) Close() error {
-	for _, closer := range []io.Closer{
-		dm.Bindings,
-		dm.DestinationMetrics,
-		dm.Sockets,
-	} {
-		if err := closer.Close(); err != nil {
-			return err
-		}
-	}
-	return nil
-}
 
 // Dispatcher manipulates the socket dispatch data plane.
 type Dispatcher struct {
@@ -72,11 +52,6 @@ func CreateDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispat
 		if err != nil {
 			c.Close()
 		}
-	}
-
-	specs, err := newDispatcherSpecs()
-	if err != nil {
-		return nil, err
 	}
 
 	netns, pinPath, err := openNetNS(netnsPath, bpfFsPath)
@@ -105,7 +80,8 @@ func CreateDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispat
 	stateMu.Lock()
 	defer stateMu.Unlock()
 
-	bpf, err := specs.Load(&ebpf.CollectionOptions{
+	var bpf dispatcherObjects
+	err = loadDispatcherObjects(&bpf, &ebpf.CollectionOptions{
 		Maps: ebpf.MapOptions{PinPath: tempDir},
 	})
 	if err != nil {
@@ -113,24 +89,20 @@ func CreateDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispat
 	}
 	defer bpf.Close()
 
-	dests, err := newDestinations(dispatcherMaps{
-		bpf.MapBindings,
-		bpf.MapDestinationMetrics,
-		bpf.MapSockets,
-	}, tempDir)
+	dests, err := newDestinations(bpf.dispatcherMaps, tempDir)
 	if err != nil {
 		return nil, err
 	}
 	defer closeOnError(dests)
 
-	if err := bpf.ProgramDispatcher.Pin(programPath(tempDir)); err != nil {
+	if err := bpf.Dispatcher.Pin(programPath(tempDir)); err != nil {
 		return nil, fmt.Errorf("pin program: %s", err)
 	}
 
 	// The dispatcher is active after this call. Since we've not taken any
 	// lock, this can lead to two programs being active. We rely on the socket
 	// lookup semantics to prevent this being an issue.
-	link, err := link.AttachNetNs(int(netns.Fd()), bpf.ProgramDispatcher)
+	link, err := link.AttachNetNs(int(netns.Fd()), bpf.Dispatcher)
 	if err != nil {
 		return nil, fmt.Errorf("attach program to netns %s: %s", netns.Path(), err)
 	}
@@ -140,7 +112,7 @@ func CreateDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispat
 		return nil, fmt.Errorf("can't pin link: %s", err)
 	}
 
-	mapBindings, err := bpf.MapBindings.Clone()
+	mapBindings, err := bpf.Bindings.Clone()
 	if err != nil {
 		return nil, fmt.Errorf("can't clone bindings map: %s", err)
 	}
@@ -189,8 +161,13 @@ func OpenDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispatch
 	stateMu.Lock()
 	defer stateMu.Unlock()
 
-	specs, err := newDispatcherSpecs()
+	specs, err := loadDispatcher()
 	if err != nil {
+		return nil, err
+	}
+
+	var progs dispatcherProgramSpecs
+	if err := specs.Assign(&progs); err != nil {
 		return nil, err
 	}
 
@@ -206,14 +183,14 @@ func OpenDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispatch
 	}
 	defer prog.Close()
 
-	if compat, err := isLinkCompatible(link, prog, specs.ProgramDispatcher); err != nil {
+	if compat, err := isLinkCompatible(link, prog, progs.Dispatcher); err != nil {
 		return nil, fmt.Errorf("check dispatcher compatibility: %s", err)
 	} else if !compat {
 		return nil, fmt.Errorf("loaded dispatcher is incompatible")
 	}
 
 	var maps dispatcherMaps
-	err = specs.CollectionSpec().LoadAndAssign(&maps, &ebpf.CollectionOptions{
+	err = specs.LoadAndAssign(&maps, &ebpf.CollectionOptions{
 		Maps: ebpf.MapOptions{PinPath: pinPath},
 	})
 	if err != nil {

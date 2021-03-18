@@ -178,24 +178,16 @@ func mustNewDestinations(tb testing.TB) *destinations {
 	}
 	tb.Cleanup(func() { os.RemoveAll(tempDir) })
 
-	spec, err := newDispatcherSpecs()
-	if err != nil {
-		tb.Fatal("Can't create specs:", err)
-	}
-
-	obj, err := spec.Load(&ebpf.CollectionOptions{
+	var maps dispatcherMaps
+	err = loadDispatcherObjects(&maps, &ebpf.CollectionOptions{
 		Maps: ebpf.MapOptions{PinPath: tempDir},
 	})
 	if err != nil {
-		tb.Fatal("Can't load objects:", err)
+		tb.Fatal("Can't create specs:", err)
 	}
-	tb.Cleanup(func() { obj.Close() })
+	tb.Cleanup(func() { maps.Close() })
 
-	lbls, err := newDestinations(dispatcherMaps{
-		obj.MapBindings,
-		obj.MapDestinationMetrics,
-		obj.MapSockets,
-	}, "")
+	lbls, err := newDestinations(maps, "")
 	if err != nil {
 		tb.Fatal("Can't create labels:", err)
 	}

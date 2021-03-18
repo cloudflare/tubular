@@ -19,7 +19,7 @@ import (
 // ErrNotSupported is returned whenever the kernel doesn't support a feature.
 var ErrNotSupported = internal.ErrNotSupported
 
-// ProgramID represents the unique ID of an eBPF program
+// ProgramID represents the unique ID of an eBPF program.
 type ProgramID uint32
 
 const (
@@ -43,7 +43,7 @@ type ProgramOptions struct {
 	LogSize int
 }
 
-// ProgramSpec defines a Program
+// ProgramSpec defines a Program.
 type ProgramSpec struct {
 	// Name is passed to the kernel as a debug aid. Must only contain
 	// alpha numeric and '_' characters.
@@ -103,9 +103,10 @@ type Program struct {
 	// otherwise it is empty.
 	VerifierLog string
 
-	fd   *internal.FD
-	name string
-	typ  ProgramType
+	fd         *internal.FD
+	name       string
+	pinnedPath string
+	typ        ProgramType
 }
 
 // NewProgram creates a new Program.
@@ -228,7 +229,7 @@ func newProgramWithOptions(spec *ProgramSpec, opts ProgramOptions, btfs btfHandl
 
 	fd, err := bpfProgLoad(attr)
 	if err == nil {
-		return &Program{internal.CString(logBuf), fd, spec.Name, spec.Type}, nil
+		return &Program{internal.CString(logBuf), fd, spec.Name, "", spec.Type}, nil
 	}
 
 	logErr := err
@@ -287,7 +288,7 @@ func newProgramFromFD(fd *internal.FD) (*Program, error) {
 		return nil, fmt.Errorf("discover program type: %w", err)
 	}
 
-	return &Program{"", fd, "", info.Type}, nil
+	return &Program{"", fd, "", "", info.Type}, nil
 }
 
 func (p *Program) String() string {
@@ -338,17 +339,40 @@ func (p *Program) Clone() (*Program, error) {
 		return nil, fmt.Errorf("can't clone program: %w", err)
 	}
 
-	return &Program{p.VerifierLog, dup, p.name, p.typ}, nil
+	return &Program{p.VerifierLog, dup, p.name, "", p.typ}, nil
 }
 
-// Pin persists the Program past the lifetime of the process that created it
+// Pin persists the Program on the BPF virtual file system past the lifetime of
+// the process that created it
 //
 // This requires bpffs to be mounted above fileName. See https://docs.cilium.io/en/k8s-doc/admin/#admin-mount-bpffs
 func (p *Program) Pin(fileName string) error {
-	if err := internal.BPFObjPin(fileName, p.fd); err != nil {
-		return fmt.Errorf("can't pin program: %w", err)
+	if err := pin(p.pinnedPath, fileName, p.fd); err != nil {
+		return err
 	}
+	p.pinnedPath = fileName
 	return nil
+}
+
+// Unpin removes the persisted state for the Program from the BPF virtual filesystem.
+//
+// Failed calls to Unpin will not alter the state returned by IsPinned.
+//
+// Unpinning an unpinned Program returns nil.
+func (p *Program) Unpin() error {
+	if err := unpin(p.pinnedPath); err != nil {
+		return err
+	}
+	p.pinnedPath = ""
+	return nil
+}
+
+// IsPinned returns true if the Program has a non-empty pinned path.
+func (p *Program) IsPinned() bool {
+	if p.pinnedPath == "" {
+		return false
+	}
+	return true
 }
 
 // Close unloads the program from the kernel.
@@ -585,16 +609,16 @@ func LoadPinnedProgram(fileName string) (*Program, error) {
 		return nil, fmt.Errorf("info for %s: %w", fileName, err)
 	}
 
-	return &Program{"", fd, filepath.Base(fileName), info.Type}, nil
+	return &Program{"", fd, filepath.Base(fileName), "", info.Type}, nil
 }
 
-// SanitizeName replaces all invalid characters in name.
+// SanitizeName replaces all invalid characters in name with replacement.
+// Passing a negative value for replacement will delete characters instead
+// of replacing them. Use this to automatically generate valid names for maps
+// and programs at runtime.
 //
-// Use this to automatically generate valid names for maps and
-// programs at run time.
-//
-// Passing a negative value for replacement will delete characters
-// instead of replacing them.
+// The set of allowed characters depends on the running kernel version.
+// Dots are only allowed as of kernel 5.2.
 func SanitizeName(name string, replacement rune) string {
 	return strings.Map(func(char rune) rune {
 		if invalidBPFObjNameChar(char) {
