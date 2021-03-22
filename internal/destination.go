@@ -2,7 +2,6 @@ package internal
 
 import (
 	"bytes"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"sort"
@@ -183,49 +182,16 @@ type destinations struct {
 	maxID   destinationID
 }
 
-var destinationsSpec = &ebpf.MapSpec{
-	Name:       "destinations",
-	Type:       ebpf.Hash,
-	KeySize:    uint32(binary.Size(destinationKey{})),
-	ValueSize:  uint32(binary.Size(destinationAlloc{})),
-	MaxEntries: 512,
-}
-
-func newDestinations(maps dispatcherMaps, pinPath string) (*destinations, error) {
-	maxEntries := maps.Sockets.MaxEntries()
-	if destMax := maps.DestinationMetrics.MaxEntries(); destMax != maxEntries {
-		return nil, fmt.Errorf("socket and metrics map size doesn't match: %d != %d", maxEntries, destMax)
-	}
-
-	spec := destinationsSpec.Copy()
-	if pinPath != "" {
-		spec.Pinning = ebpf.PinByName
-	}
-
-	allocs, err := ebpf.NewMapWithOptions(spec, ebpf.MapOptions{PinPath: pinPath})
-	if err != nil {
-		return nil, fmt.Errorf("create destinations map: %s", err)
-	}
-
-	mapSockets, err := maps.Sockets.Clone()
-	if err != nil {
-		allocs.Close()
-		return nil, fmt.Errorf("can't clone sockets map: %s", err)
-	}
-
-	mapDestinationMetrics, err := maps.DestinationMetrics.Clone()
-	if err != nil {
-		allocs.Close()
-		mapSockets.Close()
-		return nil, fmt.Errorf("can't clone destination metrics map: %s", err)
-	}
-
+// newDestinations creates destinations from BPF maps.
+//
+// The function takes ownership of some maps.
+func newDestinations(maps dispatcherMaps) *destinations {
 	return &destinations{
-		allocs,
-		mapSockets,
-		mapDestinationMetrics,
-		destinationID(maxEntries),
-	}, nil
+		maps.Destinations,
+		maps.Sockets,
+		maps.DestinationMetrics,
+		destinationID(maps.Sockets.MaxEntries()),
+	}
 }
 
 func (dests *destinations) Close() error {

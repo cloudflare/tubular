@@ -1,9 +1,7 @@
 package internal
 
 import (
-	"io/ioutil"
 	"net"
-	"os"
 	"syscall"
 	"testing"
 
@@ -172,27 +170,24 @@ func TestDestinationsAddSocket(t *testing.T) {
 func mustNewDestinations(tb testing.TB) *destinations {
 	tb.Helper()
 
-	tempDir, err := ioutil.TempDir("/sys/fs/bpf", "tubular")
+	spec, err := loadPatchedDispatcher(nil, nil)
 	if err != nil {
 		tb.Fatal(err)
 	}
-	tb.Cleanup(func() { os.RemoveAll(tempDir) })
+
+	for _, m := range spec.Maps {
+		m.Pinning = ebpf.PinNone
+	}
 
 	var maps dispatcherMaps
-	err = loadDispatcherObjects(&maps, &ebpf.CollectionOptions{
-		Maps: ebpf.MapOptions{PinPath: tempDir},
-	})
-	if err != nil {
+	if err := spec.LoadAndAssign(&maps, nil); err != nil {
 		tb.Fatal("Can't create specs:", err)
 	}
 	tb.Cleanup(func() { maps.Close() })
 
-	lbls, err := newDestinations(maps, "")
-	if err != nil {
-		tb.Fatal("Can't create labels:", err)
-	}
-	tb.Cleanup(func() { lbls.Close() })
-	return lbls
+	dests := newDestinations(maps)
+	tb.Cleanup(func() { dests.Close() })
+	return dests
 }
 
 func mustRawConn(tb testing.TB, conn syscall.Conn) syscall.RawConn {

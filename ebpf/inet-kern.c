@@ -55,6 +55,14 @@ struct {
 } bindings SEC(".maps");
 
 struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__uint(key_size, 0);
+	__uint(value_size, 0);
+	__uint(max_entries, MAX_SOCKETS);
+	__uint(pinning, LIBBPF_PIN_BY_NAME);
+} destinations SEC(".maps");
+
+struct {
 	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
 	__type(key, destination_id_t);
 	__type(value, struct destination_metrics);

@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -80,29 +81,24 @@ func CreateDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispat
 	stateMu.Lock()
 	defer stateMu.Unlock()
 
-	var bpf dispatcherObjects
-	err = loadDispatcherObjects(&bpf, &ebpf.CollectionOptions{
+	var objs dispatcherObjects
+	_, err = loadPatchedDispatcher(&objs, &ebpf.CollectionOptions{
 		Maps: ebpf.MapOptions{PinPath: tempDir},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("load BPF: %s", err)
 	}
-	defer bpf.Close()
+	defer objs.dispatcherPrograms.Close()
+	defer closeOnError(&objs.dispatcherMaps)
 
-	dests, err := newDestinations(bpf.dispatcherMaps, tempDir)
-	if err != nil {
-		return nil, err
-	}
-	defer closeOnError(dests)
-
-	if err := bpf.Dispatcher.Pin(programPath(tempDir)); err != nil {
+	if err := objs.Dispatcher.Pin(programPath(tempDir)); err != nil {
 		return nil, fmt.Errorf("pin program: %s", err)
 	}
 
 	// The dispatcher is active after this call. Since we've not taken any
 	// lock, this can lead to two programs being active. We rely on the socket
 	// lookup semantics to prevent this being an issue.
-	link, err := link.AttachNetNs(int(netns.Fd()), bpf.Dispatcher)
+	link, err := link.AttachNetNs(int(netns.Fd()), objs.Dispatcher)
 	if err != nil {
 		return nil, fmt.Errorf("attach program to netns %s: %s", netns.Path(), err)
 	}
@@ -110,11 +106,6 @@ func CreateDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispat
 
 	if err := link.Pin(linkPath(tempDir)); err != nil {
 		return nil, fmt.Errorf("can't pin link: %s", err)
-	}
-
-	mapBindings, err := bpf.Bindings.Clone()
-	if err != nil {
-		return nil, fmt.Errorf("can't clone bindings map: %s", err)
 	}
 
 	// Rename will succeed if pinPath doesn't exist or is an empty directory,
@@ -126,7 +117,10 @@ func CreateDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispat
 		return nil, fmt.Errorf("can't create dispatcher: %s", err)
 	}
 
-	return &Dispatcher{stateMu, netns, link, pinPath, mapBindings, dests, dir, logger}, nil
+	dests := newDestinations(objs.dispatcherMaps)
+	defer closeOnError(dests)
+
+	return &Dispatcher{stateMu, netns, link, pinPath, objs.Bindings, dests, dir, logger}, nil
 }
 
 // OpenDispatcher loads an existing dispatcher from a namespace.
@@ -161,13 +155,13 @@ func OpenDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispatch
 	stateMu.Lock()
 	defer stateMu.Unlock()
 
-	specs, err := loadDispatcher()
+	spec, err := loadPatchedDispatcher(nil, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	var progs dispatcherProgramSpecs
-	if err := specs.Assign(&progs); err != nil {
+	if err := spec.Assign(&progs); err != nil {
 		return nil, err
 	}
 
@@ -190,26 +184,49 @@ func OpenDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispatch
 	}
 
 	var maps dispatcherMaps
-	err = specs.LoadAndAssign(&maps, &ebpf.CollectionOptions{
+	err = spec.LoadAndAssign(&maps, &ebpf.CollectionOptions{
 		Maps: ebpf.MapOptions{PinPath: pinPath},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("load BPF: %s", err)
 	}
-	defer maps.Close()
+	defer closeOnError(&maps)
 
-	dests, err := newDestinations(maps, pinPath)
+	dests := newDestinations(maps)
+	defer closeOnError(dests)
+
+	return &Dispatcher{stateMu, netns, link, pinPath, maps.Bindings, dests, dir, logger}, nil
+}
+
+func loadPatchedDispatcher(to interface{}, opts *ebpf.CollectionOptions) (*ebpf.CollectionSpec, error) {
+	spec, err := loadDispatcher()
 	if err != nil {
 		return nil, err
 	}
-	defer closeOnError(dests)
 
-	mapBindings, err := maps.Bindings.Clone()
-	if err != nil {
-		return nil, fmt.Errorf("can't clone bindings map: %s", err)
+	var specs dispatcherSpecs
+	if err := spec.Assign(&specs); err != nil {
+		return nil, err
 	}
 
-	return &Dispatcher{stateMu, netns, link, pinPath, mapBindings, dests, dir, logger}, nil
+	maxSockets := specs.Sockets.MaxEntries
+	for _, m := range []*ebpf.MapSpec{
+		specs.Destinations,
+		specs.DestinationMetrics,
+	} {
+		if m.MaxEntries != maxSockets {
+			return nil, fmt.Errorf("map %q has %d max entries instead of %d", m.Name, m.MaxEntries, maxSockets)
+		}
+	}
+
+	specs.Destinations.KeySize = uint32(binary.Size(destinationKey{}))
+	specs.Destinations.ValueSize = uint32(binary.Size(destinationAlloc{}))
+
+	if to != nil {
+		return spec, spec.LoadAndAssign(to, opts)
+	}
+
+	return spec, nil
 }
 
 // Close frees associated resources.
