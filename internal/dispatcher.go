@@ -214,7 +214,7 @@ func OpenDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispatch
 
 // Close frees associated resources.
 //
-// It does not remove the dispatcher, see Unload for that.
+// It does not remove the dispatcher, see UnloadDispatcher.
 func (d *Dispatcher) Close() error {
 	// No need to lock the state, since we don't modify it here.
 	if err := d.link.Close(); err != nil {
@@ -235,18 +235,34 @@ func (d *Dispatcher) Close() error {
 	return nil
 }
 
-// Unload removes the dispatcher.
+// UnloadDispatcher removes a dispatcher and its associated state.
 //
-// It isn't necessary to call Close() afterwards.
-func (d *Dispatcher) Unload() error {
-	// We have to Close after Unlock, since it panics otherwise.
-	defer d.Close()
+// Returns ErrNotLoaded if the dispatcher state directory doesn't exist.
+func UnloadDispatcher(netnsPath, bpfFsPath string) error {
+	netns, pinPath, err := openNetNS(netnsPath, bpfFsPath)
+	if err != nil {
+		return err
+	}
+	defer netns.Close()
 
-	d.stateMu.Lock()
-	defer d.stateMu.Unlock()
+	dir, err := os.Open(pinPath)
+	if os.IsNotExist(err) {
+		return fmt.Errorf("%s: %w", netnsPath, ErrNotLoaded)
+	} else if err != nil {
+		return fmt.Errorf("%s: %s", netnsPath, err)
+	}
+	defer dir.Close()
 
-	if err := os.RemoveAll(d.Path); err != nil {
-		return fmt.Errorf("can't remove pinned state: %s", err)
+	stateMu, err := lock.Exclusive(dir)
+	if err != nil {
+		return err
+	}
+
+	stateMu.Lock()
+	defer stateMu.Unlock()
+
+	if err := os.RemoveAll(pinPath); err != nil {
+		return fmt.Errorf("remove pinned state: %s", err)
 	}
 
 	return nil

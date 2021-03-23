@@ -3,8 +3,10 @@ package internal
 import (
 	"errors"
 	"fmt"
+	"math/rand"
 	"net"
 	"os"
+	"path/filepath"
 	"runtime"
 	"syscall"
 	"testing"
@@ -28,17 +30,53 @@ func TestLoadDispatcher(t *testing.T) {
 	if _, err := os.Stat(dp.Path); err != nil {
 		t.Error("State directory doesn't exist:", err)
 	}
+}
 
-	dp = mustOpenDispatcher(t, nil, netns.Path())
-	if err := dp.Unload(); err != nil {
-		t.Fatal("Can't unload:", err)
+func TestUnloadDispatcher(t *testing.T) {
+	netns := testutil.NewNetNS(t)
+	dp := mustCreateDispatcher(t, nil, netns.Path())
+
+	dir, err := os.Open(dp.Path)
+	if err != nil {
+		t.Fatal("Open state directory:", err)
+	}
+	defer dir.Close()
+
+	entries, err := dir.ReadDir(0)
+	if err != nil {
+		t.Fatal("Read state entries:", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("No entries in state directory")
+	}
+
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	entry := entries[rng.Intn(len(entries))]
+	path := filepath.Join(dp.Path, entry.Name())
+
+	t.Log("Removing", path)
+	if err := os.RemoveAll(path); err != nil {
+		t.Fatal("Remove state entry:", err)
+	}
+
+	dp.Close()
+
+	if err := UnloadDispatcher(netns.Path(), "/sys/fs/bpf"); err != nil {
+		t.Fatal("Unload corrupt dispatcher:", err)
 	}
 
 	if _, err := os.Stat(dp.Path); err == nil {
-		t.Error("State directory remains after unload")
+		t.Error("State directory exists after unload")
 	}
+}
 
-	// TODO: Check that program is detached
+func TestUnloadDispatcherNotLoaded(t *testing.T) {
+	netns := testutil.NewNetNS(t)
+
+	err := UnloadDispatcher(netns.Path(), "/sys/fs/bpf")
+	if !errors.Is(err, ErrNotLoaded) {
+		t.Fatal("Expected ErrNotLoaded, got", err)
+	}
 }
 
 func TestDispatcherLocking(t *testing.T) {

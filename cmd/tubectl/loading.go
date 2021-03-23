@@ -51,15 +51,11 @@ Unload the tubular dispatcher, removing any present state.
 		return fmt.Errorf("invalid arguments")
 	}
 
-	dp, err := e.openDispatcher()
+	err := internal.UnloadDispatcher(e.netns, e.bpfFs)
 	if errors.Is(err, internal.ErrNotLoaded) {
 		e.stderr.Log("dispatcher is not loaded in", e.netns)
 		return nil
 	} else if err != nil {
-		return err
-	}
-
-	if err := dp.Unload(); err != nil {
 		return err
 	}
 
