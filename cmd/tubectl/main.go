@@ -120,6 +120,7 @@ func tubectl(e env, args []string) (err error) {
 		{"version", version},
 		{"load", load},
 		{"unload", unload},
+		{"upgrade", upgrade},
 		{"bind", bind},
 		{"unbind", unbind},
 		{"load-bindings", loadBindings},

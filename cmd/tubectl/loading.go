@@ -62,3 +62,31 @@ Unload the tubular dispatcher, removing any present state.
 	e.stdout.Logf("unloaded dispatcher from %s\n", e.netns)
 	return nil
 }
+
+func upgrade(e *env, args ...string) error {
+	set := e.newFlagSet("upgrade", `
+
+Upgrade the tubular dispatcher, while preserving present state.
+`)
+	if err := set.Parse(args); errors.Is(err, flag.ErrHelp) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+
+	if flag.NArg() > 0 {
+		return fmt.Errorf("invalid arguments")
+	}
+
+	if err := e.setupEnv(); err != nil {
+		return err
+	}
+
+	id, err := internal.UpgradeDispatcher(e.netns, e.bpfFs)
+	if err != nil {
+		return err
+	}
+
+	e.stdout.Logf("Upgraded dispatcher to %s, program ID #%d", Version, id)
+	return nil
+}

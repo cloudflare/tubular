@@ -151,7 +151,7 @@ func TestDispatcherUpgrade(t *testing.T) {
 	}
 
 	for i := 0; i < 3; i++ {
-		if err := UpgradeDispatcher(netns.Path(), "/sys/fs/bpf"); err != nil {
+		if _, err := UpgradeDispatcher(netns.Path(), "/sys/fs/bpf"); err != nil {
 			t.Fatalf("Upgrade #%d failed with: %s", i, err)
 		}
 	}
@@ -173,7 +173,7 @@ func TestDispatcherUpgradeFailedLinkUpdate(t *testing.T) {
 		return errors.New("aborted")
 	}
 
-	err := upgradeDispatcher(netns.Path(), "/sys/fs/bpf", updateLink)
+	_, err := upgradeDispatcher(netns.Path(), "/sys/fs/bpf", updateLink)
 	if err == nil {
 		t.Fatal("Upgrade didn't fail")
 	}
@@ -290,7 +290,7 @@ func TestDispatcherUpgradeWithIncompatibleMap(t *testing.T) {
 		break
 	}
 
-	if err := UpgradeDispatcher(netns.Path(), "/sys/fs/bpf"); err == nil {
+	if _, err := UpgradeDispatcher(netns.Path(), "/sys/fs/bpf"); err == nil {
 		t.Fatal("Upgrading a dispatcher with an incompatible map doesn't return an error")
 	}
 }

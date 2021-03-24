@@ -210,20 +210,20 @@ func loadPatchedDispatcher(to interface{}, opts *ebpf.CollectionOptions) (*ebpf.
 // It doesn't remove old unused state.
 //
 // Returns the program ID of the new dispatcher or an error.
-func UpgradeDispatcher(netnsPath, bpfFsPath string) error {
+func UpgradeDispatcher(netnsPath, bpfFsPath string) (ebpf.ProgramID, error) {
 	return upgradeDispatcher(netnsPath, bpfFsPath, link.NetNsLink.Update)
 }
 
-func upgradeDispatcher(netnsPath, bpfFsPath string, linkUpdate func(link.NetNsLink, *ebpf.Program) error) error {
+func upgradeDispatcher(netnsPath, bpfFsPath string, linkUpdate func(link.NetNsLink, *ebpf.Program) error) (ebpf.ProgramID, error) {
 	netns, pinPath, err := openNetNS(netnsPath, bpfFsPath)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer netns.Close()
 
 	dir, err := lock.OpenLockedExclusive(pinPath)
 	if err != nil {
-		return fmt.Errorf("%s: %s", netnsPath, err)
+		return 0, fmt.Errorf("%s: %s", netnsPath, err)
 	}
 	defer dir.Close()
 
@@ -234,37 +234,43 @@ func upgradeDispatcher(netnsPath, bpfFsPath string, linkUpdate func(link.NetNsLi
 	if err != nil {
 		// We will fail here if the pinned maps are not compatible. This is
 		// something we might have to solve in the future.
-		return fmt.Errorf("load dispatcher program: %s", err)
+		return 0, fmt.Errorf("load dispatcher program: %s", err)
 	}
 	defer objs.Close()
 
+	progInfo, err := objs.Dispatcher.Info()
+	if err != nil {
+		return 0, fmt.Errorf("get program info: %s", err)
+	}
+	progID, _ := progInfo.ID()
+
 	nslink, err := link.LoadPinnedNetNs(linkPath(pinPath))
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer nslink.Close()
 
 	progPath := programPath(pinPath)
 	tmpPath := programUpgradePath(pinPath)
 	if err := objs.Dispatcher.Pin(tmpPath); err != nil {
-		return fmt.Errorf("pin program: %s", err)
+		return 0, fmt.Errorf("pin program: %s", err)
 	}
 	// Remove the temporary program pin if the update fails.
 	defer os.Remove(tmpPath)
 
 	// This is the start of the critical section. Do as little as possible in here.
 	if err := linkUpdate(*nslink, objs.Dispatcher); err != nil {
-		return fmt.Errorf("update link: %s", err)
+		return 0, fmt.Errorf("update link: %s", err)
 	}
 
 	if err := os.Rename(tmpPath, progPath); err != nil {
 		// At this point we are hosed: link and the pinned program disagree, so
 		// the next OpenDispatcher call will fail. There isn't much we can do,
 		// and if rename fails we probably have bigger fish to fry.
-		return fmt.Errorf("rename program: %s", err)
+		return 0, fmt.Errorf("rename program: %s", err)
 	}
 
-	return nil
+	return progID, nil
 }
 
 // Close frees associated resources.
