@@ -16,6 +16,7 @@ import (
 // dup()ed file descriptors share the same file description, and so share the
 // same lock.
 type File struct {
+	*os.File
 	raw syscall.RawConn
 	how int
 }
@@ -24,7 +25,6 @@ var _ sync.Locker = (*File)(nil)
 
 // Exclusive creates a new exclusive lock.
 //
-//
 // Returns an unlocked lock.
 func Exclusive(file *os.File) (*File, error) {
 	raw, err := file.SyscallConn()
@@ -32,7 +32,17 @@ func Exclusive(file *os.File) (*File, error) {
 		return nil, fmt.Errorf("lock exclusive: %s", err)
 	}
 
-	return &File{raw, unix.LOCK_EX}, nil
+	return &File{file, raw, unix.LOCK_EX}, nil
+}
+
+// OpenExclusive opens the given path and calls Exclusive with the result.
+func OpenExclusive(path string) (*File, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+
+	return Exclusive(file)
 }
 
 // Shared creates a new shared lock.
@@ -46,7 +56,7 @@ func Shared(file *os.File) (*File, error) {
 		return nil, fmt.Errorf("lock exclusive: %s", err)
 	}
 
-	return &File{raw, unix.LOCK_SH}, nil
+	return &File{file, raw, unix.LOCK_SH}, nil
 }
 
 // Lock implements sync.Locker.

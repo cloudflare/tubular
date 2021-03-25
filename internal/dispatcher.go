@@ -8,7 +8,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"sync"
 	"syscall"
 
 	"github.com/cilium/ebpf"
@@ -35,13 +34,12 @@ var (
 
 // Dispatcher manipulates the socket dispatch data plane.
 type Dispatcher struct {
-	stateMu      sync.Locker
+	stateDir     *lock.File
 	netns        ns.NetNS
 	link         *link.NetNsLink
 	Path         string
 	bindings     *ebpf.Map
 	destinations *destinations
-	dir          *os.File
 	log          log.Logger
 }
 
@@ -61,25 +59,20 @@ func CreateDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispat
 	}
 	defer closeOnError(netns)
 
-	tempDir, err := ioutil.TempDir(filepath.Dir(string(pinPath)), "tubular-*")
+	tempDir, err := ioutil.TempDir(filepath.Dir(pinPath), "tubular-*")
 	if err != nil {
 		return nil, fmt.Errorf("can't create temp directory: %s", err)
 	}
 	defer os.RemoveAll(tempDir)
 
-	dir, err := os.Open(tempDir)
+	dir, err := lock.OpenExclusive(tempDir)
 	if err != nil {
 		return nil, err
 	}
 	defer closeOnError(dir)
 
-	stateMu, err := lock.Exclusive(dir)
-	if err != nil {
-		return nil, fmt.Errorf("can't lock state directory: %s", err)
-	}
-
-	stateMu.Lock()
-	defer stateMu.Unlock()
+	dir.Lock()
+	defer dir.Unlock()
 
 	var objs dispatcherObjects
 	_, err = loadPatchedDispatcher(&objs, &ebpf.CollectionOptions{
@@ -95,9 +88,7 @@ func CreateDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispat
 		return nil, fmt.Errorf("pin program: %s", err)
 	}
 
-	// The dispatcher is active after this call. Since we've not taken any
-	// lock, this can lead to two programs being active. We rely on the socket
-	// lookup semantics to prevent this being an issue.
+	// The dispatcher is active after this call.
 	link, err := link.AttachNetNs(int(netns.Fd()), objs.Dispatcher)
 	if err != nil {
 		return nil, fmt.Errorf("attach program to netns %s: %s", netns.Path(), err)
@@ -118,9 +109,7 @@ func CreateDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispat
 	}
 
 	dests := newDestinations(objs.dispatcherMaps)
-	defer closeOnError(dests)
-
-	return &Dispatcher{stateMu, netns, link, pinPath, objs.Bindings, dests, dir, logger}, nil
+	return &Dispatcher{dir, netns, link, pinPath, objs.Bindings, dests, logger}, nil
 }
 
 // OpenDispatcher loads an existing dispatcher from a namespace.
@@ -139,7 +128,7 @@ func OpenDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispatch
 	}
 	defer closeOnError(netns)
 
-	dir, err := os.Open(pinPath)
+	dir, err := lock.OpenExclusive(pinPath)
 	if os.IsNotExist(err) {
 		return nil, fmt.Errorf("%s: %w", netnsPath, ErrNotLoaded)
 	} else if err != nil {
@@ -147,13 +136,8 @@ func OpenDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispatch
 	}
 	defer closeOnError(dir)
 
-	stateMu, err := lock.Exclusive(dir)
-	if err != nil {
-		return nil, fmt.Errorf("can't lock state directory: %s", err)
-	}
-
-	stateMu.Lock()
-	defer stateMu.Unlock()
+	dir.Lock()
+	defer dir.Unlock()
 
 	spec, err := loadPatchedDispatcher(nil, nil)
 	if err != nil {
@@ -180,7 +164,7 @@ func OpenDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispatch
 	if compat, err := isLinkCompatible(link, prog, progs.Dispatcher); err != nil {
 		return nil, fmt.Errorf("check dispatcher compatibility: %s", err)
 	} else if !compat {
-		return nil, fmt.Errorf("loaded dispatcher is incompatible")
+		return nil, errors.New("loaded dispatcher is incompatible")
 	}
 
 	var maps dispatcherMaps
@@ -193,9 +177,7 @@ func OpenDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispatch
 	defer closeOnError(&maps)
 
 	dests := newDestinations(maps)
-	defer closeOnError(dests)
-
-	return &Dispatcher{stateMu, netns, link, pinPath, maps.Bindings, dests, dir, logger}, nil
+	return &Dispatcher{dir, netns, link, pinPath, maps.Bindings, dests, logger}, nil
 }
 
 func loadPatchedDispatcher(to interface{}, opts *ebpf.CollectionOptions) (*ebpf.CollectionSpec, error) {
@@ -246,7 +228,7 @@ func (d *Dispatcher) Close() error {
 	if err := d.netns.Close(); err != nil {
 		return fmt.Errorf("can't close netns handle: %s", err)
 	}
-	if err := d.dir.Close(); err != nil {
+	if err := d.stateDir.Close(); err != nil {
 		return fmt.Errorf("can't close state directory handle: %s", err)
 	}
 	return nil
@@ -339,8 +321,8 @@ func (p Protocol) String() string {
 // Traffic for the binding is dropped by the data plane if no matching
 // destination exists.
 func (d *Dispatcher) AddBinding(bind *Binding) (err error) {
-	d.stateMu.Lock()
-	defer d.stateMu.Unlock()
+	d.stateDir.Lock()
+	defer d.stateDir.Unlock()
 
 	return d.addBinding(bind)
 }
@@ -387,8 +369,8 @@ func (d *Dispatcher) addBinding(bind *Binding) (err error) {
 //
 // Returns an error if the binding doesn't exist.
 func (d *Dispatcher) RemoveBinding(bind *Binding) error {
-	d.stateMu.Lock()
-	defer d.stateMu.Unlock()
+	d.stateDir.Lock()
+	defer d.stateDir.Unlock()
 
 	return d.removeBinding(bind)
 }
@@ -429,8 +411,8 @@ func (d *Dispatcher) removeBinding(bind *Binding) error {
 //
 // Returns a boolean indicating whether any changes were made.
 func (d *Dispatcher) ReplaceBindings(bindings Bindings) (bool, error) {
-	d.stateMu.Lock()
-	defer d.stateMu.Unlock()
+	d.stateDir.Lock()
+	defer d.stateDir.Unlock()
 
 	want := make(map[bindingKey]string)
 	for _, bind := range bindings {
@@ -506,8 +488,8 @@ func (d *Dispatcher) iterBindings(fn func(bindingKey, string)) error {
 
 // Bindings lists known bindings.
 func (d *Dispatcher) Bindings() (Bindings, error) {
-	d.stateMu.Lock()
-	defer d.stateMu.Unlock()
+	d.stateDir.Lock()
+	defer d.stateDir.Unlock()
 
 	var bindings Bindings
 	err := d.iterBindings(func(key bindingKey, label string) {
@@ -544,8 +526,8 @@ func (d *Dispatcher) RegisterSocket(label string, conn syscall.Conn) (dest *Dest
 		return nil, false, err
 	}
 
-	d.stateMu.Lock()
-	defer d.stateMu.Unlock()
+	d.stateDir.Lock()
+	defer d.stateDir.Unlock()
 
 	created, err = d.destinations.AddSocket(dest, conn)
 	if err != nil {
@@ -562,8 +544,8 @@ type Metrics struct {
 
 // Metrics returns current counters from the data plane.
 func (d *Dispatcher) Metrics() (*Metrics, error) {
-	d.stateMu.Lock()
-	defer d.stateMu.Unlock()
+	d.stateDir.Lock()
+	defer d.stateDir.Unlock()
 
 	destMetrics, err := d.destinations.Metrics()
 	if err != nil {
@@ -575,8 +557,8 @@ func (d *Dispatcher) Metrics() (*Metrics, error) {
 
 // Destinations returns a set of existing destinations, i.e. sockets and labels.
 func (d *Dispatcher) Destinations() ([]Destination, map[Destination]SocketCookie, error) {
-	d.stateMu.Lock()
-	defer d.stateMu.Unlock()
+	d.stateDir.Lock()
+	defer d.stateDir.Unlock()
 
 	destsByID, err := d.destinations.List()
 	if err != nil {
