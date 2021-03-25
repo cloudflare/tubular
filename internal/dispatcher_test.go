@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"syscall"
 	"testing"
 	"time"
@@ -15,6 +16,9 @@ import (
 	"code.cfops.it/sys/tubular/internal/log"
 	"code.cfops.it/sys/tubular/internal/testutil"
 
+	"github.com/cilium/ebpf"
+	"github.com/cilium/ebpf/link"
+	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
@@ -135,6 +139,159 @@ func TestDispatcherConcurrentAccess(t *testing.T) {
 		case <-timeout:
 			t.Fatal("Timed out waiting for serial access to dispatcher")
 		}
+	}
+}
+
+func TestDispatcherUpgrade(t *testing.T) {
+	netns := testutil.NewNetNS(t)
+	dp := mustCreateDispatcher(t, nil, netns.Path())
+	check := assertDispatcherState(t, dp, netns)
+	if err := dp.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < 3; i++ {
+		if err := UpgradeDispatcher(netns.Path(), "/sys/fs/bpf"); err != nil {
+			t.Fatalf("Upgrade #%d failed with: %s", i, err)
+		}
+	}
+
+	dp = mustOpenDispatcher(t, nil, netns.Path())
+	defer dp.Close()
+	check(dp)
+}
+
+func TestDispatcherUpgradeFailedLinkUpdate(t *testing.T) {
+	netns := testutil.NewNetNS(t)
+	dp := mustCreateDispatcher(t, nil, netns.Path())
+	check := assertDispatcherState(t, dp, netns)
+	if err := dp.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	updateLink := func(link.NetNsLink, *ebpf.Program) error {
+		return errors.New("aborted")
+	}
+
+	err := upgradeDispatcher(netns.Path(), "/sys/fs/bpf", updateLink)
+	if err == nil {
+		t.Fatal("Upgrade didn't fail")
+	}
+
+	dp = mustOpenDispatcher(t, nil, netns.Path())
+	defer dp.Close()
+	check(dp)
+}
+
+func filesInDirectory(tb testing.TB, path string) []string {
+	dir, err := os.Open(path)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	defer dir.Close()
+
+	files, err := dir.Readdirnames(0)
+	if err != nil {
+		tb.Fatal(err)
+	}
+
+	sort.Strings(files)
+	return files
+}
+
+func assertDispatcherState(tb testing.TB, dp *Dispatcher, netns ns.NetNS) func(*Dispatcher) {
+	tb.Helper()
+
+	bind := mustNewBinding(tb, "foo", TCP, "127.0.0.1", 443)
+	mustAddBinding(tb, dp, bind)
+
+	ln := testutil.ListenAndEchoWithName(tb, netns, "tcp4", "", "service").(*net.TCPListener)
+	dest := mustRegisterSocket(tb, dp, "foo", ln)
+
+	metrics, err := dp.Metrics()
+	if err != nil {
+		tb.Fatal(err)
+	}
+
+	filesBefore := filesInDirectory(tb, dp.Path)
+
+	return func(dp *Dispatcher) {
+		tb.Helper()
+
+		bindings, err := dp.Bindings()
+		if err != nil {
+			tb.Fatal(err)
+		}
+
+		if diff := cmp.Diff(Bindings{bind}, bindings); diff != "" {
+			tb.Errorf("Bindings don't match (+y -x):\n%s", diff)
+		}
+
+		dests, _, err := dp.Destinations()
+		if err != nil {
+			tb.Fatal(err)
+		}
+
+		if diff := cmp.Diff([]Destination{*dest}, dests); diff != "" {
+			tb.Errorf("Destinations don't match (+y -x):\n%s", diff)
+		}
+
+		haveMetrics, err := dp.Metrics()
+		if err != nil {
+			tb.Fatal(err)
+		}
+
+		if diff := cmp.Diff(metrics, haveMetrics); diff != "" {
+			tb.Errorf("Metrics don't match (+y -x):\n%s", diff)
+		}
+
+		testutil.CanDialName(tb, netns, "tcp", "127.0.0.1:443", "service")
+
+		filesAfter := filesInDirectory(tb, dp.Path)
+		if diff := cmp.Diff(filesBefore, filesAfter); diff != "" {
+			tb.Fatal("Filesystem state before and after don't match:\n", diff)
+		}
+	}
+}
+
+func TestDispatcherUpgradeWithIncompatibleMap(t *testing.T) {
+	netns := testutil.NewNetNS(t)
+	dp := mustCreateDispatcher(t, nil, netns.Path())
+	path := dp.Path
+	dp.Close()
+
+	hash, err := ebpf.NewMap(&ebpf.MapSpec{
+		Type:       ebpf.Hash,
+		KeySize:    3,
+		ValueSize:  99,
+		MaxEntries: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hash.Close()
+
+	spec, err := loadPatchedDispatcher(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for name := range spec.Maps {
+		t.Log("Overriding", name)
+		path := filepath.Join(path, name)
+		if err := os.Remove(path); err != nil {
+			t.Fatal(err)
+		}
+		if err := hash.Pin(path); err != nil {
+			t.Fatal(err)
+		}
+
+		// Only override one of the maps.
+		break
+	}
+
+	if err := UpgradeDispatcher(netns.Path(), "/sys/fs/bpf"); err == nil {
+		t.Fatal("Upgrading a dispatcher with an incompatible map doesn't return an error")
 	}
 }
 
@@ -577,12 +734,15 @@ func mustAddBinding(tb testing.TB, dp *Dispatcher, bind *Binding) {
 	}
 }
 
-func mustRegisterSocket(tb testing.TB, dp *Dispatcher, label string, conn syscall.Conn) {
+func mustRegisterSocket(tb testing.TB, dp *Dispatcher, label string, conn syscall.Conn) *Destination {
 	tb.Helper()
 
-	if _, _, err := dp.RegisterSocket(label, conn); err != nil {
+	dest, _, err := dp.RegisterSocket(label, conn)
+	if err != nil {
 		tb.Fatal("Register socket:", err)
 	}
+
+	return dest
 }
 
 func mustCreateDispatcher(tb testing.TB, logger log.Logger, netns string) *Dispatcher {

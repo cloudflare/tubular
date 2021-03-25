@@ -32,5 +32,6 @@ func openNetNS(path, bpfFsPath string) (ns.NetNS, string, error) {
 	return ns, filepath.Join(bpfFsPath, dir), nil
 }
 
-func linkPath(base string) string    { return filepath.Join(base, "link") }
-func programPath(base string) string { return filepath.Join(base, "program") }
+func linkPath(base string) string           { return filepath.Join(base, "link") }
+func programPath(base string) string        { return filepath.Join(base, "program") }
+func programUpgradePath(base string) string { return filepath.Join(base, "program-upgrade") }
