@@ -35,14 +35,20 @@ func Exclusive(file *os.File) (*File, error) {
 	return &File{file, raw, unix.LOCK_EX}, nil
 }
 
-// OpenExclusive opens the given path and calls Exclusive with the result.
-func OpenExclusive(path string) (*File, error) {
+// OpenLockedExclusive opens the given path in and acquires an exclusive lock.
+func OpenLockedExclusive(path string) (*File, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 
-	return Exclusive(file)
+	lock, err := Exclusive(file)
+	if err != nil {
+		return nil, err
+	}
+
+	lock.Lock()
+	return lock, nil
 }
 
 // Shared creates a new shared lock.

@@ -30,6 +30,10 @@ func TestLoadDispatcher(t *testing.T) {
 	if _, err := os.Stat(dp.Path); err != nil {
 		t.Error("State directory doesn't exist:", err)
 	}
+
+	if _, err := CreateDispatcher(log.Discard, netns.Path(), "/sys/fs/bpf"); !errors.Is(err, ErrLoaded) {
+		t.Fatal("Creating an existing dispatcher doesn't return ErrLoaded:", err)
+	}
 }
 
 func TestUnloadDispatcher(t *testing.T) {
@@ -79,7 +83,7 @@ func TestUnloadDispatcherNotLoaded(t *testing.T) {
 	}
 }
 
-func TestDispatcherLocking(t *testing.T) {
+func TestDispatcherConcurrentAccess(t *testing.T) {
 	procs := runtime.GOMAXPROCS(0)
 	if procs < 2 {
 		t.Error("Need GOMAXPROCS >= 2")
@@ -111,10 +115,17 @@ func TestDispatcherLocking(t *testing.T) {
 
 	time.Sleep(50 * time.Millisecond)
 
-	mustCreateDispatcher(t, nil, netnsPath)
+	dp := mustCreateDispatcher(t, nil, netnsPath)
+	defer dp.Close()
 
-	if _, err := CreateDispatcher(log.Discard, netnsPath, "/sys/fs/bpf"); !errors.Is(err, ErrLoaded) {
-		t.Fatal("Creating an existing dispatcher doesn't return ErrLoaded:", err)
+	select {
+	case <-done:
+		t.Fatal("Locking does not prevent concurrent access")
+	case <-time.After(500 * time.Millisecond):
+	}
+
+	if err := dp.Close(); err != nil {
+		t.Fatal(err)
 	}
 
 	timeout := time.After(time.Second)
@@ -122,7 +133,7 @@ func TestDispatcherLocking(t *testing.T) {
 		select {
 		case <-done:
 		case <-timeout:
-			t.Fatal("Can't open multiple dispatchers")
+			t.Fatal("Timed out waiting for serial access to dispatcher")
 		}
 	}
 }

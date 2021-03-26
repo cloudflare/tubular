@@ -65,14 +65,11 @@ func CreateDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispat
 	}
 	defer os.RemoveAll(tempDir)
 
-	dir, err := lock.OpenExclusive(tempDir)
+	dir, err := lock.OpenLockedExclusive(tempDir)
 	if err != nil {
 		return nil, err
 	}
 	defer closeOnError(dir)
-
-	dir.Lock()
-	defer dir.Unlock()
 
 	var objs dispatcherObjects
 	_, err = loadPatchedDispatcher(&objs, &ebpf.CollectionOptions{
@@ -128,16 +125,13 @@ func OpenDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispatch
 	}
 	defer closeOnError(netns)
 
-	dir, err := lock.OpenExclusive(pinPath)
+	dir, err := lock.OpenLockedExclusive(pinPath)
 	if os.IsNotExist(err) {
 		return nil, fmt.Errorf("%s: %w", netnsPath, ErrNotLoaded)
 	} else if err != nil {
 		return nil, fmt.Errorf("%s: %s", netnsPath, err)
 	}
 	defer closeOnError(dir)
-
-	dir.Lock()
-	defer dir.Unlock()
 
 	spec, err := loadPatchedDispatcher(nil, nil)
 	if err != nil {
@@ -244,21 +238,13 @@ func UnloadDispatcher(netnsPath, bpfFsPath string) error {
 	}
 	defer netns.Close()
 
-	dir, err := os.Open(pinPath)
+	dir, err := lock.OpenLockedExclusive(pinPath)
 	if os.IsNotExist(err) {
 		return fmt.Errorf("%s: %w", netnsPath, ErrNotLoaded)
 	} else if err != nil {
 		return fmt.Errorf("%s: %s", netnsPath, err)
 	}
 	defer dir.Close()
-
-	stateMu, err := lock.Exclusive(dir)
-	if err != nil {
-		return err
-	}
-
-	stateMu.Lock()
-	defer stateMu.Unlock()
 
 	if err := os.RemoveAll(pinPath); err != nil {
 		return fmt.Errorf("remove pinned state: %s", err)
@@ -321,13 +307,6 @@ func (p Protocol) String() string {
 // Traffic for the binding is dropped by the data plane if no matching
 // destination exists.
 func (d *Dispatcher) AddBinding(bind *Binding) (err error) {
-	d.stateDir.Lock()
-	defer d.stateDir.Unlock()
-
-	return d.addBinding(bind)
-}
-
-func (d *Dispatcher) addBinding(bind *Binding) (err error) {
 	dest := newDestinationFromBinding(bind)
 
 	key, err := newBindingKey(bind)
@@ -369,13 +348,6 @@ func (d *Dispatcher) addBinding(bind *Binding) (err error) {
 //
 // Returns an error if the binding doesn't exist.
 func (d *Dispatcher) RemoveBinding(bind *Binding) error {
-	d.stateDir.Lock()
-	defer d.stateDir.Unlock()
-
-	return d.removeBinding(bind)
-}
-
-func (d *Dispatcher) removeBinding(bind *Binding) error {
 	key, err := newBindingKey(bind)
 	if err != nil {
 		return err
@@ -442,14 +414,14 @@ func (d *Dispatcher) ReplaceBindings(bindings Bindings) (bool, error) {
 	added, removed := diffBindings(have, want)
 
 	for _, bind := range added {
-		if err := d.addBinding(bind); err != nil {
+		if err := d.AddBinding(bind); err != nil {
 			return false, fmt.Errorf("add binding %s: %s", bind, err)
 		}
 		d.log.Log("added binding", bind)
 	}
 
 	for _, bind := range removed {
-		if err := d.removeBinding(bind); err != nil {
+		if err := d.RemoveBinding(bind); err != nil {
 			return false, fmt.Errorf("remove binding %s: %s", bind, err)
 		}
 		d.log.Log("removed binding", bind)
