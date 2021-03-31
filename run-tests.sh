@@ -30,8 +30,14 @@ if [[ "${1:-}" = "--in-vm" ]]; then
 fi
 
 fetch() {
-    echo Fetching "${1}"
-    wget -nv -N -P "${2}" "https://unimog.s3.cfdata.org/kernels/${1}"
+  echo Fetching "${1}"
+  local flags=(-f -o "${2}/${1}" -z "${2}/${1}")
+  # Poor man's check for direct access.
+  if [[ -z "${DIRECT_ACCESS:-}" ]]; then
+    cloudflared access curl "https://unimog.cfdata.org/kernels/${1}" "${flags[@]}"
+  else
+    curl "https://unimog.s3.cfdata.org/kernels/${1}" "${flags[@]}"
+  fi
 }
 
 # Pull all dependencies, so that we can run tests without the
