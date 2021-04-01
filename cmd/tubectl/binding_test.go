@@ -74,6 +74,31 @@ func TestBindInvariants(t *testing.T) {
 	}
 }
 
+func TestBindInvalidInput(t *testing.T) {
+	netns := mustReadyNetNS(t)
+
+	// stp is not a valid transport protocol
+	_, err := testTubectl(t, netns, "bind", "foo", "stp", "::1", "443")
+	if err == nil {
+		t.Error("Accepted invalid proto")
+	}
+
+	_, err = testTubectl(t, netns, "unbind", "foo", "stp", "::1", "443")
+	if err == nil {
+		t.Error("Accepted invalid proto")
+	}
+
+	_, err = testTubectl(t, netns, "bind", "foo", "udp", "::1", "111443")
+	if err == nil {
+		t.Error("Accepted invalid port")
+	}
+
+	_, err = testTubectl(t, netns, "unbind", "foo", "udp", "::1", "111443")
+	if err == nil {
+		t.Error("Accepted invalid port")
+	}
+}
+
 func TestLoadBindings(t *testing.T) {
 	netns := mustReadyNetNS(t)
 

@@ -62,7 +62,7 @@ Remove a previously created binding.
 
 func bindingFromArgs(args []string) (*internal.Binding, error) {
 	if n := len(args); n != 4 {
-		return nil, fmt.Errorf("expected label, protocol, ip and port but got %d arguments", n)
+		return nil, fmt.Errorf("expected label, protocol, ip/prefix and port but got %d arguments", n)
 	}
 
 	var proto internal.Protocol
@@ -71,6 +71,8 @@ func bindingFromArgs(args []string) (*internal.Binding, error) {
 		proto = internal.UDP
 	case "tcp":
 		proto = internal.TCP
+	default:
+		return nil, fmt.Errorf("expected proto udp or tcp, got: %s", args[1])
 	}
 
 	port, err := strconv.ParseUint(args[3], 10, 16)
