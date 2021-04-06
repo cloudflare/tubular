@@ -99,6 +99,10 @@ func CreateDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispat
 		return nil, fmt.Errorf("can't pin link: %s", err)
 	}
 
+	if err := adjustPermissions(tempDir); err != nil {
+		return nil, fmt.Errorf("adjust permissions: %s", err)
+	}
+
 	// Rename will succeed if pinPath doesn't exist or is an empty directory,
 	// otherwise it will return an error. In that case tempDir is removed,
 	// and the pinned link + program are closed, undoing any changes.
@@ -110,6 +114,37 @@ func CreateDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispat
 
 	dests := newDestinations(objs.dispatcherMaps)
 	return &Dispatcher{dir, netns, pinPath, objs.Bindings, dests, logger}, nil
+}
+
+func adjustPermissions(path string) error {
+	const (
+		// Allow user and group full access, and let others list the directory.
+		dirMode os.FileMode = 0775
+		// Allow user and group full access, and let others read the state.
+		objMode os.FileMode = 0664
+	)
+
+	if err := os.Chmod(path, dirMode); err != nil {
+		return err
+	}
+
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return fmt.Errorf("read state entries: %s", err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			return fmt.Errorf("change access mode: %q is a directory", entry.Name())
+		}
+
+		path := filepath.Join(path, entry.Name())
+		if err := os.Chmod(path, objMode); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // OpenDispatcher loads an existing dispatcher from a namespace.

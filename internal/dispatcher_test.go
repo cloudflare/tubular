@@ -6,9 +6,11 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"os/user"
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"syscall"
 	"testing"
 	"time"
@@ -21,6 +23,7 @@ import (
 	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"kernel.org/pub/linux/libs/security/libcap/cap"
 )
 
 func init() {
@@ -307,42 +310,117 @@ func TestDispatcherUpgradeWithIncompatibleMap(t *testing.T) {
 	}
 }
 
-func TestDispatcherReadOnly(t *testing.T) {
+func TestDispatcherAccess(t *testing.T) {
 	netns := testutil.NewNetNS(t)
 	dp := mustCreateDispatcher(t, nil, netns.Path())
 	bind := mustNewBinding(t, "foo", TCP, "127.0.0.1", 8080)
 	mustAddBinding(t, dp, bind)
 	dp.Close()
 
-	dp, err := OpenDispatcher(log.Discard, netns.Path(), "/sys/fs/bpf", true)
+	nobody, err := user.Lookup("nobody")
 	if err != nil {
-		t.Fatal("Open read-only dispatcher:", err)
+		t.Fatal("Lookup nobody user:", err)
 	}
 
-	if _, err := dp.Metrics(); err != nil {
-		t.Error("Can't get metrics:", err)
+	uid, err := strconv.Atoi(nobody.Uid)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	if _, err := dp.Bindings(); err != nil {
-		t.Error("Can't get bindings:", err)
+	gid, err := strconv.Atoi(nobody.Gid)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	if _, _, err := dp.Destinations(); err != nil {
-		t.Error("Can't get destinations:", err)
-	}
+	t.Run("group read-write", func(t *testing.T) {
+		var dp *Dispatcher
+		err := testutil.WithCapabilities(func() (err error) {
+			if err := cap.SetUID(uid); err != nil {
+				return fmt.Errorf("set uid: %s", err)
+			}
 
-	ln := testutil.Listen(t, netns, "tcp", "")
-	if _, _, err := dp.RegisterSocket("foo", ln); err == nil {
-		t.Error("Read-only RegisterSocket doesn't return an error")
-	}
+			dp, err = OpenDispatcher(log.Discard, netns.Path(), "/sys/fs/bpf", false)
+			return
+		})
+		if err != nil {
+			t.Fatal("Open dispatcher with shared group", err)
+		}
+		defer dp.Close()
 
-	if err := dp.AddBinding(mustNewBinding(t, "bar", UDP, "::1", 1234)); err == nil {
-		t.Error("Read-only AddBinding doesn't return an error")
-	}
+		mustAddBinding(t, dp, bind)
+		if err := dp.RemoveBinding(bind); err != nil {
+			t.Error("Remove binding:", err)
+		}
+		ln := testutil.Listen(t, netns, "tcp", "")
+		mustRegisterSocket(t, dp, "foo", ln)
+	})
 
-	if err := dp.RemoveBinding(bind); err == nil {
-		t.Error("Read-only RemoveBinding doesn't return an error")
-	}
+	t.Run("others read-write", func(t *testing.T) {
+		err := testutil.WithCapabilities(func() (err error) {
+			if err := cap.SetUID(uid); err != nil {
+				return fmt.Errorf("set uid: %s", err)
+			}
+
+			if err := cap.SetGroups(gid); err != nil {
+				return fmt.Errorf("set gid: %s", err)
+			}
+
+			dp, err := OpenDispatcher(log.Discard, netns.Path(), "/sys/fs/bpf", false)
+			if err == nil {
+				dp.Close()
+			}
+			return err
+		})
+
+		if err == nil {
+			t.Fatal("Managed to open R/W dispatcher as nobody")
+		}
+	})
+
+	t.Run("others read-only", func(t *testing.T) {
+		var dp *Dispatcher
+		err := testutil.WithCapabilities(func() (err error) {
+			if err := cap.SetUID(uid); err != nil {
+				return fmt.Errorf("set uid: %s", err)
+			}
+
+			if err := cap.SetGroups(gid); err != nil {
+				return fmt.Errorf("set gid: %s", err)
+			}
+
+			dp, err = OpenDispatcher(log.Discard, netns.Path(), "/sys/fs/bpf", true)
+			return
+		})
+		if err != nil {
+			t.Fatal("Open read-only dispatcher as nobody:", err)
+		}
+		defer dp.Close()
+
+		if _, err := dp.Metrics(); err != nil {
+			t.Error("Can't get metrics:", err)
+		}
+
+		if _, err := dp.Bindings(); err != nil {
+			t.Error("Can't get bindings:", err)
+		}
+
+		if _, _, err := dp.Destinations(); err != nil {
+			t.Error("Can't get destinations:", err)
+		}
+
+		ln := testutil.Listen(t, netns, "tcp", "")
+		if _, _, err := dp.RegisterSocket("foo", ln); err == nil {
+			t.Error("Read-only RegisterSocket doesn't return an error")
+		}
+
+		if err := dp.AddBinding(mustNewBinding(t, "bar", UDP, "::1", 1234)); err == nil {
+			t.Error("Read-only AddBinding doesn't return an error")
+		}
+
+		if err := dp.RemoveBinding(bind); err == nil {
+			t.Error("Read-only RemoveBinding doesn't return an error")
+		}
+	})
 }
 
 func TestAddAndRemoveBindings(t *testing.T) {
