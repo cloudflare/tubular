@@ -77,12 +77,12 @@ func (e *env) createDispatcher() (*internal.Dispatcher, error) {
 	return dp, nil
 }
 
-func (e *env) openDispatcher() (*internal.Dispatcher, error) {
+func (e *env) openDispatcher(readOnly bool) (*internal.Dispatcher, error) {
 	if err := e.setupEnv(); err != nil {
 		return nil, err
 	}
 
-	dp, err := internal.OpenDispatcher(e.stdout, e.netns, e.bpfFs)
+	dp, err := internal.OpenDispatcher(e.stdout, e.netns, e.bpfFs, readOnly)
 	if err != nil {
 		return nil, fmt.Errorf("can't open dispatcher: %w", err)
 	}

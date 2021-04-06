@@ -40,7 +40,6 @@ var CreateCapabilities = []cap.Value{cap.SYS_ADMIN, cap.NET_ADMIN}
 type Dispatcher struct {
 	stateDir     *lock.File
 	netns        ns.NetNS
-	link         *link.NetNsLink
 	Path         string
 	bindings     *ebpf.Map
 	destinations *destinations
@@ -94,7 +93,7 @@ func CreateDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispat
 	if err != nil {
 		return nil, fmt.Errorf("attach program to netns %s: %s", netns.Path(), err)
 	}
-	defer closeOnError(link)
+	defer link.Close()
 
 	if err := link.Pin(linkPath(tempDir)); err != nil {
 		return nil, fmt.Errorf("can't pin link: %s", err)
@@ -110,13 +109,13 @@ func CreateDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispat
 	}
 
 	dests := newDestinations(objs.dispatcherMaps)
-	return &Dispatcher{dir, netns, link, pinPath, objs.Bindings, dests, logger}, nil
+	return &Dispatcher{dir, netns, pinPath, objs.Bindings, dests, logger}, nil
 }
 
 // OpenDispatcher loads an existing dispatcher from a namespace.
 //
 // Returns ErrNotLoaded if the dispatcher is not loaded yet.
-func OpenDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
+func OpenDispatcher(logger log.Logger, netnsPath, bpfFsPath string, readOnly bool) (_ *Dispatcher, err error) {
 	closeOnError := func(c io.Closer) {
 		if err != nil {
 			c.Close()
@@ -129,7 +128,12 @@ func OpenDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispatch
 	}
 	defer closeOnError(netns)
 
-	dir, err := lock.OpenLockedExclusive(pinPath)
+	var dir *lock.File
+	if readOnly {
+		dir, err = lock.OpenLockedShared(pinPath)
+	} else {
+		dir, err = lock.OpenLockedExclusive(pinPath)
+	}
 	if os.IsNotExist(err) {
 		return nil, fmt.Errorf("%s: %w", netnsPath, ErrNotLoaded)
 	} else if err != nil {
@@ -142,32 +146,43 @@ func OpenDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispatch
 		return nil, err
 	}
 
-	var progs dispatcherProgramSpecs
-	if err := spec.Assign(&progs); err != nil {
-		return nil, err
-	}
+	if !readOnly {
+		// DAC for BPF links and programs is currently broken: it's not possible
+		// to acquire a read-only fd for them. So, for read-only mode we skip the
+		// compatibility check. The rationale is that we need the compat check to
+		// prevent incompatible modification to dispatcher state. Since this
+		// isn't possible in read-only mode skipping the check is acceptable.
+		// See https://lore.kernel.org/bpf/20210326160501.46234-1-lmb@cloudflare.com/#t
+		var progs dispatcherProgramSpecs
+		if err := spec.Assign(&progs); err != nil {
+			return nil, err
+		}
 
-	link, err := link.LoadPinnedNetNs(linkPath(pinPath))
-	if err != nil {
-		return nil, fmt.Errorf("load link: %s", err)
-	}
-	defer closeOnError(link)
+		link, err := link.LoadPinnedNetNs(linkPath(pinPath), nil)
+		if err != nil {
+			return nil, err
+		}
+		defer link.Close()
 
-	prog, err := ebpf.LoadPinnedProgram(programPath(pinPath))
-	if err != nil {
-		return nil, fmt.Errorf("load dispatcher: %s", err)
-	}
-	defer prog.Close()
+		prog, err := ebpf.LoadPinnedProgram(programPath(pinPath), nil)
+		if err != nil {
+			return nil, err
+		}
+		defer prog.Close()
 
-	if compat, err := isLinkCompatible(link, prog, progs.Dispatcher); err != nil {
-		return nil, fmt.Errorf("check dispatcher compatibility: %s", err)
-	} else if !compat {
-		return nil, errors.New("loaded dispatcher is incompatible")
+		if err := isLinkCompatible(link, prog, progs.Dispatcher); err != nil {
+			return nil, err
+		}
 	}
 
 	var maps dispatcherMaps
 	err = spec.LoadAndAssign(&maps, &ebpf.CollectionOptions{
-		Maps: ebpf.MapOptions{PinPath: pinPath},
+		Maps: ebpf.MapOptions{
+			PinPath: pinPath,
+			LoadPinOptions: ebpf.LoadPinOptions{
+				ReadOnly: readOnly,
+			},
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("load BPF: %s", err)
@@ -175,7 +190,7 @@ func OpenDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispatch
 	defer closeOnError(&maps)
 
 	dests := newDestinations(maps)
-	return &Dispatcher{dir, netns, link, pinPath, maps.Bindings, dests, logger}, nil
+	return &Dispatcher{dir, netns, pinPath, maps.Bindings, dests, logger}, nil
 }
 
 func loadPatchedDispatcher(to interface{}, opts *ebpf.CollectionOptions) (*ebpf.CollectionSpec, error) {
@@ -248,7 +263,7 @@ func upgradeDispatcher(netnsPath, bpfFsPath string, linkUpdate func(link.NetNsLi
 	}
 	progID, _ := progInfo.ID()
 
-	nslink, err := link.LoadPinnedNetNs(linkPath(pinPath))
+	nslink, err := link.LoadPinnedNetNs(linkPath(pinPath), nil)
 	if err != nil {
 		return 0, err
 	}
@@ -282,9 +297,6 @@ func upgradeDispatcher(netnsPath, bpfFsPath string, linkUpdate func(link.NetNsLi
 // It does not remove the dispatcher, see UnloadDispatcher.
 func (d *Dispatcher) Close() error {
 	// No need to lock the state, since we don't modify it here.
-	if err := d.link.Close(); err != nil {
-		return fmt.Errorf("can't close link: %s", err)
-	}
 	if err := d.bindings.Close(); err != nil {
 		return fmt.Errorf("can't close BPF objects: %s", err)
 	}

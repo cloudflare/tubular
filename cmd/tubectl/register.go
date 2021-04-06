@@ -41,7 +41,7 @@ LISTEN_PID is ignored, so is LISTEN_FDNAMES.
 	}
 	defer file.Close()
 
-	dp, err := e.openDispatcher()
+	dp, err := e.openDispatcher(false)
 	if err != nil {
 		return err
 	}

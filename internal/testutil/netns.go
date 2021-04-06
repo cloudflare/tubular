@@ -52,7 +52,7 @@ func setupNetNS(networks []string, result chan<- ns.NetNS, quit <-chan struct{})
 		return fmt.Errorf("unshare: %s", err)
 	}
 
-	if err := changeEffectiveCaps(nil); err != nil {
+	if err := ChangeEffectiveCaps(); err != nil {
 		return err
 	}
 
@@ -127,7 +127,7 @@ func JoinNetNS(tb testing.TB, netns ns.NetNS, fn func()) {
 			return fmt.Errorf("set netns: %s", err)
 		}
 
-		if err := changeEffectiveCaps(nil); err != nil {
+		if err := ChangeEffectiveCaps(); err != nil {
 			return err
 		}
 

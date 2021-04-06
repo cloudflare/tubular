@@ -29,7 +29,7 @@ Show current bindings and destinations.
 		return fmt.Errorf("invalid arguments")
 	}
 
-	dp, err := e.openDispatcher()
+	dp, err := e.openDispatcher(true)
 	if err != nil {
 		return err
 	}

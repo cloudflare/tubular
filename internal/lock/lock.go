@@ -35,7 +35,7 @@ func Exclusive(file *os.File) (*File, error) {
 	return &File{file, raw, unix.LOCK_EX}, nil
 }
 
-// OpenLockedExclusive opens the given path in and acquires an exclusive lock.
+// OpenLockedExclusive opens the given path and acquires an exclusive lock.
 func OpenLockedExclusive(path string) (*File, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -63,6 +63,22 @@ func Shared(file *os.File) (*File, error) {
 	}
 
 	return &File{file, raw, unix.LOCK_SH}, nil
+}
+
+// OpenShared opens the given path and acquires a shared lock.
+func OpenLockedShared(path string) (*File, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+
+	lock, err := Shared(file)
+	if err != nil {
+		return nil, err
+	}
+
+	lock.Lock()
+	return lock, nil
 }
 
 // Lock implements sync.Locker.

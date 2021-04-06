@@ -14,7 +14,7 @@ import (
 	"code.cfops.it/sys/tubular/internal/log"
 	"code.cfops.it/sys/tubular/internal/sysconn"
 	"code.cfops.it/sys/tubular/internal/testutil"
-	_ "code.cfops.it/sys/tubular/internal/testutil"
+
 	"github.com/containernetworking/plugins/pkg/ns"
 	"golang.org/x/sys/unix"
 	"kernel.org/pub/linux/libs/security/libcap/cap"
@@ -83,7 +83,7 @@ func mustLoadDispatcher(tb testing.TB, netns ns.NetNS) {
 
 func mustOpenDispatcher(tb testing.TB, netns ns.NetNS) *internal.Dispatcher {
 	tb.Helper()
-	dp, err := internal.OpenDispatcher(log.Discard, netns.Path(), "/sys/fs/bpf")
+	dp, err := internal.OpenDispatcher(log.Discard, netns.Path(), "/sys/fs/bpf", false)
 	if err != nil {
 		tb.Fatal(err)
 	}

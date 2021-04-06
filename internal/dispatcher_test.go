@@ -106,7 +106,7 @@ func TestDispatcherConcurrentAccess(t *testing.T) {
 	done := make(chan struct{}, procs-1)
 	open := func() {
 		for {
-			dp, err := OpenDispatcher(log.Discard, netnsPath, "/sys/fs/bpf")
+			dp, err := OpenDispatcher(log.Discard, netnsPath, "/sys/fs/bpf", false)
 			if errors.Is(err, ErrNotLoaded) {
 				continue
 			}
@@ -304,6 +304,44 @@ func TestDispatcherUpgradeWithIncompatibleMap(t *testing.T) {
 
 	if _, err := UpgradeDispatcher(netns.Path(), "/sys/fs/bpf"); err == nil {
 		t.Fatal("Upgrading a dispatcher with an incompatible map doesn't return an error")
+	}
+}
+
+func TestDispatcherReadOnly(t *testing.T) {
+	netns := testutil.NewNetNS(t)
+	dp := mustCreateDispatcher(t, nil, netns.Path())
+	bind := mustNewBinding(t, "foo", TCP, "127.0.0.1", 8080)
+	mustAddBinding(t, dp, bind)
+	dp.Close()
+
+	dp, err := OpenDispatcher(log.Discard, netns.Path(), "/sys/fs/bpf", true)
+	if err != nil {
+		t.Fatal("Open read-only dispatcher:", err)
+	}
+
+	if _, err := dp.Metrics(); err != nil {
+		t.Error("Can't get metrics:", err)
+	}
+
+	if _, err := dp.Bindings(); err != nil {
+		t.Error("Can't get bindings:", err)
+	}
+
+	if _, _, err := dp.Destinations(); err != nil {
+		t.Error("Can't get destinations:", err)
+	}
+
+	ln := testutil.Listen(t, netns, "tcp", "")
+	if _, _, err := dp.RegisterSocket("foo", ln); err == nil {
+		t.Error("Read-only RegisterSocket doesn't return an error")
+	}
+
+	if err := dp.AddBinding(mustNewBinding(t, "bar", UDP, "::1", 1234)); err == nil {
+		t.Error("Read-only AddBinding doesn't return an error")
+	}
+
+	if err := dp.RemoveBinding(bind); err == nil {
+		t.Error("Read-only RemoveBinding doesn't return an error")
 	}
 }
 
@@ -787,7 +825,7 @@ func mustOpenDispatcher(tb testing.TB, logger log.Logger, netns string) *Dispatc
 		logger = log.Discard
 	}
 
-	dp, err := OpenDispatcher(logger, netns, "/sys/fs/bpf")
+	dp, err := OpenDispatcher(logger, netns, "/sys/fs/bpf", false)
 	if err != nil {
 		tb.Fatal("Can't open dispatcher:", err)
 	}

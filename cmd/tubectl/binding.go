@@ -23,7 +23,7 @@ Bind a given prefix, port and protocol to a label.
 		return err
 	}
 
-	dp, err := e.openDispatcher()
+	dp, err := e.openDispatcher(false)
 	if err != nil {
 		return err
 	}
@@ -46,7 +46,7 @@ Remove a previously created binding.
 		return err
 	}
 
-	dp, err := e.openDispatcher()
+	dp, err := e.openDispatcher(false)
 	if err != nil {
 		return err
 	}
@@ -161,7 +161,7 @@ Example:
 		)
 	}
 
-	dp, err := e.openDispatcher()
+	dp, err := e.openDispatcher(false)
 	if err != nil {
 		return err
 	}

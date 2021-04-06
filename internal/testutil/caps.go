@@ -19,10 +19,17 @@ func EnterUnprivilegedMode() {
 		panic(fmt.Errorf("set securebits: %s", err.Error()))
 	}
 
-	changeEffectiveCaps(nil)
+	ChangeEffectiveCaps()
 }
 
-func changeEffectiveCaps(caps []cap.Value) error {
+// ChangeEffectiveCaps modifies the effective capabilities to the given list
+//
+// The effective set will be empty if called without arguments.
+//
+// This function changes its behaviour based on whether it is run inside
+// a WithCapabilities closure. In that case it sets the capabilities only
+// for the current thread. Otherwise it changes the process' set.
+func ChangeEffectiveCaps(caps ...cap.Value) error {
 	set := cap.GetProc()
 	if err := set.ClearFlag(cap.Effective); err != nil {
 		return fmt.Errorf("clear effective: %s", err)
@@ -51,7 +58,7 @@ func changeEffectiveCaps(caps []cap.Value) error {
 // Passing an empty list of capabilities will invoke fn without any privileges.
 func WithCapabilities(fn func() error, caps ...cap.Value) error {
 	l := cap.FuncLauncher(func(interface{}) error {
-		if err := changeEffectiveCaps(caps); err != nil {
+		if err := ChangeEffectiveCaps(caps...); err != nil {
 			return err
 		}
 
