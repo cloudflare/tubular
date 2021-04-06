@@ -70,7 +70,7 @@ func mustLoadDispatcher(tb testing.TB, netns ns.NetNS) {
 	err := testutil.WithCapabilities(func() (err error) {
 		dp, err = internal.CreateDispatcher(log.Discard, netns.Path(), "/sys/fs/bpf")
 		return
-	}, cap.SYS_ADMIN, cap.NET_ADMIN)
+	}, internal.CreateCapabilities...)
 	if err != nil {
 		tb.Fatal(err)
 	}

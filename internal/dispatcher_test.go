@@ -23,6 +23,10 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
+func init() {
+	testutil.EnterUnprivilegedMode()
+}
+
 func TestLoadDispatcher(t *testing.T) {
 	netns := testutil.NewNetNS(t)
 
@@ -35,7 +39,11 @@ func TestLoadDispatcher(t *testing.T) {
 		t.Error("State directory doesn't exist:", err)
 	}
 
-	if _, err := CreateDispatcher(log.Discard, netns.Path(), "/sys/fs/bpf"); !errors.Is(err, ErrLoaded) {
+	err := testutil.WithCapabilities(func() error {
+		_, err := CreateDispatcher(log.Discard, netns.Path(), "/sys/fs/bpf")
+		return err
+	}, CreateCapabilities...)
+	if !errors.Is(err, ErrLoaded) {
 		t.Fatal("Creating an existing dispatcher doesn't return ErrLoaded:", err)
 	}
 }
@@ -151,7 +159,11 @@ func TestDispatcherUpgrade(t *testing.T) {
 	}
 
 	for i := 0; i < 3; i++ {
-		if _, err := UpgradeDispatcher(netns.Path(), "/sys/fs/bpf"); err != nil {
+		err := testutil.WithCapabilities(func() error {
+			_, err := UpgradeDispatcher(netns.Path(), "/sys/fs/bpf")
+			return err
+		}, CreateCapabilities...)
+		if err != nil {
 			t.Fatalf("Upgrade #%d failed with: %s", i, err)
 		}
 	}
@@ -752,7 +764,11 @@ func mustCreateDispatcher(tb testing.TB, logger log.Logger, netns string) *Dispa
 		logger = log.Discard
 	}
 
-	dp, err := CreateDispatcher(logger, netns, "/sys/fs/bpf")
+	var dp *Dispatcher
+	err := testutil.WithCapabilities(func() (err error) {
+		dp, err = CreateDispatcher(logger, netns, "/sys/fs/bpf")
+		return
+	}, CreateCapabilities...)
 	if err != nil {
 		tb.Fatal("Can't create dispatcher:", err)
 	}

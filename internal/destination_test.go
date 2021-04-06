@@ -5,6 +5,8 @@ import (
 	"syscall"
 	"testing"
 
+	"code.cfops.it/sys/tubular/internal/testutil"
+
 	"github.com/cilium/ebpf"
 )
 
@@ -180,7 +182,10 @@ func mustNewDestinations(tb testing.TB) *destinations {
 	}
 
 	var maps dispatcherMaps
-	if err := spec.LoadAndAssign(&maps, nil); err != nil {
+	err = testutil.WithCapabilities(func() error {
+		return spec.LoadAndAssign(&maps, nil)
+	}, CreateCapabilities...)
+	if err != nil {
 		tb.Fatal("Can't create specs:", err)
 	}
 	tb.Cleanup(func() { maps.Close() })

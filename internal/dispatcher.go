@@ -14,6 +14,7 @@ import (
 	"github.com/cilium/ebpf/link"
 	"github.com/containernetworking/plugins/pkg/ns"
 	"golang.org/x/sys/unix"
+	"kernel.org/pub/linux/libs/security/libcap/cap"
 
 	"code.cfops.it/sys/tubular/internal/lock"
 	"code.cfops.it/sys/tubular/internal/log"
@@ -31,6 +32,9 @@ var (
 	ErrBadSocketProtocol = syscall.EPROTONOSUPPORT
 	ErrBadSocketState    = syscall.EBADFD
 )
+
+// CreateCapabilities are required to create a new dispatcher.
+var CreateCapabilities = []cap.Value{cap.SYS_ADMIN, cap.NET_ADMIN}
 
 // Dispatcher manipulates the socket dispatch data plane.
 type Dispatcher struct {

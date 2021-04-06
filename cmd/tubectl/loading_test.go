@@ -4,19 +4,17 @@ import (
 	"strings"
 	"testing"
 
+	"code.cfops.it/sys/tubular/internal"
 	"code.cfops.it/sys/tubular/internal/testutil"
-	"kernel.org/pub/linux/libs/security/libcap/cap"
 )
 
 func TestLoadUnload(t *testing.T) {
 	netns := testutil.NewNetNS(t)
 
 	load := tubectlTestCall{
-		NetNS: netns,
-		Cmd:   "load",
-		Effective: []cap.Value{
-			cap.SYS_ADMIN, cap.NET_ADMIN,
-		},
+		NetNS:     netns,
+		Cmd:       "load",
+		Effective: internal.CreateCapabilities,
 	}
 	load.MustRun(t)
 
@@ -27,11 +25,9 @@ func TestUpgrade(t *testing.T) {
 	netns := mustReadyNetNS(t)
 
 	upgrade := tubectlTestCall{
-		NetNS: netns,
-		Cmd:   "upgrade",
-		Effective: []cap.Value{
-			cap.SYS_ADMIN, cap.NET_ADMIN,
-		},
+		NetNS:     netns,
+		Cmd:       "upgrade",
+		Effective: internal.CreateCapabilities,
 	}
 
 	output := upgrade.MustRun(t)
