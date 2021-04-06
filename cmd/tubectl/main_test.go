@@ -144,24 +144,19 @@ type tubectlTestCall struct {
 	// Effective lists the capabilities required for this call. The effective
 	// set isn't changed if the slice is empty.
 	Effective []cap.Value
-
-	// Context cancelled when test call should return. Controlled with Start() and Stop().
-	ctx    context.Context
-	cancel context.CancelFunc
-
-	// Channel for passing error from Run(). Use via Start() and Stop().
-	errs chan error
 }
 
 func (tc *tubectlTestCall) Run(tb testing.TB) (*bytes.Buffer, error) {
-	tb.Helper()
-
 	output := new(log.Buffer)
-	ctx := tc.ctx
-	if ctx == nil {
-		ctx = context.Background()
+	if err := tc.run(context.Background(), output); err != nil {
+		return nil, err
 	}
 
+	tb.Logf("tubectl %s %s\n%s", tc.Cmd, strings.Join(tc.Args, " "), output)
+	return &output.Buffer, nil
+}
+
+func (tc *tubectlTestCall) run(ctx context.Context, output log.Logger) error {
 	env := env{
 		stdout: output,
 		stderr: output,
@@ -173,7 +168,6 @@ func (tc *tubectlTestCall) Run(tb testing.TB) (*bytes.Buffer, error) {
 		listen: func(network, addr string) (net.Listener, error) {
 			ln, err := net.Listen(network, addr)
 			if err != nil {
-				tb.Error("Listen failed:", err)
 				return nil, err
 			}
 
@@ -192,17 +186,13 @@ func (tc *tubectlTestCall) Run(tb testing.TB) (*bytes.Buffer, error) {
 	}
 	args = append(args, tc.Args...)
 
-	var err error
 	if len(tc.Effective) > 0 {
-		err = testutil.WithCapabilities(func() error {
+		return testutil.WithCapabilities(func() error {
 			return tubectl(env, args)
 		}, tc.Effective...)
-	} else {
-		err = tubectl(env, args)
 	}
 
-	tb.Logf("tubectl %s\n%s", strings.Join(args, " "), output)
-	return &output.Buffer, err
+	return tubectl(env, args)
 }
 
 func (tc *tubectlTestCall) MustRun(tb testing.TB) *bytes.Buffer {
@@ -216,32 +206,28 @@ func (tc *tubectlTestCall) MustRun(tb testing.TB) *bytes.Buffer {
 	return output
 }
 
-func (tc *tubectlTestCall) Start(tb testing.TB) {
-	if tc.ctx != nil {
-		return // already started
-	}
-
-	tc.ctx, tc.cancel = context.WithCancel(context.Background())
-	tc.errs = make(chan error, 1)
+func (tc *tubectlTestCall) Start(tb testing.TB) (stop func()) {
+	ctx, cancel := context.WithCancel(context.Background())
+	tb.Cleanup(cancel)
+	done := make(chan struct{})
 
 	go func() {
-		_, err := tc.Run(tb)
-		tc.errs <- err
-		close(tc.errs)
+		defer close(done)
+
+		if err := tc.run(ctx, log.Discard); err != nil {
+			select {
+			case <-ctx.Done():
+			default:
+				tb.Errorf("Error from tubectl %s: %s", tc.Cmd, err)
+			}
+		}
 	}()
+
 	runtime.Gosched()
-}
-
-func (tc *tubectlTestCall) Stop() error {
-	if tc.ctx == nil {
-		return nil // not started
+	return func() {
+		cancel()
+		<-done
 	}
-
-	tc.cancel()
-	tc.ctx = nil
-
-	err := <-tc.errs
-	return err
 }
 
 func (tc *tubectlTestCall) getenv(key string) string {

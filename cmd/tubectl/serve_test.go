@@ -64,7 +64,7 @@ func TestServeAddressTypes(t *testing.T) {
 				Cmd:   "serve",
 				Args:  []string{tc.addr},
 			}
-			tubectl.Start(t)
+			stop := tubectl.Start(t)
 
 			conn, err := dialUnixpacketTimeoutAndRetry(tc.addr)
 			if err != nil {
@@ -72,9 +72,8 @@ func TestServeAddressTypes(t *testing.T) {
 			}
 			conn.Close()
 
-			if err := tubectl.Stop(); err != nil {
-				t.Fatalf("unexpected serve error: %v", err)
-			}
+			stop()
+
 			// Check if pathname socket gets cleaned up on exit
 			if _, err := os.Stat(tc.addr); !os.IsNotExist(err) {
 				t.Fatalf("socket file present at %v", tc.addr)
@@ -143,10 +142,6 @@ func TestServeMany(t *testing.T) {
 					c.Close()
 					conns[j] = nil
 				}
-			}
-
-			if err := tubectl.Stop(); err != nil {
-				t.Fatalf("unexpected serve error: %v", err)
 			}
 		})
 	}

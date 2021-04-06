@@ -98,10 +98,6 @@ func TestMetrics(t *testing.T) {
 			}
 		})
 	}
-
-	if err := tubectl.Stop(); err != nil {
-		t.Error("Stopping metrics returns an error:", err)
-	}
 }
 
 func TestMetricsInvalidArgs(t *testing.T) {
