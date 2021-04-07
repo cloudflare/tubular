@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"net"
@@ -40,9 +39,7 @@ Examples:
 	$ tubectl serve @tubectl
 `)
 
-	if err := set.Parse(args); errors.Is(err, flag.ErrHelp) {
-		return nil
-	} else if err != nil {
+	if err := set.Parse(args); err != nil {
 		return err
 	}
 

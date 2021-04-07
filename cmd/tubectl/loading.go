@@ -13,9 +13,7 @@ func load(e *env, args ...string) error {
 
 Load the tubular dispatcher.
 `)
-	if err := set.Parse(args); errors.Is(err, flag.ErrHelp) {
-		return nil
-	} else if err != nil {
+	if err := set.Parse(args); err != nil {
 		return err
 	}
 
@@ -41,9 +39,7 @@ func unload(e *env, args ...string) error {
 
 Unload the tubular dispatcher, removing any present state.
 `)
-	if err := set.Parse(args); errors.Is(err, flag.ErrHelp) {
-		return nil
-	} else if err != nil {
+	if err := set.Parse(args); err != nil {
 		return err
 	}
 
@@ -68,9 +64,7 @@ func upgrade(e *env, args ...string) error {
 
 Upgrade the tubular dispatcher, while preserving present state.
 `)
-	if err := set.Parse(args); errors.Is(err, flag.ErrHelp) {
-		return nil
-	} else if err != nil {
+	if err := set.Parse(args); err != nil {
 		return err
 	}
 

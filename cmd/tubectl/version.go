@@ -1,8 +1,6 @@
 package main
 
 import (
-	"errors"
-	"flag"
 	"fmt"
 	"runtime"
 )
@@ -15,9 +13,7 @@ func version(e *env, args ...string) error {
 
 Show version information.
 `)
-	if err := set.Parse(args); errors.Is(err, flag.ErrHelp) {
-		return nil
-	} else if err != nil {
+	if err := set.Parse(args); err != nil {
 		return err
 	}
 

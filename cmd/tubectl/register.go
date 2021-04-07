@@ -1,8 +1,6 @@
 package main
 
 import (
-	"errors"
-	"flag"
 	"fmt"
 	"os"
 	"strconv"
@@ -27,9 +25,7 @@ Expects exactly one FD, i.e. LISTEN_FDS must be set to 1.
 LISTEN_PID is ignored, so is LISTEN_FDNAMES.
 `)
 
-	if err := set.Parse(args); errors.Is(err, flag.ErrHelp) {
-		return nil
-	} else if err != nil {
+	if err := set.Parse(args); err != nil {
 		return err
 	}
 

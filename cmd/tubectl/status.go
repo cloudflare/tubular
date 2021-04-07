@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"net"
 	"net/http"
@@ -22,9 +21,7 @@ func list(e *env, args ...string) error {
 
 Show current bindings and destinations.
 `)
-	if err := set.Parse(args); errors.Is(err, flag.ErrHelp) {
-		return nil
-	} else if err != nil {
+	if err := set.Parse(args); err != nil {
 		return err
 	}
 
@@ -127,9 +124,7 @@ Examples:
 	$ curl http://127.0.0.1:8000/metrics
 `)
 	timeout := set.Duration("timeout", 30*time.Second, "Duration to wait for an HTTP metrics request to complete.")
-	if err := set.Parse(args); errors.Is(err, flag.ErrHelp) {
-		return nil
-	} else if err != nil {
+	if err := set.Parse(args); err != nil {
 		return err
 	}
 

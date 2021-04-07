@@ -175,7 +175,7 @@ func tubectl(e env, args []string) (err error) {
 		}
 
 		err := cmd.fn(&e, cmdArgs...)
-		if err != nil {
+		if err != nil && !errors.Is(err, flag.ErrHelp) {
 			return fmt.Errorf("%s: %w", cmdName, err)
 		}
 

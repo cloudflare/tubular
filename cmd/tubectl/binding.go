@@ -2,8 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
-	"flag"
 	"fmt"
 	"os"
 	"strconv"
@@ -16,9 +14,7 @@ func bind(e *env, args ...string) error {
 
 Bind a given prefix, port and protocol to a label.
 `)
-	if err := set.Parse(args); errors.Is(err, flag.ErrHelp) {
-		return nil
-	} else if err != nil {
+	if err := set.Parse(args); err != nil {
 		return err
 	}
 
@@ -41,9 +37,7 @@ func unbind(e *env, args ...string) error {
 
 Remove a previously created binding.
 `)
-	if err := set.Parse(args); errors.Is(err, flag.ErrHelp) {
-		return nil
-	} else if err != nil {
+	if err := set.Parse(args); err != nil {
 		return err
 	}
 
@@ -121,9 +115,7 @@ Example:
   …
 
 `)
-	if err := set.Parse(args); errors.Is(err, flag.ErrHelp) {
-		return nil
-	} else if err != nil {
+	if err := set.Parse(args); err != nil {
 		return err
 	}
 
