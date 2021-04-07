@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"code.cfops.it/sys/tubular/internal"
+	"code.cfops.it/sys/tubular/internal/testutil"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -97,6 +98,11 @@ func TestBindInvalidInput(t *testing.T) {
 	if err == nil {
 		t.Error("Accepted invalid port")
 	}
+
+	_, err = testTubectl(t, netns, "bind", "foo", "udp", "::ffff:192.0.2.128/96", "443")
+	if err == nil {
+		t.Error("Accepted v4-mapped prefix")
+	}
 }
 
 func TestLoadBindings(t *testing.T) {
@@ -129,7 +135,7 @@ func TestLoadBindings(t *testing.T) {
 	sort.Sort(bindings)
 	sort.Sort(want)
 
-	if diff := cmp.Diff(want, bindings); diff != "" {
+	if diff := cmp.Diff(want, bindings, testutil.IPComparer()); diff != "" {
 		t.Errorf("Bindings don't match (+y -x):\n%s", diff)
 	}
 }

@@ -425,13 +425,14 @@ func (p Protocol) String() string {
 //
 // Traffic for the binding is dropped by the data plane if no matching
 // destination exists.
-func (d *Dispatcher) AddBinding(bind *Binding) (err error) {
+func (d *Dispatcher) AddBinding(bind *Binding) error {
 	dest := newDestinationFromBinding(bind)
 
-	key, err := newBindingKey(bind)
-	if err != nil {
-		return err
+	if bind.Prefix.IP.Is4in6() {
+		return fmt.Errorf("prefix cannot be v4-mapped v6: %v", bind.Prefix)
 	}
+
+	key := newBindingKey(bind)
 
 	var old bindingValue
 	var releaseOldID bool
@@ -467,10 +468,7 @@ func (d *Dispatcher) AddBinding(bind *Binding) (err error) {
 //
 // Returns an error if the binding doesn't exist.
 func (d *Dispatcher) RemoveBinding(bind *Binding) error {
-	key, err := newBindingKey(bind)
-	if err != nil {
-		return err
-	}
+	key := newBindingKey(bind)
 
 	var existing bindingValue
 	if err := d.bindings.Lookup(key, &existing); err != nil {
@@ -507,10 +505,7 @@ func (d *Dispatcher) ReplaceBindings(bindings Bindings) (bool, error) {
 
 	want := make(map[bindingKey]string)
 	for _, bind := range bindings {
-		key, err := newBindingKey(bind)
-		if err != nil {
-			return false, fmt.Errorf("binding %s: %s", bind, err)
-		}
+		key := newBindingKey(bind)
 
 		if label := want[*key]; label != "" {
 			return false, fmt.Errorf("duplicate binding %s: already assigned to %s", bind, label)

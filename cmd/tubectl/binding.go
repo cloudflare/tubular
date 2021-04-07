@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"code.cfops.it/sys/tubular/internal"
+	"inet.af/netaddr"
 )
 
 func bind(e *env, args ...string) error {
@@ -134,8 +135,8 @@ Example:
 
 	var config struct {
 		Bindings []struct {
-			Label  string          `json:"label"`
-			Prefix *internal.IPNet `json:"prefix"`
+			Label  string           `json:"label"`
+			Prefix netaddr.IPPrefix `json:"prefix"`
 		} `json:"bindings"`
 	}
 
@@ -150,13 +151,13 @@ Example:
 		bindings = append(bindings,
 			&internal.Binding{
 				Label:    bind.Label,
-				Prefix:   bind.Prefix,
+				Prefix:   bind.Prefix.Masked(),
 				Protocol: internal.TCP,
 				Port:     0,
 			},
 			&internal.Binding{
 				Label:    bind.Label,
-				Prefix:   bind.Prefix,
+				Prefix:   bind.Prefix.Masked(),
 				Protocol: internal.UDP,
 				Port:     0,
 			},

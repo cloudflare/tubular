@@ -74,7 +74,7 @@ type Destination struct {
 
 func newDestinationFromBinding(bind *Binding) *Destination {
 	domain := AF_INET
-	if bind.Prefix.IP.To4() == nil {
+	if bind.Prefix.IP.Is6() {
 		domain = AF_INET6
 	}
 

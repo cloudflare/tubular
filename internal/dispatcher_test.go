@@ -238,7 +238,7 @@ func assertDispatcherState(tb testing.TB, dp *Dispatcher, netns ns.NetNS) func(*
 			tb.Fatal(err)
 		}
 
-		if diff := cmp.Diff(Bindings{bind}, bindings); diff != "" {
+		if diff := cmp.Diff(Bindings{bind}, bindings, testutil.IPComparer()); diff != "" {
 			tb.Errorf("Bindings don't match (+y -x):\n%s", diff)
 		}
 
@@ -468,6 +468,29 @@ func TestAddAndRemoveBindings(t *testing.T) {
 	}
 }
 
+func TestAddInvalidBinding(t *testing.T) {
+	netns := testutil.NewNetNS(t)
+	dp := mustCreateDispatcher(t, nil, netns.Path())
+
+	testCases := []struct {
+		ip string
+		*Binding
+	}{
+		{"[::ffff:127.0.0.1]", mustNewBinding(t, "foo", TCP, "::ffff:127.0.0.1/128", 8080)},
+		{"[::ffff:127.0.0.1]", mustNewBinding(t, "foo", TCP, "::ffff:127.0.0.1", 8080)},
+		{"[::ffff:7f00:1]", mustNewBinding(t, "foo", TCP, "::ffff:7f00:1/104", 8080)},
+	}
+
+	for _, tc := range testCases {
+		name := fmt.Sprintf("%v %s", tc.Protocol, tc.Prefix)
+		t.Run(name, func(t *testing.T) {
+			if err := dp.AddBinding(tc.Binding); err == nil {
+				t.Fatal("Created/added an invalid binding:", tc.Binding.Prefix)
+			}
+		})
+	}
+}
+
 func TestBindingWithEmptyLabel(t *testing.T) {
 	netns := testutil.NewNetNS(t)
 	dp := mustCreateDispatcher(t, nil, netns.Path())
@@ -618,7 +641,7 @@ func TestReplaceBindings(t *testing.T) {
 				return a.Label < b.Label
 			})
 
-			if diff := cmp.Diff(test.replacement, have, sort); diff != "" {
+			if diff := cmp.Diff(test.replacement, have, sort, testutil.IPComparer()); diff != "" {
 				t.Errorf("bindings don't match (-want +got):\n%s", diff)
 			}
 		})

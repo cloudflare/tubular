@@ -3,30 +3,26 @@ package internal
 import (
 	"fmt"
 	"math/rand"
-	"net"
 	"sort"
 	"testing"
 	"time"
 
 	"code.cfops.it/sys/tubular/internal/testutil"
 	"github.com/google/go-cmp/cmp"
+	"inet.af/netaddr"
 )
 
 func TestBinding(t *testing.T) {
 	valid := []struct {
 		prefix  string
 		ip      string
-		maskLen int
+		maskLen uint8
 	}{
 		{"127.0.0.1", "127.0.0.1", 32},
 		{"127.0.0.1/32", "127.0.0.1", 32},
 		{"127.0.0.1/8", "127.0.0.0", 8},
 		{"2001:20::1/64", "2001:20::", 64},
 		{"2001:20::1", "2001:20::1", 128},
-		{"::ffff:127.0.0.1/64", "::", 64},
-		{"::ffff:127.0.0.1/128", "127.0.0.1", 32},
-		{"::ffff:127.0.0.1", "127.0.0.1", 32},
-		{"::ffff:7f00:1/104", "127.0.0.0", 8},
 		{"0.0.0.0", "0.0.0.0", 32},
 		{"::", "::", 128},
 		{"0.0.0.0/0", "0.0.0.0", 0},
@@ -35,23 +31,22 @@ func TestBinding(t *testing.T) {
 
 	for _, tc := range valid {
 		t.Run(tc.prefix, func(t *testing.T) {
-			ip := net.ParseIP(tc.ip)
+			ip, err := netaddr.ParseIP(tc.ip)
+			if err != nil {
+				t.Fatal("Can't parse IP:", tc.ip, err)
+			}
 
 			bind, err := NewBinding("foo", UDP, tc.prefix, 80)
 			if err != nil {
 				t.Fatal("Can't create binding:", tc.prefix, err)
 			}
 
-			if !bind.Prefix.IP.Equal(ip) {
+			if bind.Prefix.IP != ip {
 				t.Errorf("Binding IP doesn't match: %s != %s", bind.Prefix.IP, ip)
 			}
 
-			ones, bits := bind.Prefix.Mask.Size()
-			if ones == 0 && bits == 0 {
-				t.Error("Invalid prefix mask")
-			}
-			if ones != tc.maskLen {
-				t.Errorf("Binding mask has wrong length: %d != %d", ones, tc.maskLen)
+			if bind.Prefix.Bits != tc.maskLen {
+				t.Errorf("Binding mask has wrong length: %d != %d", bind.Prefix.Bits, tc.maskLen)
 			}
 		})
 	}
@@ -77,13 +72,13 @@ func TestBinding(t *testing.T) {
 		t.Fatal("Can't create binding:", err)
 	}
 
-	key, err := newBindingKey(in)
+	key := newBindingKey(in)
 	if err != nil {
 		t.Fatal("Can't create bindingKey:", err)
 	}
 
 	out := newBindingFromBPF(in.Label, key)
-	if diff := cmp.Diff(in, out); diff != "" {
+	if diff := cmp.Diff(in, out, testutil.IPComparer()); diff != "" {
 		t.Errorf("Decoded binding doesn't match input (-want +got):\n%s", diff)
 	}
 }
@@ -171,12 +166,12 @@ func TestBindingsSortMatchesDataplane(t *testing.T) {
 			cpy := copyAndShuffleBindings(bindings, rng)
 
 			sort.Sort(cpy)
-			if diff := cmp.Diff(bindings, cpy); diff != "" {
+			if diff := cmp.Diff(bindings, cpy, testutil.IPComparer()); diff != "" {
 				t.Errorf("Order not as expected (-want +got):\n%s", diff)
 			}
 
 			addrFmt := "%s:%d"
-			if test.win.Prefix.IP.To4() == nil {
+			if test.win.Prefix.IP.Is6() {
 				addrFmt = "[%s]:%d"
 			}
 
@@ -217,10 +212,39 @@ func TestBindingsSortIsGoodForHumans(t *testing.T) {
 			cpy := copyAndShuffleBindings(test.Bindings, rng)
 
 			sort.Sort(cpy)
-			if diff := cmp.Diff(test.Bindings, cpy); diff != "" {
+			if diff := cmp.Diff(test.Bindings, cpy, testutil.IPComparer()); diff != "" {
 				t.Errorf("Order not as expected (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestParseCIDR(t *testing.T) {
+	valid := []struct {
+		input    string
+		expected netaddr.IPPrefix
+	}{
+		{"127.0.0.1", netaddr.IPPrefix{IP: netaddr.IPv4(127, 0, 0, 1), Bits: 32}},
+		{"127.0.0.1/24", netaddr.IPPrefix{IP: netaddr.IPv4(127, 0, 0, 1), Bits: 24}},
+		{"127.0.0.1/32", netaddr.IPPrefix{IP: netaddr.IPv4(127, 0, 0, 1), Bits: 32}},
+		{"2001:20::1", netaddr.IPPrefix{IP: netaddr.IPv6Raw([16]byte{0x20, 0x01, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}), Bits: 128}},
+		{"2001:20::1/64", netaddr.IPPrefix{IP: netaddr.IPv6Raw([16]byte{0x20, 0x01, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}), Bits: 64}},
+		{"2001:20::1/128", netaddr.IPPrefix{IP: netaddr.IPv6Raw([16]byte{0x20, 0x01, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}), Bits: 128}},
+		{"0.0.0.0", netaddr.IPPrefix{IP: netaddr.IPv4(0, 0, 0, 0), Bits: 32}},
+		{"0.0.0.0/0", netaddr.IPPrefix{IP: netaddr.IPv4(0, 0, 0, 0), Bits: 0}},
+		{"::", netaddr.IPPrefix{IP: netaddr.IPv6Raw([16]byte{}), Bits: 128}},
+		{"::/0", netaddr.IPPrefix{IP: netaddr.IPv6Raw([16]byte{}), Bits: 0}},
+	}
+
+	for _, testCase := range valid {
+		output, err := parseCIDR(testCase.input)
+		if err != nil {
+			t.Errorf("Rejected valid input prefix %s\n", testCase.input)
+		}
+
+		if testCase.expected != *output {
+			t.Errorf("Prefix parsed incorrectly:\nexpected: %v\ngot: %v\n", testCase.expected, *output)
+		}
 	}
 }
 

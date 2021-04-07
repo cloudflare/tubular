@@ -2,7 +2,7 @@
 	"bindings": [
 		{
 			"label": "foo",
-			"prefix": "127.0.0.1"
+			"prefix": "127.0.0.1/32"
 		},
 		{
 			"label": "bar",
