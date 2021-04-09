@@ -1,3 +1,18 @@
+2021.4.0
+- 2021-04-06 TUBE-27: cmd/tubectl: fix race condition in tests
+- 2021-04-07 cmd/tubectl: handle flag.ErrHelp in main
+- 2021-04-06 dispatcher: drop privileges on test start up
+- 2021-04-06 TUBE-53: dispatcher: allow read-only access
+- 2021-04-06 TUBE-53: dispatcher: give everyone read-only access
+- 2021-03-31 use cloudflared access to download prebuilt kernels
+- 2021-03-23 dispatcher: support unloading corrupt dispatcher instance
+- 2021-03-22 dispatcher: move destinations map definition into BPF
+- 2021-03-25 lock: add OpenExclusive
+- 2021-03-26 dispatcher: simplify locking
+- 2021-03-25 TUBE-52: dispatcher: add UpgradeDispatcher
+- 2021-03-24 TUBE-52: cmd/tubectl: add upgrade command
+- 2021-03-18 update github.com/cilium/ebpf to v0.4.0
+
 2021.3.1
 - 2021-03-17 cmd/tubectl: add prefix to exported metrics
 - 2021-03-17 cmd/tubectl: run tests with explicit capabilities
