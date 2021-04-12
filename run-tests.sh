@@ -24,7 +24,7 @@ if [[ "${1:-}" = "--in-vm" ]]; then
   export GOPROXY=file:///run/go-root/pkg/mod/cache/download
   export GOCACHE=/run/go-cache
 
-  "$@"
+  eval "$@"
   touch "/run/output/success"
   exit 0
 fi

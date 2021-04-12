@@ -28,7 +28,7 @@ buster: &buster
       # Redirect stdin to prevent a weird interaction between QEMU
       # and Docker redirecting stdin to /dev/null.
       - sudo chgrp $(id -g) /dev/kvm
-      - ./run-tests.sh < /dev/zero
+      - ./run-tests.sh GOFLAGS=-json make test < /dev/zero
       - ./run-tests.sh make cover < /dev/zero && mkdir .cover && mv coverage.html .cover/all.html
 
 stretch:

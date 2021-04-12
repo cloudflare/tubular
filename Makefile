@@ -3,7 +3,7 @@ ARCH    ?= amd64
 GO      ?= go
 
 export GOPROXY ?= off
-export GOFLAGS ?= -mod=vendor -ldflags=-X=main.Version=$(VERSION)
+export GOFLAGS += -mod=vendor -ldflags=-X=main.Version=$(VERSION)
 export CLANG   ?= clang-9
 export MAKEDIR  = $(CURDIR)
 
