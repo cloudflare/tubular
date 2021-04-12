@@ -32,8 +32,8 @@ fi
 fetch() {
   echo Fetching "${1}"
   local flags=(-f -o "${2}/${1}" -z "${2}/${1}")
-  # Poor man's check for direct access.
-  if [[ -z "${DIRECT_ACCESS:-}" ]]; then
+  # $CI is set by teamcity.
+  if [[ -z "${CI:-}" ]]; then
     cloudflared access curl "https://unimog.cfdata.org/kernels/${1}" "${flags[@]}"
   else
     curl "https://unimog.s3.cfdata.org/kernels/${1}" "${flags[@]}"
