@@ -32,7 +32,7 @@ tubular_$(VERSION)_%.deb: clean all
 
 .PHONY: test
 test:
-	$(GO) test -race -short -v ./...
+	$(GO) test -race -bench . -benchtime=1x -v ./...
 
 .PHONY: cover
 cover:
