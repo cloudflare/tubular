@@ -871,6 +871,19 @@ func TestBindingPrecedence(t *testing.T) {
 	}
 }
 
+func BenchmarkDispatcherAddBinding(b *testing.B) {
+	netns := testutil.NewNetNS(b)
+	dp := mustCreateDispatcher(b, nil, netns.Path())
+	bindings := mustReadBindings(b, "some-label")
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		bind := bindings[rand.Intn(len(bindings))]
+		mustAddBinding(b, dp, bind)
+	}
+	b.StopTimer()
+}
+
 func BenchmarkDispatcherManyBindings(b *testing.B) {
 	const label = "some-label"
 
