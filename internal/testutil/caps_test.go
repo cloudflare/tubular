@@ -22,7 +22,7 @@ func TestUnprivilegedMode(t *testing.T) {
 
 func TestWithCapabilities(t *testing.T) {
 	err := WithCapabilities(func() error {
-		return rlimit.SetLockedMemoryLimits(lockedMemoryLimit)
+		return rlimit.SetLockedMemoryLimits(math.MaxUint64)
 	}, cap.SYS_RESOURCE)
 	if err != nil {
 		t.Error("Effective capabilities aren't granted")

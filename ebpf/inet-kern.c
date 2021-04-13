@@ -9,6 +9,7 @@
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 
 #define MAX_SOCKETS (1024)
+#define MAX_BINDINGS (1000000)
 
 enum {
 	AF_INET  = 2,
@@ -49,7 +50,7 @@ struct {
 	__uint(type, BPF_MAP_TYPE_LPM_TRIE);
 	__type(key, struct addr);
 	__type(value, struct binding);
-	__uint(max_entries, 4096);
+	__uint(max_entries, MAX_BINDINGS);
 	__uint(map_flags, BPF_F_NO_PREALLOC);
 	__uint(pinning, LIBBPF_PIN_BY_NAME);
 } bindings SEC(".maps");
