@@ -4,6 +4,9 @@ import (
 	"syscall"
 	"testing"
 
+	"code.cfops.it/sys/tubular/internal/sysconn"
+	"github.com/cilium/ebpf"
+	"github.com/cilium/ebpf/asm"
 	"golang.org/x/sys/unix"
 )
 
@@ -47,5 +50,28 @@ func ConnectSocket(tb testing.TB, conn syscall.Conn) {
 	})
 	if err != nil {
 		tb.Fatal("Control:", err)
+	}
+}
+
+func DropIncomingTraffic(tb testing.TB, conn syscall.Conn) {
+	prog, err := ebpf.NewProgram(&ebpf.ProgramSpec{
+		Type: ebpf.SocketFilter,
+		Instructions: asm.Instructions{
+			// Truncate the packet to zero bytes.
+			asm.Mov.Imm32(asm.R0, 0),
+			asm.Return(),
+		},
+		License: "Proprietary",
+	})
+	if err != nil {
+		tb.Fatal(err)
+	}
+	defer prog.Close()
+
+	err = sysconn.Control(conn, func(fd int) error {
+		return unix.SetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_ATTACH_BPF, prog.FD())
+	})
+	if err != nil {
+		tb.Fatal(err)
 	}
 }

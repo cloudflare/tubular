@@ -372,6 +372,13 @@ func UnloadDispatcher(netnsPath, bpfFsPath string) error {
 	return nil
 }
 
+// Program returns the active dispatcher program.
+//
+// The caller must call Program.Close().
+func (dp *Dispatcher) Program() (*ebpf.Program, error) {
+	return ebpf.LoadPinnedProgram(programPath(dp.Path), nil)
+}
+
 type Domain uint8
 
 const (

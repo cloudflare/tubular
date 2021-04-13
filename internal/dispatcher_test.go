@@ -1,8 +1,10 @@
 package internal
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/rand"
 	"net"
 	"os"
@@ -17,6 +19,8 @@ import (
 
 	"code.cfops.it/sys/tubular/internal/log"
 	"code.cfops.it/sys/tubular/internal/testutil"
+	"golang.org/x/sys/unix"
+	"inet.af/netaddr"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
@@ -28,6 +32,7 @@ import (
 
 func init() {
 	testutil.EnterUnprivilegedMode()
+	rand.Seed(time.Now().UnixNano())
 }
 
 func TestLoadDispatcher(t *testing.T) {
@@ -866,6 +871,123 @@ func TestBindingPrecedence(t *testing.T) {
 	}
 }
 
+func BenchmarkDispatcherManyBindings(b *testing.B) {
+	const label = "some-label"
+
+	var v4, v6 []netaddr.IP
+	bindings := mustReadBindings(b, label)
+	for _, bind := range bindings {
+		if bind.Prefix.IP.Is4() {
+			v4 = append(v4, bind.Prefix.IP)
+		} else {
+			v6 = append(v6, bind.Prefix.IP)
+		}
+	}
+	b.Log(len(bindings), "bindings")
+
+	if len(v4) == 0 {
+		b.Fatal("No IPv4 addresses")
+	}
+
+	if len(v6) == 0 {
+		b.Fatal("No IPv6 addresses")
+	}
+
+	var stats io.Closer
+	err := testutil.WithCapabilities(func() (err error) {
+		stats, err = ebpf.EnableStats(uint32(unix.BPF_STATS_RUN_TIME))
+		return
+	}, cap.SYS_ADMIN)
+	if err != nil {
+		b.Fatal("Enable stats:", err)
+	}
+	defer stats.Close()
+
+	targets := []struct {
+		name   string
+		listen string
+		addr   netaddr.IP
+	}{
+		{"IPv4", "127.0.0.1:0", v4[rand.Intn(len(v4))]},
+		{"IPv6", "[::1]:0", v6[rand.Intn(len(v6))]},
+	}
+
+	buf := []byte("foobar")
+
+	networks := []string{
+		"249.0.0.0/8",
+		"250.0.0.0/8",
+		"251.0.0.0/8",
+		"252.0.0.0/8",
+		"253.0.0.0/8",
+		"254.0.0.0/8",
+		"255.0.0.0/8",
+		"2001:db8::/32",
+	}
+
+	for _, target := range targets {
+		b.Log("Chosen target", target.addr)
+
+		b.Run(target.name, func(b *testing.B) {
+			netns := testutil.NewNetNS(b, networks...)
+			dp := mustCreateDispatcher(b, nil, netns.Path())
+
+			// We need a socket registered, otherwise the kernel will send
+			// ICMP destination unreachable.
+			ln := testutil.ListenAndEcho(b, netns, "udp", target.listen)
+			testutil.DropIncomingTraffic(b, ln)
+			mustRegisterSocket(b, dp, label, ln)
+
+			for _, bind := range bindings {
+				mustAddBinding(b, dp, bind)
+			}
+
+			var src *net.UDPConn
+			testutil.JoinNetNS(b, netns, func() {
+				var err error
+				laddr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)}
+				if target.addr.Is6() {
+					laddr.IP = net.IPv6loopback
+				}
+				src, err = net.ListenUDP("udp", laddr)
+				if err != nil {
+					b.Fatal(err)
+				}
+			})
+			defer src.Close()
+
+			b.ResetTimer()
+			addr := &net.UDPAddr{IP: target.addr.IPAddr().IP, Port: 53}
+			for i := 0; i < b.N; i++ {
+				if _, err := src.WriteToUDP(buf, addr); err != nil {
+					b.Fatal(err)
+				}
+			}
+			b.StopTimer()
+
+			prog, err := dp.Program()
+			if err != nil {
+				b.Fatal("Get program:", err)
+			}
+			defer prog.Close()
+
+			info, err := prog.Info()
+			if err != nil {
+				b.Fatal("Get program info:", err)
+			}
+
+			n, _ := info.RunCount()
+			if n != uint64(b.N) {
+				// sk_lookup runs when we send a packet, and when we get a response.
+				b.Fatalf("Expected %d iterations, got %d", b.N, n)
+			}
+
+			duration, _ := info.Runtime()
+			b.ReportMetric(float64(duration.Nanoseconds())/float64(n), "ns/op")
+		})
+	}
+}
+
 func mustNewBinding(tb testing.TB, label string, proto Protocol, prefix string, port uint16) *Binding {
 	tb.Helper()
 
@@ -932,4 +1054,38 @@ func mustOpenDispatcher(tb testing.TB, logger log.Logger, netns string) *Dispatc
 	}
 
 	return dp
+}
+
+func mustReadBindings(tb testing.TB, label string) []*Binding {
+	file, err := os.Open("testdata/prefixes.json")
+	if err != nil {
+		tb.Fatal(err)
+	}
+	defer file.Close()
+
+	var prefixes []string
+	dec := json.NewDecoder(file)
+	if err := dec.Decode(&prefixes); err != nil {
+		tb.Fatal("Read prefixes:", err)
+	}
+
+	if len(prefixes) == 0 {
+		tb.Fatal("prefixes.json contains no prefixes")
+	}
+
+	var bindings []*Binding
+	for _, prefixStr := range prefixes {
+		prefix, err := netaddr.ParseIPPrefix(prefixStr)
+		if err != nil {
+			tb.Fatal(err)
+		}
+
+		r := prefix.Range()
+		for ip := r.From; ip.Compare(r.To) <= 0; ip = ip.Next() {
+			bind := mustNewBinding(tb, label, UDP, ip.String(), 53)
+			bindings = append(bindings, bind)
+		}
+	}
+
+	return bindings
 }
