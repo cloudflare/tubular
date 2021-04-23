@@ -1,12 +1,17 @@
 package testutil
 
 import (
+	"context"
+	"fmt"
+	"io"
+	"net"
 	"syscall"
 	"testing"
 
 	"code.cfops.it/sys/tubular/internal/sysconn"
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/asm"
+	"github.com/containernetworking/plugins/pkg/ns"
 	"golang.org/x/sys/unix"
 )
 
@@ -74,4 +79,78 @@ func DropIncomingTraffic(tb testing.TB, conn syscall.Conn) {
 	if err != nil {
 		tb.Fatal(err)
 	}
+}
+
+// ReuseportGroup creates sockets that listen on the same port on either
+// 127.0.0.1 or ::1, depending on the network.
+func ReuseportGroup(tb testing.TB, netns ns.NetNS, network string, n int) (conns []syscall.Conn) {
+	tb.Cleanup(func() {
+		for _, conn := range conns {
+			conn.(io.Closer).Close()
+		}
+	})
+
+	lc := &net.ListenConfig{
+		Control: func(network, address string, raw syscall.RawConn) error {
+			err := raw.Control(func(fd uintptr) {
+				err := unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_REUSEPORT, 1)
+				if err != nil {
+					tb.Fatal("setsockopt(SO_REUSEPORT):", err)
+				}
+			})
+			return err
+		},
+	}
+
+	var fn func(string) (syscall.Conn, int, error)
+	switch network {
+	case "tcp4", "tcp6":
+		fn = func(addr string) (syscall.Conn, int, error) {
+			conn, err := lc.Listen(context.Background(), network, addr)
+			if err != nil {
+				return nil, 0, err
+			}
+			return conn.(syscall.Conn), conn.Addr().(*net.TCPAddr).Port, nil
+		}
+
+	case "udp4", "udp6":
+		fn = func(addr string) (syscall.Conn, int, error) {
+			conn, err := lc.ListenPacket(context.Background(), network, addr)
+			if err != nil {
+				return nil, 0, err
+			}
+			return conn.(syscall.Conn), conn.LocalAddr().(*net.UDPAddr).Port, nil
+		}
+
+	default:
+		tb.Fatal("unsupported network", network)
+	}
+
+	var addr string
+	switch network {
+	case "tcp4", "udp4":
+		addr = "127.0.0.1"
+	case "tcp6", "udp6":
+		addr = "[::1]"
+	}
+
+	var err error
+	JoinNetNS(tb, netns, func() {
+		var conn syscall.Conn
+		var port int
+		conn, port, err = fn(addr + ":0")
+		if err != nil {
+			return
+		}
+		conns = []syscall.Conn{conn}
+		for i := 1; i < n; i++ {
+			conn, _, err = fn(fmt.Sprintf("%s:%d", addr, port))
+			if err != nil {
+				return
+			}
+			conns = append(conns, conn)
+		}
+	})
+
+	return
 }

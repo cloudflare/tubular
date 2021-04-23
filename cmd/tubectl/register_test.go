@@ -19,6 +19,52 @@ import (
 func TestSingleRegisterCommand(t *testing.T) {
 	netns := testutil.NewNetNS(t)
 
+	run := func(t *testing.T, args []string, env testEnv, fds testFds) error {
+		mustLoadDispatcher(t, netns)
+
+		flags := make(map[syscall.Conn]int)
+		for _, f := range fds {
+			if f != nil {
+				flags[f] = testutil.FileStatusFlags(t, f)
+			}
+		}
+
+		tubectl := tubectlTestCall{
+			NetNS:    netns,
+			Cmd:      "register",
+			Args:     args,
+			Env:      env,
+			ExtraFds: fds,
+		}
+		_, err := tubectl.Run(t)
+
+		for _, f := range fds {
+			if f == nil {
+				continue
+			}
+
+			if have := testutil.FileStatusFlags(t, f); have != flags[f] {
+				t.Fatalf("file status flags of %v changed: %d != %d", f, have, flags[f])
+			}
+		}
+
+		return err
+	}
+
+	check := func(t *testing.T, dp *internal.Dispatcher, fds testFds) {
+		dests := destinations(t, dp)
+		if len(dests) != len(fds) {
+			t.Fatalf("expected %v registered destination(s), have %v", len(fds), len(dests))
+		}
+
+		for _, f := range fds {
+			cookie := mustSocketCookie(t, f)
+			if _, ok := dests[cookie]; !ok {
+				t.Fatalf("expected registered destination for socket %v", cookie)
+			}
+		}
+	}
+
 	for _, tc := range []struct {
 		name     string
 		wantErr  error
@@ -34,8 +80,6 @@ func TestSingleRegisterCommand(t *testing.T) {
 			[]string{"svc-label"}, testEnv{"LISTEN_FDS": ""}, nil},
 		{"listen_fds zero", errBadArg,
 			[]string{"svc-label"}, testEnv{"LISTEN_FDS": "0"}, nil},
-		{"listen_fds two", errBadArg,
-			[]string{"svc-label"}, testEnv{"LISTEN_FDS": "2"}, nil},
 		{"fd unused", errBadFD,
 			[]string{"svc-label"}, testEnv{"LISTEN_FDS": "1"}, testFds{nil}},
 		{"fd non-socket", internal.ErrNotSocket,
@@ -66,50 +110,45 @@ func TestSingleRegisterCommand(t *testing.T) {
 			[]string{"svc-label"}, testEnv{"LISTEN_FDS": "1"}, testFds{makeListeningSocket(t, netns, "udp6")}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			mustLoadDispatcher(t, netns)
-
-			flags := make(map[syscall.Conn]int)
-			for _, f := range tc.extraFds {
-				if f != nil {
-					flags[f] = testutil.FileStatusFlags(t, f)
-				}
-			}
-
-			tubectl := tubectlTestCall{
-				NetNS:    netns,
-				Cmd:      "register",
-				Args:     tc.cmdArgs,
-				Env:      tc.extraEnv,
-				ExtraFds: tc.extraFds,
-			}
-			_, err := tubectl.Run(t)
+			err := run(t, tc.cmdArgs, tc.extraEnv, tc.extraFds)
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("unexpected error: want %v, have %v", tc.wantErr, err)
 			}
 
 			dp := mustOpenDispatcher(t, netns)
-			dests := destinations(t, dp)
 			if tc.wantErr != nil {
-				if len(dests) != 0 {
-					t.Fatalf("expected no registered destinations, have %v", len(dests))
-				}
-				return
+				check(t, dp, nil)
+			} else {
+				check(t, dp, tc.extraFds)
+			}
+		})
+	}
+
+	for _, network := range []string{"udp4", "udp6", "tcp4", "tcp6"} {
+		t.Run("reuseport "+network, func(t *testing.T) {
+			fds := testFds(testutil.ReuseportGroup(t, netns, network, 3))
+			err := run(t, []string{"svc-label"}, testEnv{"LISTEN_FDS": "3"}, fds)
+			if err != nil {
+				t.Fatal("Unexpected error:", err)
 			}
 
-			if len(dests) != len(tc.extraFds) {
-				t.Fatalf("expected %v registered destination(s), have %v", len(tc.extraFds), len(dests))
+			dp := mustOpenDispatcher(t, netns)
+			check(t, dp, testFds{fds[0]})
+		})
+
+		t.Run("multiple sockets rejected "+network, func(t *testing.T) {
+			fds := testFds{
+				testutil.Listen(t, netns, network, ""),
+				testutil.Listen(t, netns, network, ""),
+			}
+			err := run(t, []string{"svc-label"}, testEnv{"LISTEN_FDS": "2"}, fds)
+			if err == nil {
+				t.Fatal("Expected an error")
 			}
 
-			for _, f := range tc.extraFds {
-				cookie := mustSocketCookie(t, f)
-				if _, ok := dests[cookie]; !ok {
-					t.Fatalf("expected registered destination for socket %v", cookie)
-				}
-
-				if have := testutil.FileStatusFlags(t, f); have != flags[f] {
-					t.Fatalf("file status flags of %v changed: %d != %d", cookie, have, flags[f])
-				}
-			}
+			// We still register the first fd even if there is an error.
+			dp := mustOpenDispatcher(t, netns)
+			check(t, dp, testFds{fds[1]})
 		})
 	}
 }

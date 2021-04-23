@@ -18,6 +18,16 @@ import (
 	"kernel.org/pub/linux/libs/security/libcap/cap"
 )
 
+// CurrentNetNS returns the current thread's network namespace.
+func CurrentNetNS(tb testing.TB) ns.NetNS {
+	tb.Helper()
+	netns, err := ns.GetCurrentNS()
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return netns
+}
+
 // NewNetNS creates a pristine network namespace.
 func NewNetNS(tb testing.TB, networks ...string) ns.NetNS {
 	tb.Helper()
