@@ -1,3 +1,15 @@
+2021.4.1
+- 2021-04-23 TUBE-68: cmd/tubectl: allow multiple (reuseport) sockets in register
+- 2021-04-12 run-tests: distinguish between CI and local cfsetup build
+- 2021-04-12 CI: make individual test results available
+- 2021-04-14 testutil: don't panic when already unprivileged
+- 2021-04-13 ebpf: change the maximum number of bindings
+- 2021-04-13 CI: run a single benchmark iteration
+- 2021-04-13 dispatcher: add benchmark
+- 2021-04-13 dispatcher: add a benchmark for adding a binding
+- 2021-04-01 cmd/tubectl: Reject invalid protocol in binding
+- 2021-04-07 internal/binding: port to netaddr
+
 2021.4.0
 - 2021-04-06 TUBE-27: cmd/tubectl: fix race condition in tests
 - 2021-04-07 cmd/tubectl: handle flag.ErrHelp in main
