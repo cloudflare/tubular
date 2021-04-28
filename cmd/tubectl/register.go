@@ -30,10 +30,6 @@ func register(e *env, args ...string) error {
 		return err
 	}
 
-	if set.NArg() != 1 {
-		set.Usage()
-		return fmt.Errorf("expected label but got %d arguments: %w", set.NArg(), errBadArg)
-	}
 	label := set.Arg(0)
 
 	files, err := listenFds(e, label)

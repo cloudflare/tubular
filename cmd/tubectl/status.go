@@ -23,10 +23,6 @@ func list(e *env, args ...string) error {
 		return err
 	}
 
-	if set.NArg() > 0 {
-		return fmt.Errorf("invalid arguments")
-	}
-
 	dp, err := e.openDispatcher(true)
 	if err != nil {
 		return err
@@ -122,10 +118,6 @@ func metrics(e *env, args ...string) error {
 	timeout := set.Duration("timeout", 30*time.Second, "Duration to wait for an HTTP metrics request to complete.")
 	if err := set.Parse(args); err != nil {
 		return err
-	}
-
-	if set.NArg() != 2 {
-		return fmt.Errorf("expected address, port but got %d arguments", set.NArg())
 	}
 
 	address := set.Arg(0)

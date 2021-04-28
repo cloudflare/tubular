@@ -38,10 +38,6 @@ func serve(e *env, args ...string) error {
 		return err
 	}
 
-	if set.NArg() != 1 {
-		set.Usage()
-		return fmt.Errorf("expected listen address but got %d arguments: %w", set.NArg(), errBadArg)
-	}
 	listenAddress := set.Arg(0)
 
 	unixAddr := resolveUnixAddr("unixpacket", listenAddress)

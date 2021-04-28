@@ -42,6 +42,20 @@ func newFlagSet(output io.Writer, name string, args ...string) *flagSet {
 	return fs
 }
 
+func (fs *flagSet) Parse(args []string) error {
+	if err := fs.FlagSet.Parse(args); err != nil {
+		return err
+	}
+
+	n := len(fs.args)
+	if fs.NArg() == n {
+		return nil
+	}
+
+	fs.PrintCommand()
+	return errBadArg
+}
+
 func (fs *flagSet) PrintCommand() {
 	o := fs.Output()
 

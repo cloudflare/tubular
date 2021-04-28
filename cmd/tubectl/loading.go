@@ -2,8 +2,6 @@ package main
 
 import (
 	"errors"
-	"flag"
-	"fmt"
 
 	"code.cfops.it/sys/tubular/internal"
 )
@@ -13,10 +11,6 @@ func load(e *env, args ...string) error {
 	set.Description = "Load the tubular dispatcher."
 	if err := set.Parse(args); err != nil {
 		return err
-	}
-
-	if flag.NArg() > 0 {
-		return fmt.Errorf("invalid arguments")
 	}
 
 	dp, err := e.createDispatcher()
@@ -39,10 +33,6 @@ func unload(e *env, args ...string) error {
 		return err
 	}
 
-	if flag.NArg() > 0 {
-		return fmt.Errorf("invalid arguments")
-	}
-
 	err := internal.UnloadDispatcher(e.netns, e.bpfFs)
 	if errors.Is(err, internal.ErrNotLoaded) {
 		e.stderr.Log("dispatcher is not loaded in", e.netns)
@@ -60,10 +50,6 @@ func upgrade(e *env, args ...string) error {
 	set.Description = "Upgrade the tubular dispatcher, while preserving present state."
 	if err := set.Parse(args); err != nil {
 		return err
-	}
-
-	if flag.NArg() > 0 {
-		return fmt.Errorf("invalid arguments")
 	}
 
 	if err := e.setupEnv(); err != nil {
