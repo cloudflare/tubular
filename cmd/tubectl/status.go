@@ -17,10 +17,8 @@ import (
 )
 
 func list(e *env, args ...string) error {
-	set := e.newFlagSet("list", `
-
-Show current bindings and destinations.
-`)
+	set := e.newFlagSet("list")
+	set.Description = "Show current bindings and destinations."
 	if err := set.Parse(args); err != nil {
 		return err
 	}
@@ -113,16 +111,14 @@ func sortDestinations(dests []internal.Destination) {
 }
 
 func metrics(e *env, args ...string) error {
-	set := e.newFlagSet("metrics", `<address> <port>
+	set := e.newFlagSet("metrics", "address", "port")
+	set.Description = `
+		Expose metrics in prometheus export format.
 
-Expose metrics in prometheus export format.
+		Examples:
+		  $ tubectl metrics 127.0.0.1 8000
+		  $ curl http://127.0.0.1:8000/metrics`
 
-Examples:
-
-	- expose metrics on localhost port 8000
-	$ tubectl metrics 127.0.0.1 8000
-	$ curl http://127.0.0.1:8000/metrics
-`)
 	timeout := set.Duration("timeout", 30*time.Second, "Duration to wait for an HTTP metrics request to complete.")
 	if err := set.Parse(args); err != nil {
 		return err

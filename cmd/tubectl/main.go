@@ -91,14 +91,25 @@ func (e *env) openDispatcher(readOnly bool) (*internal.Dispatcher, error) {
 	return dp, nil
 }
 
-func (e *env) newFlagSet(name, usage string) *flag.FlagSet {
-	set := flag.NewFlagSet(name, flag.ContinueOnError)
-	set.SetOutput(e.stderr)
-	set.Usage = func() {
-		fmt.Fprintf(set.Output(), "Usage: tubectl %s %s\n", set.Name(), usage)
-		set.PrintDefaults()
-	}
-	return set
+func (e *env) newFlagSet(name string, args ...string) *flagSet {
+	return newFlagSet(e.stderr, name, args...)
+}
+
+var cmds = []struct {
+	name string
+	fn   func(*env, ...string) error
+}{
+	{"version", version},
+	{"load", load},
+	{"unload", unload},
+	{"upgrade", upgrade},
+	{"bind", bind},
+	{"unbind", unbind},
+	{"load-bindings", loadBindings},
+	{"list", list},
+	{"metrics", metrics},
+	{"register", register},
+	{"serve", serve},
 }
 
 func tubectl(e env, args []string) (err error) {
@@ -112,23 +123,6 @@ func tubectl(e env, args []string) (err error) {
 	set.SetOutput(e.stderr)
 	set.StringVar(&e.netns, "netns", "/proc/self/ns/net", "`path` to the network namespace")
 	set.StringVar(&e.bpfFs, "bpffs", "/sys/fs/bpf", "`path` to a BPF filesystem for state")
-
-	cmds := []struct {
-		name string
-		fn   func(*env, ...string) error
-	}{
-		{"version", version},
-		{"load", load},
-		{"unload", unload},
-		{"upgrade", upgrade},
-		{"bind", bind},
-		{"unbind", unbind},
-		{"load-bindings", loadBindings},
-		{"list", list},
-		{"metrics", metrics},
-		{"register", register},
-		{"serve", serve},
-	}
 
 	set.Usage = func() {
 		out := set.Output()

@@ -21,23 +21,18 @@ const (
 )
 
 func serve(e *env, args ...string) error {
-	set := e.newFlagSet("serve", `<listen address>
+	set := e.newFlagSet("serve", "listen address")
+	set.Description = `
+	Listen for command requests on the given address.
 
-Listen for command requests on the given address.
+	Listen address must be a pathname or an abstract Unix socket address.
+	Addresses starting with an at symbol ("@") are treated as abstract addresses.
 
-Listen address must be a pathname or an abstract Unix socket address.
-Addresses starting with an at symbol ("@") are treated as abstract addresses.
+	Server uses a sequenced-packet socket (SOCK_SEQPACKET) to listen for requests.
 
-Server uses a sequenced-packet socket (SOCK_SEQPACKET) to listen for requests.
-
-Examples:
-
-	- serve on a pathname Unix socket address:
-	$ tubectl serve /tmp/tubectl.sock
-
-	- serve on an abstract Unix socket adress ("\x00tubectl"):
-	$ tubectl serve @tubectl
-`)
+	Examples:
+	  $ tubectl serve /tmp/tubectl.sock
+	  $ tubectl serve @tubectl`
 
 	if err := set.Parse(args); err != nil {
 		return err

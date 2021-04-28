@@ -11,10 +11,8 @@ import (
 )
 
 func bind(e *env, args ...string) error {
-	set := e.newFlagSet("bind", `<label> <protocol> <ip[/mask]> <port>
-
-Bind a given prefix, port and protocol to a label.
-`)
+	set := e.newFlagSet("bind", "label", "protocol", "ip[/mask]", "port")
+	set.Description = "Bind a given prefix, port and protocol to a label."
 	if err := set.Parse(args); err != nil {
 		return err
 	}
@@ -34,10 +32,8 @@ Bind a given prefix, port and protocol to a label.
 }
 
 func unbind(e *env, args ...string) error {
-	set := e.newFlagSet("unbind", `<label> <protocol> <ip[/mask]> <port>
-
-Remove a previously created binding.
-`)
+	set := e.newFlagSet("unbind", "label", "protocol", "ip[/mask]", "port")
+	set.Description = "Remove a previously created binding."
 	if err := set.Parse(args); err != nil {
 		return err
 	}
@@ -85,39 +81,36 @@ func bindingFromArgs(args []string) (*internal.Binding, error) {
 }
 
 func loadBindings(e *env, args ...string) error {
-	set := e.newFlagSet("load-bindings", `<file>
+	type bindingJSON struct {
+		Label  string           `json:"label"`
+		Prefix netaddr.IPPrefix `json:"prefix"`
+	}
 
-Load a set of bindings from a JSON formatted file and replace the currently
-active bindings with the ones from the file.
+	type configJSON struct {
+		Bindings []bindingJSON `json:"bindings"`
+	}
 
-Example:
+	set := newFlagSet(e.stderr, "load-bindings", "file")
+	set.Description = func() {
+		example := configJSON{
+			Bindings: []bindingJSON{
+				{"foo", netaddr.MustParseIPPrefix("127.0.0.1/32")},
+			},
+		}
 
-  $ jq . bindings.json
-  {
-    "bindings": [
-      {
-        "label": "foo",
-        "prefix": "127.0.0.1"
-      },
-      {
-        "label": "bar",
-        "prefix": "::1/64"
-      }
-    ]
-  }
-  $ tubectl load-bindings bindings.json
-  …
-  $ tubectl list
-  …
-  Bindings:
-   protocol       prefix port label
-        tcp 127.0.0.1/32    0   foo
-        tcp        ::/64    0   bar
-        udp 127.0.0.1/32    0   foo
-        udp        ::/64    0   bar
-  …
+		out, _ := json.MarshalIndent(example, "    ", "    ")
 
-`)
+		set.Printf(
+			`Load a set of bindings from a JSON formatted file and replace
+			the currently active bindings with the ones from the file.
+
+			The format is:
+
+			    %s`,
+			string(out),
+		)
+	}
+
 	if err := set.Parse(args); err != nil {
 		return err
 	}
@@ -133,13 +126,7 @@ Example:
 	}
 	defer file.Close()
 
-	var config struct {
-		Bindings []struct {
-			Label  string           `json:"label"`
-			Prefix netaddr.IPPrefix `json:"prefix"`
-		} `json:"bindings"`
-	}
-
+	var config configJSON
 	decoder := json.NewDecoder(file)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&config); err != nil {

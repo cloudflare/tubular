@@ -9,10 +9,8 @@ import (
 var Version = "git"
 
 func version(e *env, args ...string) error {
-	set := e.newFlagSet("version", `
-
-Show version information.
-`)
+	set := e.newFlagSet("version")
+	set.Description = "Show version information."
 	if err := set.Parse(args); err != nil {
 		return err
 	}

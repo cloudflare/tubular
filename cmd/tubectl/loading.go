@@ -9,10 +9,8 @@ import (
 )
 
 func load(e *env, args ...string) error {
-	set := e.newFlagSet("load", `
-
-Load the tubular dispatcher.
-`)
+	set := e.newFlagSet("load")
+	set.Description = "Load the tubular dispatcher."
 	if err := set.Parse(args); err != nil {
 		return err
 	}
@@ -35,10 +33,8 @@ Load the tubular dispatcher.
 }
 
 func unload(e *env, args ...string) error {
-	set := e.newFlagSet("unload", `
-
-Unload the tubular dispatcher, removing any present state.
-`)
+	set := e.newFlagSet("unload")
+	set.Description = "Unload the tubular dispatcher, removing any present state."
 	if err := set.Parse(args); err != nil {
 		return err
 	}
@@ -60,10 +56,8 @@ Unload the tubular dispatcher, removing any present state.
 }
 
 func upgrade(e *env, args ...string) error {
-	set := e.newFlagSet("upgrade", `
-
-Upgrade the tubular dispatcher, while preserving present state.
-`)
+	set := e.newFlagSet("upgrade")
+	set.Description = "Upgrade the tubular dispatcher, while preserving present state."
 	if err := set.Parse(args); err != nil {
 		return err
 	}

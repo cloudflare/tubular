@@ -16,16 +16,15 @@ const (
 )
 
 func register(e *env, args ...string) error {
-	set := e.newFlagSet("register", `<label>
+	set := e.newFlagSet("register", "label")
+	set.Description = `
+		Registers sockets passed down from parent under given label. Usually
+		used together with SystemD socket activation, as it expects the number
+		of FDs in LISTEN_FDS. LISTEN_PID is ignored, so is LISTEN_FDNAMES.
 
-Registers sockets passed down from parent under given label. Usually used
-together with SystemD socket activation, as it expects the number of FDs in
-LISTEN_FDS. LISTEN_PID is ignored, so is LISTEN_FDNAMES.
-
-If multiple sockets are passed, the behaviour is as follows:
-  - Only the first socket of each passed reuseport group is registered
-  - Later (aka higher fd number) sockets overwrite lower ones
-`)
+		If multiple sockets are passed, the behaviour is as follows:
+		- Only the first socket of each passed reuseport group is registered
+		- Later (aka higher fd number) sockets overwrite lower ones.`
 
 	if err := set.Parse(args); err != nil {
 		return err

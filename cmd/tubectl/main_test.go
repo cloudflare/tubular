@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
+	"flag"
 	"net"
 	"os"
 	"runtime"
@@ -34,6 +36,19 @@ func TestHelp(t *testing.T) {
 
 	if !bytes.Equal(a.Bytes(), b.Bytes()) {
 		t.Error("-help output isn't stable")
+	}
+}
+
+func TestSubcommandHelp(t *testing.T) {
+	for _, cmd := range cmds {
+		t.Run(cmd.name, func(t *testing.T) {
+			var stderr log.Buffer
+			err := cmd.fn(&env{stderr: &stderr}, "-help")
+			t.Log(stderr.String())
+			if !errors.Is(err, flag.ErrHelp) {
+				t.Error("Doesn't return ErrHelp")
+			}
+		})
 	}
 }
 
