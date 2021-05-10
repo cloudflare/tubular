@@ -4,6 +4,15 @@
 			"label": "foo",
 			"prefix": "127.0.0.1",
 			"bogus": false
+		},
+		{
+			"label": "bar",
+			"prefix": "127.0.0.2",
+			"port": 99999999
+		},
+		{
+			"label": "baz",
+			"prefix": "127.0.0.3"
 		}
 	]
 }

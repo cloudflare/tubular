@@ -2,11 +2,23 @@
 	"bindings": [
 		{
 			"label": "foo",
-			"prefix": "127.0.0.1/32"
+			"prefix": "127.0.0.1/32",
+			"port": 0
 		},
 		{
 			"label": "bar",
-			"prefix": "::1/64"
+			"prefix": "::1/64",
+			"port": 0
+		},
+		{
+			"label": "foo-port",
+			"prefix": "127.0.0.2/32",
+			"port": 53
+		},
+		{
+			"label": "bar-port",
+			"prefix": "1::1/64",
+			"port": 53
 		}
 	]
 }

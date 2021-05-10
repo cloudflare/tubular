@@ -84,6 +84,7 @@ func loadBindings(e *env, args ...string) error {
 	type bindingJSON struct {
 		Label  string           `json:"label"`
 		Prefix netaddr.IPPrefix `json:"prefix"`
+		Port   *uint16          `json:"port"`
 	}
 
 	type configJSON struct {
@@ -92,9 +93,10 @@ func loadBindings(e *env, args ...string) error {
 
 	set := newFlagSet(e.stderr, "load-bindings", "file")
 	set.Description = func() {
+		port := uint16(80)
 		example := configJSON{
 			Bindings: []bindingJSON{
-				{"foo", netaddr.MustParseIPPrefix("127.0.0.1/32")},
+				{"foo", netaddr.MustParseIPPrefix("127.0.0.1/32"), &port},
 			},
 		}
 
@@ -135,18 +137,22 @@ func loadBindings(e *env, args ...string) error {
 
 	var bindings []*internal.Binding
 	for _, bind := range config.Bindings {
+		if bind.Port == nil {
+			return fmt.Errorf("binding in json is missing port: %v", bind)
+		}
+
 		bindings = append(bindings,
 			&internal.Binding{
 				Label:    bind.Label,
 				Prefix:   bind.Prefix.Masked(),
 				Protocol: internal.TCP,
-				Port:     0,
+				Port:     *bind.Port,
 			},
 			&internal.Binding{
 				Label:    bind.Label,
 				Prefix:   bind.Prefix.Masked(),
 				Protocol: internal.UDP,
-				Port:     0,
+				Port:     *bind.Port,
 			},
 		)
 	}

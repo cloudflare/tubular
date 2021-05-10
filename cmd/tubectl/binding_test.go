@@ -110,7 +110,7 @@ func TestLoadBindings(t *testing.T) {
 
 	_, err := testTubectl(t, netns, "load-bindings", "testdata/invalid-bindings.json")
 	if err == nil {
-		t.Error("Bindings with extra elements should return an error")
+		t.Error("Invalid bindings json must return an error")
 	}
 
 	_, err = testTubectl(t, netns, "load-bindings", "testdata/bindings.json")
@@ -128,8 +128,12 @@ func TestLoadBindings(t *testing.T) {
 	want := internal.Bindings{
 		mustNewBinding(t, "foo", internal.TCP, "127.0.0.1", 0),
 		mustNewBinding(t, "foo", internal.UDP, "127.0.0.1", 0),
+		mustNewBinding(t, "foo-port", internal.TCP, "127.0.0.2", 53),
+		mustNewBinding(t, "foo-port", internal.UDP, "127.0.0.2", 53),
 		mustNewBinding(t, "bar", internal.TCP, "::1/64", 0),
 		mustNewBinding(t, "bar", internal.UDP, "::1/64", 0),
+		mustNewBinding(t, "bar-port", internal.TCP, "1::1/64", 53),
+		mustNewBinding(t, "bar-port", internal.UDP, "1::1/64", 53),
 	}
 
 	sort.Sort(bindings)
