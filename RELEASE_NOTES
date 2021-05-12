@@ -1,3 +1,8 @@
+2021.5.0
+- 2021-05-10 TUBE-73: read ports from bindings JSON
+- 2021-04-28 cmd/tubectl: make FlagSet definition less repetitive
+- 2021-04-28 cmd/tubectl: get rid of repetitive flag.NArg checks
+
 2021.4.1
 - 2021-04-23 TUBE-68: cmd/tubectl: allow multiple (reuseport) sockets in register
 - 2021-04-12 run-tests: distinguish between CI and local cfsetup build
