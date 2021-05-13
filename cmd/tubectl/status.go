@@ -17,7 +17,7 @@ import (
 )
 
 func list(e *env, args ...string) error {
-	set := e.newFlagSet("list")
+	set := e.newFlagSet("list", "--", "label")
 	set.Description = "Show current bindings and destinations."
 	if err := set.Parse(args); err != nil {
 		return err
@@ -37,11 +37,17 @@ func list(e *env, args ...string) error {
 	// Output from most specific to least specific.
 	sort.Sort(bindings)
 
+	label := set.Arg(0)
+
 	w := tabwriter.NewWriter(e.stdout, 0, 0, 1, ' ', tabwriter.AlignRight)
 	e.stdout.Log("Bindings:")
 	fmt.Fprintln(w, "protocol\tprefix\tport\tlabel\t")
 
 	for _, bind := range bindings {
+		if label != "" && bind.Label != label {
+			continue
+		}
+
 		_, err := fmt.Fprintf(w, "%v\t%s\t%d\t%s\t\n", bind.Protocol, bind.Prefix, bind.Port, bind.Label)
 		if err != nil {
 			return err
@@ -68,6 +74,10 @@ func list(e *env, args ...string) error {
 	fmt.Fprintln(w, "label\tdomain\tprotocol\tsocket\tlookups\tmisses\terrors\t")
 
 	for _, dest := range dests {
+		if label != "" && dest.Label != label {
+			continue
+		}
+
 		destMetrics := metrics.Destinations[dest]
 		_, err := fmt.Fprint(w,
 			dest.Label, "\t",

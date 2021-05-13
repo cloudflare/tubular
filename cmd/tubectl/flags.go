@@ -10,17 +10,32 @@ import (
 
 type flagSet struct {
 	flag.FlagSet
-	args        []string
-	Description interface{}
+	args         []string
+	optionalArgs []string
+	Description  interface{}
 }
 
+// newFlagSet creates a flag set for a command with the given name.
+//
+// args contains both required an optional arguments, separated by the special
+// string "--".
 func newFlagSet(output io.Writer, name string, args ...string) *flagSet {
 	set := flag.NewFlagSet(name, flag.ContinueOnError)
 	set.SetOutput(output)
 
+	var optionalArgs []string
+	for i, arg := range args {
+		if arg == "--" {
+			optionalArgs = args[i+1:]
+			args = args[:i]
+			break
+		}
+	}
+
 	fs := &flagSet{
 		*set,
 		args,
+		optionalArgs,
 		nil,
 	}
 
@@ -47,8 +62,9 @@ func (fs *flagSet) Parse(args []string) error {
 		return err
 	}
 
-	n := len(fs.args)
-	if fs.NArg() == n {
+	minArgs := len(fs.args)
+	maxArgs := minArgs + len(fs.optionalArgs)
+	if n := fs.NArg(); n >= minArgs && n <= maxArgs {
 		return nil
 	}
 
@@ -61,10 +77,13 @@ func (fs *flagSet) PrintCommand() {
 
 	var args string
 	if len(fs.args) > 0 {
-		args = fmt.Sprintf("<%s>", strings.Join(fs.args, "> <"))
+		args = fmt.Sprintf(" <%s>", strings.Join(fs.args, "> <"))
+	}
+	if len(fs.optionalArgs) > 0 {
+		args += fmt.Sprintf(" [<%s>]", strings.Join(fs.optionalArgs, ">] [<"))
 	}
 
-	fmt.Fprintf(o, "Usage: tubectl %s %s\n\n", fs.Name(), args)
+	fmt.Fprintf(o, "Usage: tubectl %s%s\n\n", fs.Name(), args)
 }
 
 func (fs *flagSet) Printf(format string, args ...interface{}) {

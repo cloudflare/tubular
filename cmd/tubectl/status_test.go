@@ -51,6 +51,34 @@ func TestList(t *testing.T) {
 	}
 }
 
+func TestListFilteredByLabel(t *testing.T) {
+	netns := mustReadyNetNS(t)
+
+	dp := mustOpenDispatcher(t, netns)
+	mustAddBinding(t, dp, "foo", internal.TCP, "::1", 80)
+	sock := makeListeningSocket(t, netns, "tcp")
+	mustRegisterSocket(t, dp, "foo", sock)
+	dp.Close()
+
+	output, err := testTubectl(t, netns, "list", "foo")
+	if err != nil {
+		t.Fatal("Can't execute list foo:", err)
+	}
+
+	if !strings.Contains(output.String(), "foo") {
+		t.Error("Output of list doesn't contain label foo")
+	}
+
+	output, err = testTubectl(t, netns, "list", "bar")
+	if err != nil {
+		t.Fatal("Can't execute list bar:", err)
+	}
+
+	if strings.Contains(output.String(), "foo") {
+		t.Error("Output of list contains label foo, even though it should be filtered")
+	}
+}
+
 func TestMetrics(t *testing.T) {
 	netns := mustReadyNetNS(t)
 
