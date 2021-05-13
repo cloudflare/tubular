@@ -170,9 +170,9 @@ func OpenDispatcher(logger log.Logger, netnsPath, bpfFsPath string, readOnly boo
 		dir, err = lock.OpenLockedExclusive(pinPath)
 	}
 	if os.IsNotExist(err) {
-		return nil, fmt.Errorf("%s: %w", netnsPath, ErrNotLoaded)
+		return nil, fmt.Errorf("%s: %w", bpfFsPath, ErrNotLoaded)
 	} else if err != nil {
-		return nil, fmt.Errorf("%s: %s", netnsPath, err)
+		return nil, fmt.Errorf("%s: %s", bpfFsPath, err)
 	}
 	defer closeOnError(dir)
 
@@ -277,7 +277,7 @@ func upgradeDispatcher(netnsPath, bpfFsPath string, linkUpdate func(link.NetNsLi
 
 	dir, err := lock.OpenLockedExclusive(pinPath)
 	if err != nil {
-		return 0, fmt.Errorf("%s: %s", netnsPath, err)
+		return 0, fmt.Errorf("%s: %s", bpfFsPath, err)
 	}
 	defer dir.Close()
 
@@ -359,9 +359,9 @@ func UnloadDispatcher(netnsPath, bpfFsPath string) error {
 
 	dir, err := lock.OpenLockedExclusive(pinPath)
 	if os.IsNotExist(err) {
-		return fmt.Errorf("%s: %w", netnsPath, ErrNotLoaded)
+		return fmt.Errorf("%s: %w", bpfFsPath, ErrNotLoaded)
 	} else if err != nil {
-		return fmt.Errorf("%s: %s", netnsPath, err)
+		return fmt.Errorf("%s: %s", bpfFsPath, err)
 	}
 	defer dir.Close()
 
