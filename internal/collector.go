@@ -16,6 +16,7 @@ type Collector struct {
 	lookups          *prometheus.Desc
 	misses           *prometheus.Desc
 	errors           *prometheus.Desc
+	bindings         *prometheus.Desc
 }
 
 var _ prometheus.Collector = (*Collector)(nil)
@@ -47,6 +48,12 @@ func NewCollector(logger log.Logger, netnsPath, bpfFsPath string) *Collector {
 			[]string{"label", "domain", "protocol", "reason"},
 			nil,
 		),
+		prometheus.NewDesc(
+			"bindings_total",
+			"The number of bindings.",
+			[]string{"label", "domain", "protocol"},
+			nil,
+		),
 	}
 }
 
@@ -56,6 +63,7 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.lookups
 	ch <- c.misses
 	ch <- c.errors
+	ch <- c.bindings
 }
 
 // Collect implements prometheus.Collector.
@@ -88,7 +96,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 			c.misses,
 			prometheus.CounterValue,
 			float64(destMetrics.Misses),
-			append(commonLabels)...,
+			commonLabels...,
 		)
 
 		ch <- prometheus.MustNewConstMetric(
@@ -96,6 +104,21 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 			prometheus.CounterValue,
 			float64(destMetrics.ErrorBadSocket),
 			append(commonLabels, "bad-socket")...,
+		)
+	}
+
+	for binding, metric := range metrics.Bindings {
+		commonLabels := []string{
+			binding.Label,
+			binding.Domain.String(),
+			binding.Protocol.String(),
+		}
+
+		ch <- prometheus.MustNewConstMetric(
+			c.bindings,
+			prometheus.GaugeValue,
+			float64(metric),
+			commonLabels...,
 		)
 	}
 }

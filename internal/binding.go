@@ -139,6 +139,22 @@ func (sb Bindings) Less(i, j int) bool {
 	return a.Label < b.Label
 }
 
+func (bindings Bindings) metrics() map[Destination]uint64 {
+	metrics := map[Destination]uint64{}
+
+	for _, b := range bindings {
+		label := b.Label
+		domain := AF_INET
+		if b.Prefix.IP.Unmap().Is6() {
+			domain = AF_INET6
+		}
+		protocol := b.Protocol
+
+		metrics[Destination{label, domain, protocol}]++
+	}
+	return metrics
+}
+
 func diffBindings(have, want map[bindingKey]string) (added, removed []*Binding) {
 	for key, label := range want {
 		if have[key] != label {

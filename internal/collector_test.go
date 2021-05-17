@@ -33,12 +33,6 @@ func TestCollector(t *testing.T) {
 		t.Error("Expected metrics after bindings are added")
 	}
 
-	for name, value := range metrics {
-		if value != 0 {
-			t.Errorf("Expected %s to be initially zero, got %v", name, value)
-		}
-	}
-
 	// Register an unconnected UDP socket and connect it afterwards to
 	// trigger bad-socket.
 	dp = mustOpenDispatcher(t, nil, netns.Path())
@@ -59,6 +53,8 @@ func TestCollector(t *testing.T) {
 				`lookups_total{domain="ipv6", label="foo", protocol="tcp"}`:                     i + 1,
 				`misses_total{domain="ipv4", label="bar", protocol="udp"}`:                      0,
 				`misses_total{domain="ipv6", label="foo", protocol="tcp"}`:                      i + 1,
+				`bindings_total{domain="ipv4", label="bar", protocol="udp"}`:                    1,
+				`bindings_total{domain="ipv6", label="foo", protocol="tcp"}`:                    1,
 			}
 
 			if diff := cmp.Diff(want, flattenMetrics(t, reg)); diff != "" {
@@ -79,6 +75,8 @@ func TestCollector(t *testing.T) {
 				`lookups_total{domain="ipv6", label="foo", protocol="tcp"}`:                     2,
 				`misses_total{domain="ipv4", label="bar", protocol="udp"}`:                      0,
 				`misses_total{domain="ipv6", label="foo", protocol="tcp"}`:                      2,
+				`bindings_total{domain="ipv4", label="bar", protocol="udp"}`:                    1,
+				`bindings_total{domain="ipv6", label="foo", protocol="tcp"}`:                    1,
 			}
 
 			if diff := cmp.Diff(want, flattenMetrics(t, reg)); diff != "" {
