@@ -21,3 +21,11 @@ func TestOptionalArgs(t *testing.T) {
 		t.Fatal("Accepted extraneous argument")
 	}
 }
+
+func TestTrimLeadingTabsAndSpace(t *testing.T) {
+	const want = "a\n\nb\nc\nd"
+	have := trimLeadingTabsAndSpace("\na\n\n\tb\n\t\tc\n\t\t\td\n")
+	if have != want {
+		t.Errorf("Want %q, have %q", want, have)
+	}
+}

@@ -99,6 +99,6 @@ var removeLeadingTabs = regexp.MustCompile(`\n\t+`)
 // This allows using arbitrary alignment in source code raw strings without
 // messing up the console output.
 func trimLeadingTabsAndSpace(s string) string {
-	removeLeadingTabs.ReplaceAllLiteralString(s, "\n")
+	s = removeLeadingTabs.ReplaceAllLiteralString(s, "\n")
 	return strings.TrimSpace(s)
 }
