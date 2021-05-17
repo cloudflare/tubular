@@ -456,20 +456,15 @@ func (dests *destinations) Sockets() (map[destinationID]SocketCookie, error) {
 	return sockets, nil
 }
 
-func (dests *destinations) Metrics() (map[Destination]DestinationMetrics, error) {
-	list, err := dests.List()
-	if err != nil {
-		return nil, fmt.Errorf("list destinations: %s", err)
-	}
-
-	metrics := make(map[Destination]DestinationMetrics)
-	for id, dest := range list {
+func (dests *destinations) Metrics(destIDs map[destinationID]*Destination) (map[destinationID]DestinationMetrics, error) {
+	metrics := make(map[destinationID]DestinationMetrics)
+	for id, dest := range destIDs {
 		var perCPUMetrics []DestinationMetrics
 		if err := dests.metrics.Lookup(id, &perCPUMetrics); err != nil {
 			return nil, fmt.Errorf("metrics for destination %s: %s", dest, err)
 		}
 
-		metrics[*dest] = sumDestinationMetrics(perCPUMetrics)
+		metrics[id] = sumDestinationMetrics(perCPUMetrics)
 	}
 
 	return metrics, nil

@@ -55,6 +55,8 @@ func TestCollector(t *testing.T) {
 				`misses_total{domain="ipv6", label="foo", protocol="tcp"}`:                      i + 1,
 				`bindings_total{domain="ipv4", label="bar", protocol="udp"}`:                    1,
 				`bindings_total{domain="ipv6", label="foo", protocol="tcp"}`:                    1,
+				`destination_has_socket{domain="ipv4", label="bar", protocol="udp"}`:            1,
+				`destination_has_socket{domain="ipv6", label="foo", protocol="tcp"}`:            0,
 			}
 
 			if diff := cmp.Diff(want, flattenMetrics(t, reg)); diff != "" {
@@ -77,6 +79,8 @@ func TestCollector(t *testing.T) {
 				`misses_total{domain="ipv6", label="foo", protocol="tcp"}`:                      2,
 				`bindings_total{domain="ipv4", label="bar", protocol="udp"}`:                    1,
 				`bindings_total{domain="ipv6", label="foo", protocol="tcp"}`:                    1,
+				`destination_has_socket{domain="ipv4", label="bar", protocol="udp"}`:            1,
+				`destination_has_socket{domain="ipv6", label="foo", protocol="tcp"}`:            0,
 			}
 
 			if diff := cmp.Diff(want, flattenMetrics(t, reg)); diff != "" {

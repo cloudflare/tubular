@@ -9,14 +9,15 @@ import (
 
 // Collector exposes metrics from a Dispatcher in the Prometheus format.
 type Collector struct {
-	logger           log.Logger
-	netnsPath        string
-	bpffsPath        string
-	collectionErrors prometheus.Counter
-	lookups          *prometheus.Desc
-	misses           *prometheus.Desc
-	errors           *prometheus.Desc
-	bindings         *prometheus.Desc
+	logger             log.Logger
+	netnsPath          string
+	bpffsPath          string
+	collectionErrors   prometheus.Counter
+	lookups            *prometheus.Desc
+	misses             *prometheus.Desc
+	errors             *prometheus.Desc
+	bindings           *prometheus.Desc
+	destinationSockets *prometheus.Desc
 }
 
 var _ prometheus.Collector = (*Collector)(nil)
@@ -54,6 +55,12 @@ func NewCollector(logger log.Logger, netnsPath, bpfFsPath string) *Collector {
 			[]string{"label", "domain", "protocol"},
 			nil,
 		),
+		prometheus.NewDesc(
+			"destination_has_socket",
+			"Whether or not a destination has a registered socket.",
+			[]string{"label", "domain", "protocol"},
+			nil,
+		),
 	}
 }
 
@@ -64,6 +71,7 @@ func (c *Collector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.misses
 	ch <- c.errors
 	ch <- c.bindings
+	ch <- c.destinationSockets
 }
 
 // Collect implements prometheus.Collector.
@@ -118,6 +126,21 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 			c.bindings,
 			prometheus.GaugeValue,
 			float64(metric),
+			commonLabels...,
+		)
+	}
+
+	for dest, present := range metrics.Sockets {
+		commonLabels := []string{
+			dest.Label,
+			dest.Domain.String(),
+			dest.Protocol.String(),
+		}
+
+		ch <- prometheus.MustNewConstMetric(
+			c.destinationSockets,
+			prometheus.GaugeValue,
+			float64(present),
 			commonLabels...,
 		)
 	}

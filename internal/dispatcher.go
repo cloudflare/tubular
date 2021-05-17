@@ -634,17 +634,13 @@ func (d *Dispatcher) RegisterSocket(label string, conn syscall.Conn) (dest *Dest
 type Metrics struct {
 	Destinations map[Destination]DestinationMetrics
 	Bindings     map[Destination]uint64
+	Sockets      map[Destination]uint8
 }
 
 // Metrics returns current counters from the data plane.
 func (d *Dispatcher) Metrics() (*Metrics, error) {
 	d.stateDir.Lock()
 	defer d.stateDir.Unlock()
-
-	destMetrics, err := d.destinations.Metrics()
-	if err != nil {
-		return nil, fmt.Errorf("destination metrics: %s", err)
-	}
 
 	bindings, err := d.Bindings()
 	if err != nil {
@@ -653,7 +649,40 @@ func (d *Dispatcher) Metrics() (*Metrics, error) {
 
 	bindingMetrics := bindings.metrics()
 
-	return &Metrics{destMetrics, bindingMetrics}, nil
+	// Get the destinationID to Destination mapping
+	destsByID, err := d.destinations.List()
+	if err != nil {
+		return nil, fmt.Errorf("list destinations: %s", err)
+	}
+
+	destCounters, err := d.destinations.Metrics(destsByID)
+	if err != nil {
+		return nil, fmt.Errorf("destination metrics: %s", err)
+	}
+
+	sockets, err := d.destinations.Sockets()
+	if err != nil {
+		return nil, fmt.Errorf("socket metrics: %s", err)
+	}
+
+	destMetrics := make(map[Destination]DestinationMetrics)
+	socketsPresent := make(map[Destination]uint8)
+	for id, dest := range destsByID {
+		destMetric, ok := destCounters[id]
+		if ok {
+			destMetrics[*dest] = destMetric
+		}
+
+		_, ok = sockets[id]
+		if ok {
+			socketsPresent[*dest] = 1
+		} else {
+			socketsPresent[*dest] = 0
+		}
+
+	}
+
+	return &Metrics{destMetrics, bindingMetrics, socketsPresent}, nil
 }
 
 // Destinations returns a set of existing destinations, i.e. sockets and labels.
