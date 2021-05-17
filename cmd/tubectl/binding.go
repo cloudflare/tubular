@@ -12,7 +12,13 @@ import (
 
 func bind(e *env, args ...string) error {
 	set := e.newFlagSet("bind", "label", "protocol", "ip[/mask]", "port")
-	set.Description = "Bind a given prefix, port and protocol to a label."
+	set.Description = `
+		Bind a given prefix, port and protocol to a label.
+
+		Examples:
+		  $ tubectl bind foo udp 127.0.0.1 0
+		  $ tubectl bind bar tcp 127.0.0.0/24 80`
+
 	if err := set.Parse(args); err != nil {
 		return err
 	}
