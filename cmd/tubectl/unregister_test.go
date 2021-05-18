@@ -1,10 +1,7 @@
 package main
 
 import (
-	"syscall"
 	"testing"
-
-	"code.cfops.it/sys/tubular/internal/testutil"
 )
 
 func TestUnregister(t *testing.T) {
@@ -13,13 +10,6 @@ func TestUnregister(t *testing.T) {
 
 	// Make the listening socket that matches what we remove, and one that doesn't
 	fds := testFds{makeListeningSocket(t, netns, "tcp4"), makeListeningSocket(t, netns, "tcp6")}
-
-	flags := make(map[syscall.Conn]int)
-	for _, f := range fds {
-		if f != nil {
-			flags[f] = testutil.FileStatusFlags(t, f)
-		}
-	}
 
 	// Register the sockets with tubectl
 	tubectl := tubectlTestCall{
@@ -30,21 +20,7 @@ func TestUnregister(t *testing.T) {
 		Env:      map[string]string{"LISTEN_FDS": "2"},
 		ExtraFds: fds,
 	}
-
-	_, err := tubectl.Run(t)
-	if err != nil {
-		t.Fatalf("failed to run tubectl: %v", err)
-	}
-
-	for _, f := range fds {
-		if f == nil {
-			continue
-		}
-
-		if have := testutil.FileStatusFlags(t, f); have != flags[f] {
-			t.Fatalf("file status flags of %v changed: %d != %d", f, have, flags[f])
-		}
-	}
+	tubectl.MustRun(t)
 
 	// Open the dispatcher and verify the numer of destinations
 	dp := mustOpenDispatcher(t, netns)
@@ -67,11 +43,7 @@ func TestUnregister(t *testing.T) {
 		Cmd:    "unregister",
 		Args:   []string{"svc-label", "ipv4", "tcp"},
 	}
-
-	_, err = tubectl.Run(t)
-	if err != nil {
-		t.Fatalf("failed to run tubectl: %v", err)
-	}
+	tubectl.MustRun(t)
 
 	// Verify the numer of destinations, should only be 1 left
 	dests = destinations(t, dp)

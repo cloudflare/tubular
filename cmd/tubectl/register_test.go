@@ -22,13 +22,6 @@ func TestSingleRegisterCommand(t *testing.T) {
 	run := func(t *testing.T, args []string, env testEnv, fds testFds) error {
 		mustLoadDispatcher(t, netns)
 
-		flags := make(map[syscall.Conn]int)
-		for _, f := range fds {
-			if f != nil {
-				flags[f] = testutil.FileStatusFlags(t, f)
-			}
-		}
-
 		tubectl := tubectlTestCall{
 			NetNS:    netns,
 			ExecNS:   netns,
@@ -38,16 +31,6 @@ func TestSingleRegisterCommand(t *testing.T) {
 			ExtraFds: fds,
 		}
 		_, err := tubectl.Run(t)
-
-		for _, f := range fds {
-			if f == nil {
-				continue
-			}
-
-			if have := testutil.FileStatusFlags(t, f); have != flags[f] {
-				t.Fatalf("file status flags of %v changed: %d != %d", f, have, flags[f])
-			}
-		}
 
 		return err
 	}

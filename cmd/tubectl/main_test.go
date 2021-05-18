@@ -207,6 +207,13 @@ func (tc *tubectlTestCall) run(tb testing.TB, ctx context.Context, output log.Lo
 	}
 	args = append(args, tc.Args...)
 
+	flags := make(map[syscall.Conn]int)
+	for _, f := range tc.ExtraFds {
+		if f != nil {
+			flags[f] = testutil.FileStatusFlags(tb, f)
+		}
+	}
+
 	exec := tc.ExecNS
 	if exec == nil {
 		exec = testutil.CurrentNetNS(tb)
@@ -217,6 +224,17 @@ func (tc *tubectlTestCall) run(tb testing.TB, ctx context.Context, output log.Lo
 		err = tubectl(env, args)
 		return nil
 	}, tc.Effective...)
+
+	for _, f := range tc.ExtraFds {
+		if f == nil {
+			continue
+		}
+
+		if have := testutil.FileStatusFlags(tb, f); have != flags[f] {
+			tb.Fatalf("file status flags of %v changed: %d != %d", f, have, flags[f])
+		}
+	}
+
 	return err
 }
 
