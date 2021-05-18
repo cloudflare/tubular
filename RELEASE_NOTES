@@ -1,3 +1,9 @@
+2021.5.1
+- 2021-05-13 cmd/tubectl: filter list by label
+- 2021-05-13 TUBE-31: cmd/tubectl: include bpffs in errors
+- 2021-05-17 TUBE-56: internal: add bindings metrics
+- 2021-05-17 TUBE-56: internal: add destinations metrics
+
 2021.5.0
 - 2021-05-10 TUBE-73: read ports from bindings JSON
 - 2021-04-28 cmd/tubectl: make FlagSet definition less repetitive
