@@ -956,16 +956,13 @@ func BenchmarkDispatcherManyBindings(b *testing.B) {
 			}
 
 			var src *net.UDPConn
-			testutil.JoinNetNS(b, netns, func() {
-				var err error
+			testutil.JoinNetNS(b, netns, func() (err error) {
 				laddr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)}
 				if target.addr.Is6() {
 					laddr.IP = net.IPv6loopback
 				}
 				src, err = net.ListenUDP("udp", laddr)
-				if err != nil {
-					b.Fatal(err)
-				}
+				return
 			})
 			defer src.Close()
 

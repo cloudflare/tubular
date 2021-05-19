@@ -129,7 +129,7 @@ func setupNetNS(networks []string, result chan<- ns.NetNS, quit <-chan struct{})
 //
 // Any goroutines invoked from the function will still execute in the
 // parent network namespace.
-func JoinNetNS(tb testing.TB, netns ns.NetNS, fn func()) {
+func JoinNetNS(tb testing.TB, netns ns.NetNS, fn func() error, caps ...cap.Value) {
 	tb.Helper()
 
 	err := WithCapabilities(func() error {
@@ -137,15 +137,14 @@ func JoinNetNS(tb testing.TB, netns ns.NetNS, fn func()) {
 			return fmt.Errorf("set netns: %s", err)
 		}
 
-		if err := ChangeEffectiveCaps(); err != nil {
+		if err := ChangeEffectiveCaps(caps...); err != nil {
 			return err
 		}
 
-		fn()
-		return nil
+		return fn()
 	}, cap.SYS_ADMIN)
 	if err != nil {
-		tb.Fatal("Can't switch namespace:", err)
+		tb.Fatal(err)
 	}
 }
 
@@ -172,12 +171,12 @@ func Listen(tb testing.TB, netns ns.NetNS, network, address string) (sys syscall
 			tb.Fatal("Don't know how to make address for", network)
 		}
 	}
-	JoinNetNS(tb, netns, func() {
+	JoinNetNS(tb, netns, func() error {
 		switch network {
 		case "tcp", "tcp4", "tcp6", "unix", "unixpacket":
 			ln, err := net.Listen(network, address)
 			if err != nil {
-				tb.Fatal("Can't listen:", err)
+				return err
 			}
 			sys = ln.(syscall.Conn)
 
@@ -188,7 +187,7 @@ func Listen(tb testing.TB, netns ns.NetNS, network, address string) (sys syscall
 		case "udp", "udp4", "udp6", "unixgram":
 			conn, err := net.ListenPacket(network, address)
 			if err != nil {
-				tb.Fatal("Can't listen:", err)
+				return err
 			}
 			sys = conn.(syscall.Conn)
 
@@ -197,8 +196,10 @@ func Listen(tb testing.TB, netns ns.NetNS, network, address string) (sys syscall
 			})
 
 		default:
-			tb.Fatal("Unsupported network:", network)
+			return fmt.Errorf("unsupported network: %s", network)
 		}
+
+		return nil
 	})
 
 	return
@@ -270,7 +271,7 @@ func echo(tb testing.TB, network string, sys syscall.Conn, name string) {
 func CanDial(tb testing.TB, netns ns.NetNS, network, address string) (ok bool) {
 	tb.Helper()
 
-	JoinNetNS(tb, netns, func() {
+	JoinNetNS(tb, netns, func() error {
 		tb.Helper()
 
 		_, conn := dial(tb, network, address)
@@ -278,6 +279,8 @@ func CanDial(tb testing.TB, netns ns.NetNS, network, address string) (ok bool) {
 			ok = true
 			conn.(io.Closer).Close()
 		}
+
+		return nil
 	})
 
 	return
@@ -291,10 +294,9 @@ func CanDialName(tb testing.TB, netns ns.NetNS, network, address, name string) {
 		conn     syscall.Conn
 		haveName string
 	)
-	JoinNetNS(tb, netns, func() {
-		tb.Helper()
-
+	JoinNetNS(tb, netns, func() error {
 		haveName, conn = dial(tb, network, address)
+		return nil
 	})
 	if conn == nil {
 		tb.Fatal("Can't dial", network, address)
@@ -310,14 +312,13 @@ func CanDialName(tb testing.TB, netns ns.NetNS, network, address, name string) {
 func Dial(tb testing.TB, netns ns.NetNS, network, address string) (conn syscall.Conn) {
 	tb.Helper()
 
-	JoinNetNS(tb, netns, func() {
-		tb.Helper()
-
+	JoinNetNS(tb, netns, func() error {
 		_, conn = dial(tb, network, address)
-		if conn == nil {
-			tb.Fatal("Can't dial", network, address)
-		}
+		return nil
 	})
+	if conn == nil {
+		tb.Fatal("Can't dial:", network, address)
+	}
 
 	return
 }

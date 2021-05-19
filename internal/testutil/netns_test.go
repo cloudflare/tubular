@@ -20,16 +20,15 @@ func TestNetNS(t *testing.T) {
 		t.Fatal("NewNetNS doesn't create a new network namespace")
 	}
 
-	JoinNetNS(t, newNs, func() {
-		current, err := ns.GetCurrentNS()
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if getInode(t, current.Path()) != newInode {
-			t.Fatal("JoinNetNS() doesn't change network namespace")
-		}
+	var current ns.NetNS
+	JoinNetNS(t, newNs, func() (err error) {
+		current, err = ns.GetCurrentNS()
+		return
 	})
+
+	if getInode(t, current.Path()) != newInode {
+		t.Fatal("JoinNetNS() doesn't change network namespace")
+	}
 }
 
 func TestCanDial(t *testing.T) {

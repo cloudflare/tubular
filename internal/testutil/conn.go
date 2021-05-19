@@ -134,22 +134,20 @@ func ReuseportGroup(tb testing.TB, netns ns.NetNS, network string, n int) (conns
 		addr = "[::1]"
 	}
 
-	var err error
-	JoinNetNS(tb, netns, func() {
-		var conn syscall.Conn
-		var port int
-		conn, port, err = fn(addr + ":0")
+	JoinNetNS(tb, netns, func() error {
+		conn, port, err := fn(addr + ":0")
 		if err != nil {
-			return
+			return err
 		}
 		conns = []syscall.Conn{conn}
 		for i := 1; i < n; i++ {
 			conn, _, err = fn(fmt.Sprintf("%s:%d", addr, port))
 			if err != nil {
-				return
+				return err
 			}
 			conns = append(conns, conn)
 		}
+		return nil
 	})
 
 	return
