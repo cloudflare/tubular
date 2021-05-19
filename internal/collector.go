@@ -50,8 +50,8 @@ func NewCollector(logger log.Logger, netnsPath, bpfFsPath string) *Collector {
 			nil,
 		),
 		prometheus.NewDesc(
-			"bindings_total",
-			"The number of bindings.",
+			"bindings",
+			"The number of bindings for each label.",
 			[]string{"label", "domain", "protocol"},
 			nil,
 		),

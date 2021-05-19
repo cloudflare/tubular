@@ -53,8 +53,8 @@ func TestCollector(t *testing.T) {
 				`lookups_total{domain="ipv6", label="foo", protocol="tcp"}`:                     i + 1,
 				`misses_total{domain="ipv4", label="bar", protocol="udp"}`:                      0,
 				`misses_total{domain="ipv6", label="foo", protocol="tcp"}`:                      i + 1,
-				`bindings_total{domain="ipv4", label="bar", protocol="udp"}`:                    1,
-				`bindings_total{domain="ipv6", label="foo", protocol="tcp"}`:                    1,
+				`bindings{domain="ipv4", label="bar", protocol="udp"}`:                          1,
+				`bindings{domain="ipv6", label="foo", protocol="tcp"}`:                          1,
 				`destination_has_socket{domain="ipv4", label="bar", protocol="udp"}`:            1,
 				`destination_has_socket{domain="ipv6", label="foo", protocol="tcp"}`:            0,
 			}
@@ -77,8 +77,8 @@ func TestCollector(t *testing.T) {
 				`lookups_total{domain="ipv6", label="foo", protocol="tcp"}`:                     2,
 				`misses_total{domain="ipv4", label="bar", protocol="udp"}`:                      0,
 				`misses_total{domain="ipv6", label="foo", protocol="tcp"}`:                      2,
-				`bindings_total{domain="ipv4", label="bar", protocol="udp"}`:                    1,
-				`bindings_total{domain="ipv6", label="foo", protocol="tcp"}`:                    1,
+				`bindings{domain="ipv4", label="bar", protocol="udp"}`:                          1,
+				`bindings{domain="ipv6", label="foo", protocol="tcp"}`:                          1,
 				`destination_has_socket{domain="ipv4", label="bar", protocol="udp"}`:            1,
 				`destination_has_socket{domain="ipv6", label="foo", protocol="tcp"}`:            0,
 			}
