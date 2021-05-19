@@ -12,7 +12,6 @@ import (
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
-	"github.com/containernetworking/plugins/pkg/ns"
 	"golang.org/x/sys/unix"
 	"kernel.org/pub/linux/libs/security/libcap/cap"
 
@@ -39,7 +38,6 @@ var CreateCapabilities = []cap.Value{cap.SYS_ADMIN, cap.NET_ADMIN}
 // Dispatcher manipulates the socket dispatch data plane.
 type Dispatcher struct {
 	stateDir     *lock.File
-	netns        ns.NetNS
 	Path         string
 	bindings     *ebpf.Map
 	destinations *destinations
@@ -60,7 +58,7 @@ func CreateDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispat
 	if err != nil {
 		return nil, err
 	}
-	defer closeOnError(netns)
+	defer netns.Close()
 
 	tempDir, err := ioutil.TempDir(filepath.Dir(pinPath), "tubular-*")
 	if err != nil {
@@ -113,7 +111,7 @@ func CreateDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispat
 	}
 
 	dests := newDestinations(objs.dispatcherMaps)
-	return &Dispatcher{dir, netns, pinPath, objs.Bindings, dests, logger}, nil
+	return &Dispatcher{dir, pinPath, objs.Bindings, dests, logger}, nil
 }
 
 func adjustPermissions(path string) error {
@@ -161,7 +159,7 @@ func OpenDispatcher(logger log.Logger, netnsPath, bpfFsPath string, readOnly boo
 	if err != nil {
 		return nil, err
 	}
-	defer closeOnError(netns)
+	defer netns.Close()
 
 	var dir *lock.File
 	if readOnly {
@@ -225,7 +223,7 @@ func OpenDispatcher(logger log.Logger, netnsPath, bpfFsPath string, readOnly boo
 	defer closeOnError(&maps)
 
 	dests := newDestinations(maps)
-	return &Dispatcher{dir, netns, pinPath, maps.Bindings, dests, logger}, nil
+	return &Dispatcher{dir, pinPath, maps.Bindings, dests, logger}, nil
 }
 
 func loadPatchedDispatcher(to interface{}, opts *ebpf.CollectionOptions) (*ebpf.CollectionSpec, error) {
@@ -337,9 +335,6 @@ func (d *Dispatcher) Close() error {
 	}
 	if err := d.destinations.Close(); err != nil {
 		return fmt.Errorf("can't close destination IDs: %x", err)
-	}
-	if err := d.netns.Close(); err != nil {
-		return fmt.Errorf("can't close netns handle: %s", err)
 	}
 	if err := d.stateDir.Close(); err != nil {
 		return fmt.Errorf("can't close state directory handle: %s", err)

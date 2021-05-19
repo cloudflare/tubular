@@ -15,7 +15,7 @@ import (
 
 func TestCollector(t *testing.T) {
 	netns := testutil.NewNetNS(t)
-	dp := mustCreateDispatcher(t, nil, netns.Path())
+	dp := mustCreateDispatcher(t, nil, netns)
 
 	mustAddBinding(t, dp, mustNewBinding(t, "foo", TCP, "::1/64", 8080))
 	mustAddBinding(t, dp, mustNewBinding(t, "bar", UDP, "127.0.0.1", 443))
@@ -35,7 +35,7 @@ func TestCollector(t *testing.T) {
 
 	// Register an unconnected UDP socket and connect it afterwards to
 	// trigger bad-socket.
-	dp = mustOpenDispatcher(t, nil, netns.Path())
+	dp = mustOpenDispatcher(t, nil, netns)
 	conn := testutil.Listen(t, netns, "udp4", "").(*net.UDPConn)
 	mustRegisterSocket(t, dp, "bar", conn)
 	testutil.ConnectSocket(t, conn)
@@ -92,7 +92,7 @@ func TestCollector(t *testing.T) {
 
 func TestLintCollector(t *testing.T) {
 	netns := testutil.NewNetNS(t)
-	dp := mustCreateDispatcher(t, nil, netns.Path())
+	dp := mustCreateDispatcher(t, nil, netns)
 	dp.Close()
 
 	c := NewCollector(log.Discard, netns.Path(), "/sys/fs/bpf")
