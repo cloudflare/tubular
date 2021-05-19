@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -28,6 +29,15 @@ func register(e *env, args ...string) error {
 
 	if err := set.Parse(args); err != nil {
 		return err
+	}
+
+	// Use the current thread's netns, unit tests don't work well with
+	// /proc/self/ns/net.
+	threadNetNSPath := fmt.Sprintf("/proc/%d/task/%d/ns/net", os.Getpid(), unix.Gettid())
+	if ok, err := inodesEqual(e.netns, threadNetNSPath); err != nil {
+		return err
+	} else if !ok {
+		return errors.New("can't register sockets from a different namespace")
 	}
 
 	label := set.Arg(0)
@@ -135,4 +145,19 @@ func socketCookie(conn syscall.Conn) (internal.SocketCookie, error) {
 		return 0, fmt.Errorf("getsockopt(SO_COOKIE): %v", err)
 	}
 	return internal.SocketCookie(cookie), nil
+}
+
+func inodesEqual(a, b string) (bool, error) {
+	var stat unix.Stat_t
+	if err := unix.Stat(a, &stat); err != nil {
+		return false, err
+	}
+	aIno := stat.Ino
+
+	if err := unix.Stat(b, &stat); err != nil {
+		return false, err
+	}
+	bIno := stat.Ino
+
+	return aIno == bIno, nil
 }

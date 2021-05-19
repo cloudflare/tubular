@@ -138,9 +138,15 @@ type (
 
 // tubectlTestCall represents a call to tubectl main function from a test.
 type tubectlTestCall struct {
+	// The network namespace from which to load the dispatcher.
 	NetNS ns.NetNS
-	Cmd   string
-	Args  []string
+
+	// The network namespace from which to execute the test call. Defaults to
+	// the current namespace.
+	ExecNS ns.NetNS
+
+	Cmd  string
+	Args []string
 
 	// Env specifies the enviroment variables for tubectl test call, which
 	// values can be retrived with env.getenv. os.Getenv is unaffected by this
@@ -163,7 +169,7 @@ type tubectlTestCall struct {
 
 func (tc *tubectlTestCall) Run(tb testing.TB) (*bytes.Buffer, error) {
 	output := new(log.Buffer)
-	if err := tc.run(context.Background(), output); err != nil {
+	if err := tc.run(tb, context.Background(), output); err != nil {
 		return nil, err
 	}
 
@@ -171,7 +177,7 @@ func (tc *tubectlTestCall) Run(tb testing.TB) (*bytes.Buffer, error) {
 	return &output.Buffer, nil
 }
 
-func (tc *tubectlTestCall) run(ctx context.Context, output log.Logger) error {
+func (tc *tubectlTestCall) run(tb testing.TB, ctx context.Context, output log.Logger) error {
 	env := env{
 		stdout: output,
 		stderr: output,
@@ -201,13 +207,17 @@ func (tc *tubectlTestCall) run(ctx context.Context, output log.Logger) error {
 	}
 	args = append(args, tc.Args...)
 
-	if len(tc.Effective) > 0 {
-		return testutil.WithCapabilities(func() error {
-			return tubectl(env, args)
-		}, tc.Effective...)
+	exec := tc.ExecNS
+	if exec == nil {
+		exec = testutil.CurrentNetNS(tb)
 	}
 
-	return tubectl(env, args)
+	var err error
+	testutil.JoinNetNS(tb, exec, func() error {
+		err = tubectl(env, args)
+		return nil
+	}, tc.Effective...)
+	return err
 }
 
 func (tc *tubectlTestCall) MustRun(tb testing.TB) *bytes.Buffer {
@@ -229,7 +239,7 @@ func (tc *tubectlTestCall) Start(tb testing.TB) (stop func()) {
 	go func() {
 		defer close(done)
 
-		if err := tc.run(ctx, log.Discard); err != nil {
+		if err := tc.run(tb, ctx, log.Discard); err != nil {
 			select {
 			case <-ctx.Done():
 			default:

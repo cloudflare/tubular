@@ -31,6 +31,7 @@ func TestSingleRegisterCommand(t *testing.T) {
 
 		tubectl := tubectlTestCall{
 			NetNS:    netns,
+			ExecNS:   netns,
 			Cmd:      "register",
 			Args:     args,
 			Env:      env,
@@ -256,6 +257,7 @@ func TestSequenceRegisterDifferentSocket(t *testing.T) {
 
 		tubectl := tubectlTestCall{
 			NetNS:    netns,
+			ExecNS:   netns,
 			Cmd:      "register",
 			Args:     []string{"my-service"},
 			Env:      testEnv{"LISTEN_FDS": "1"},
@@ -277,4 +279,21 @@ func TestSequenceUnregisterUnregister(t *testing.T) {
 }
 
 func TestSequenceRegisterUnregisterReregister(t *testing.T) {
+}
+
+func TestRegisterRefuseDifferentNamespace(t *testing.T) {
+	netns := mustReadyNetNS(t)
+	sk := testutil.Listen(t, netns, "tcp4", "")
+
+	tubectl := tubectlTestCall{
+		NetNS: netns,
+		// ExecNS is not set
+		Cmd:      "register",
+		Args:     []string{"my-service"},
+		Env:      testEnv{"LISTEN_FDS": "1"},
+		ExtraFds: testFds{sk},
+	}
+	if _, err := tubectl.Run(t); err == nil {
+		t.Error("Didn't refuse a socket from a different namespace")
+	}
 }
