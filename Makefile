@@ -2,7 +2,6 @@ VERSION := $(shell git describe --always --dirty="-dev")
 ARCH    ?= amd64
 GO      ?= go
 
-export GOPROXY ?= off
 export GOFLAGS += -mod=vendor -ldflags=-X=main.Version=$(VERSION)
 export CLANG   ?= clang-9
 export MAKEDIR  = $(CURDIR)
@@ -32,13 +31,11 @@ tubular_$(VERSION)_%.deb: clean all
 
 .PHONY: test
 test:
-	$(GO) test -race -bench . -benchtime=1x -v ./...
+	GO=$(GO) ./run-tests.sh 5.10.8 -coverpkg=./... -coverprofile=coverage.out -count 1 $(TESTFLAGS) ./...
 
 .PHONY: cover
 cover:
-	A="$$(mktemp)"; \
-		$(GO) test -coverpkg=./... -coverprofile="$$A" ./...; \
-		$(GO) tool cover -html "$$A" -o coverage.html
+	$(GO) tool cover -html coverage.out -o coverage.html
 
 .PHONY: build-tests
 build-tests:
