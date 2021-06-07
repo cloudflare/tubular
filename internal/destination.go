@@ -230,6 +230,30 @@ func (dests *destinations) AddSocket(dest *Destination, conn syscall.Conn) (crea
 	return
 }
 
+func (dests *destinations) RemoveSocket(dest *Destination) error {
+	key, err := newDestinationKey(dest)
+	if err != nil {
+		return err
+	}
+
+	var alloc destinationAlloc
+	if err := dests.allocs.Lookup(key, &alloc); err != nil {
+		return err
+	}
+
+	if err := dests.sockets.Delete(alloc.ID); err != nil {
+		return err
+	}
+
+	if alloc.Count == 0 {
+		if err := dests.allocs.Delete(key); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (dests *destinations) HasID(dest *Destination, want destinationID) bool {
 	key, err := newDestinationKey(dest)
 	if err != nil {

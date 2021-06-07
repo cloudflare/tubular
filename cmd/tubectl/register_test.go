@@ -233,22 +233,6 @@ func makeConnectedSocket(tb testing.TB, netns ns.NetNS, network string) syscall.
 	return testutil.Dial(tb, netns, network, laddr.String())
 }
 
-// Tests for simple unregister
-
-func TestUnregisterFailsWithoutLabelOrSocketCookie(t *testing.T) {
-}
-
-func TestUnregisterFailsForInvalidLabel(t *testing.T) {
-}
-
-func TestUnregisterFailsForInvalidSocketCookie(t *testing.T) {
-}
-
-func TestUnregisterValidLabelAndSocketCookie(t *testing.T) {
-}
-
-// Tests for sequences of register/unregister
-
 func TestSequenceRegisterDifferentSocket(t *testing.T) {
 	netns := mustReadyNetNS(t)
 
@@ -273,12 +257,6 @@ func TestSequenceRegisterDifferentSocket(t *testing.T) {
 
 		// TODO: Check registered socket cookie
 	}
-}
-
-func TestSequenceUnregisterUnregister(t *testing.T) {
-}
-
-func TestSequenceRegisterUnregisterReregister(t *testing.T) {
 }
 
 func TestRegisterRefuseDifferentNamespace(t *testing.T) {

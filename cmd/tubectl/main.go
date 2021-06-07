@@ -109,6 +109,7 @@ var cmds = []struct {
 	{"list", list},
 	{"metrics", metrics},
 	{"register", register},
+	{"unregister", unregister},
 }
 
 func tubectl(e env, args []string) (err error) {
