@@ -137,11 +137,44 @@ func metrics(e *env, args ...string) error {
 		return err
 	}
 
+	// Create an instance of the prometheus registry and register all collectors.
+	reg, err := tubularRegistry(e)
+	if err != nil {
+		return err
+	}
+
+	// Create TCP listener used for metrics endpoint.
+	ln, err := e.listen("tcp", fmt.Sprintf("%s:%s", address, port))
+	if err != nil {
+		return err
+	}
+	defer ln.Close()
+
+	e.stdout.Log("Listening on", ln.Addr().String())
+
+	// Create an instance of the metrics server
+	srv := metricsServer(e.ctx, reg, timeout)
+
+	// Close the http server when the env context is closed.
+	go func() {
+		<-e.ctx.Done()
+		srv.Close()
+	}()
+
+	// Block on serving the metrics http server.
+	if err := srv.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
+		return fmt.Errorf("serve http: %s", err)
+	}
+
+	return nil
+}
+
+func tubularRegistry(e *env) (*prometheus.Registry, error) {
 	reg := prometheus.NewRegistry()
 	tubularReg := prometheus.WrapRegistererWithPrefix("tubular_", reg)
 	coll := internal.NewCollector(e.stderr, e.netns, e.bpfFs)
 	if err := tubularReg.Register(coll); err != nil {
-		return fmt.Errorf("register collector: %s", err)
+		return nil, fmt.Errorf("register collector: %s", err)
 	}
 
 	buildInfo := prometheus.NewGauge(prometheus.GaugeOpts{
@@ -154,37 +187,21 @@ func metrics(e *env, args ...string) error {
 	})
 	buildInfo.Set(1)
 	if err := reg.Register(buildInfo); err != nil {
-		return fmt.Errorf("register build info: %s", err)
+		return nil, fmt.Errorf("register build info: %s", err)
 	}
+	return reg, nil
+}
 
-	ln, err := e.listen("tcp", fmt.Sprintf("%s:%s", address, port))
-	if err != nil {
-		return err
-	}
-	defer ln.Close()
-
-	e.stdout.Log("Listening on", ln.Addr().String())
-
+func metricsServer(ctx context.Context, reg *prometheus.Registry, t *time.Duration) http.Server {
 	handler := promhttp.HandlerFor(reg, promhttp.HandlerOpts{
 		ErrorHandling:       promhttp.HTTPErrorOnError,
 		MaxRequestsInFlight: 1,
-		Timeout:             *timeout,
+		Timeout:             *t,
 	})
 
-	srv := http.Server{
+	return http.Server{
 		Handler:     handler,
-		ReadTimeout: *timeout,
-		BaseContext: func(net.Listener) context.Context { return e.ctx },
+		ReadTimeout: *t,
+		BaseContext: func(net.Listener) context.Context { return ctx },
 	}
-
-	go func() {
-		<-e.ctx.Done()
-		srv.Close()
-	}()
-
-	if err := srv.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
-		return fmt.Errorf("serve http: %s", err)
-	}
-
-	return nil
 }
