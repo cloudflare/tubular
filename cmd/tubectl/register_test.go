@@ -2,9 +2,11 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"net"
 	"os"
+	"path/filepath"
 	"syscall"
 	"testing"
 
@@ -134,6 +136,82 @@ func TestSingleRegisterCommand(t *testing.T) {
 			dp := mustOpenDispatcher(t, netns)
 			check(t, dp, testFds{fds[1]})
 		})
+	}
+}
+
+func TestRegisterPID(t *testing.T) {
+	netns := mustReadyNetNS(t)
+
+	type filer interface {
+		File() (*os.File, error)
+	}
+
+	conn := testutil.Listen(t, netns, "tcp", "127.0.0.1:8080")
+	file, err := conn.(filer).File()
+	if err != nil {
+		t.Fatal("File:", err)
+	}
+	defer file.Close()
+
+	var child int
+	testutil.JoinNetNS(t, netns, func() error {
+		child = testutil.SpawnChildWithFiles(t, file)
+		return nil
+	})
+	flags := testutil.FileStatusFlags(t, file)
+
+	t.Run("pid", func(t *testing.T) {
+		tubectl := tubectlTestCall{
+			NetNS:  netns,
+			ExecNS: netns,
+			Cmd:    "register-pid",
+			Args:   []string{fmt.Sprint(child), "my-service", "tcp", "127.0.0.1", "8080"},
+		}
+		tubectl.MustRun(t)
+	})
+
+	t.Run("file", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "pid")
+		err := ioutil.WriteFile(path, []byte(fmt.Sprintln(child)), 0600)
+		if err != nil {
+			t.Fatal("Can't write pid file:", err)
+		}
+
+		tubectl := tubectlTestCall{
+			NetNS:  netns,
+			ExecNS: netns,
+			Cmd:    "register-pid",
+			Args:   []string{path, "my-service", "tcp", "127.0.0.1", "8080"},
+		}
+		tubectl.MustRun(t)
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		tubectl := tubectlTestCall{
+			NetNS:  netns,
+			ExecNS: netns,
+			Cmd:    "register-pid",
+			Args:   []string{fmt.Sprint(child), "my-service", "udp", "127.0.0.1", "80"},
+		}
+		if _, err := tubectl.Run(t); !errors.Is(err, errBadArg) {
+			t.Error("Expected errBadArg, got", err)
+		}
+	})
+
+	t.Run("wrong netns", func(t *testing.T) {
+		tubectl := tubectlTestCall{
+			NetNS: netns,
+			// No ExecNS
+			Cmd:  "register-pid",
+			Args: []string{fmt.Sprint(child), "my-service", "udp", "127.0.0.1", "8080"},
+		}
+		if _, err := tubectl.Run(t); err == nil {
+			t.Error("Expected error")
+		}
+	})
+
+	if newFlags := testutil.FileStatusFlags(t, file); newFlags != flags {
+		t.Errorf("File status flags changed: 0x%x != 0x%x", newFlags, flags)
 	}
 }
 

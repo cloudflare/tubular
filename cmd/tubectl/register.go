@@ -3,13 +3,18 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"strconv"
+	"strings"
 	"syscall"
 
 	"code.cfops.it/sys/tubular/internal"
+	"code.cfops.it/sys/tubular/internal/pidfd"
 	"code.cfops.it/sys/tubular/internal/sysconn"
+
 	"golang.org/x/sys/unix"
+	"inet.af/netaddr"
 )
 
 const (
@@ -19,13 +24,15 @@ const (
 func register(e *env, args ...string) error {
 	set := e.newFlagSet("register", "label")
 	set.Description = `
-		Registers sockets passed down from parent under given label. Usually
-		used together with SystemD socket activation, as it expects the number
-		of FDs in LISTEN_FDS. LISTEN_PID is ignored, so is LISTEN_FDNAMES.
+		Register sockets under the given label.
 
-		If multiple sockets are passed, the behaviour is as follows:
-		- Only the first socket of each passed reuseport group is registered
-		- Later (aka higher fd number) sockets overwrite lower ones.`
+		Used together with systemd socket activation, it expects the
+		number of sockets in LISTEN_FDS. LISTEN_PID and LISTEN_FDNAMES are
+		ignored.
+
+		Examples:
+		  # Register all sockets passed from systemd under label foo
+		  $ tubectl register foo`
 
 	if err := set.Parse(args); err != nil {
 		return err
@@ -33,37 +40,97 @@ func register(e *env, args ...string) error {
 
 	// Use the current thread's netns, unit tests don't work well with
 	// /proc/self/ns/net.
-	threadNetNSPath := fmt.Sprintf("/proc/%d/task/%d/ns/net", os.Getpid(), unix.Gettid())
-	if ok, err := inodesEqual(e.netns, threadNetNSPath); err != nil {
+	targetNSPath := fmt.Sprintf("/proc/%d/task/%d/ns/net", os.Getpid(), unix.Gettid())
+	if err := namespacesEqual(e.netns, targetNSPath); err != nil {
 		return err
-	} else if !ok {
-		return errors.New("can't register sockets from a different namespace")
 	}
 
 	label := set.Arg(0)
 
-	files, err := listenFds(e, label)
+	files, err := listenFds(e, sysconn.FirstReuseport())
 	if err != nil {
 		return err
 	}
+
 	defer func() {
 		for _, f := range files {
 			f.Close()
 		}
 	}()
 
-	if len(files) == 0 {
-		return fmt.Errorf("no sockets passed: %w", errBadArg)
+	return registerFiles(e, label, files)
+}
+
+func registerPID(e *env, args ...string) error {
+	set := e.newFlagSet("register-pid", "pid", "label", "protocol", "ip", "port")
+	set.Description = `
+		Register sockets from a process under the given label.
+
+		The file descriptors of the target process will be enumerated to find
+		matching sockets according to protocol, ip and port.
+
+		Examples:
+			# Register all supported sockets from the process with pid 12345
+			$ tubectl register-pid 12345 foo tcp 127.0.0.1 80
+
+			# Read the pid from a file
+			$ tubectl register-pid /path/to.pid foo tcp 127.0.0.1 80`
+
+	if err := set.Parse(args); err != nil {
+		return err
 	}
 
-	conns := make([]syscall.Conn, 0, len(files))
-	for _, file := range files {
-		conns = append(conns, file)
-	}
-
-	conns, err = sysconn.Filter(conns, sysconn.FirstReuseport())
+	pid, err := strconv.ParseInt(set.Arg(0), 10, 32)
 	if err != nil {
-		return fmt.Errorf("filter reuseport: %w", err)
+		pidFile, pidErr := ioutil.ReadFile(set.Arg(0))
+		if pidErr == nil {
+			pid, err = strconv.ParseInt(strings.Trim(string(pidFile), "\r\n"), 10, 32)
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("invalid pid %q: %s", set.Arg(0), err)
+	}
+
+	if err := namespacesEqual(e.netns, fmt.Sprintf("/proc/%d/ns/net", pid)); err != nil {
+		return err
+	}
+
+	label := set.Arg(1)
+	protocol := set.Arg(2)
+
+	ip, err := netaddr.ParseIP(set.Arg(3))
+	if err != nil {
+		return fmt.Errorf("invalid IP %q: %s", set.Arg(3), err)
+	}
+
+	port, err := strconv.ParseUint(set.Arg(4), 10, 16)
+	if err != nil {
+		return fmt.Errorf("invalid port %q: %s", set.Arg(4), err)
+	}
+
+	filter := []sysconn.Predicate{
+		sysconn.IgnoreENOTSOCK(sysconn.InetListener(protocol)),
+		sysconn.LocalAddress(ip, int(port)),
+		sysconn.FirstReuseport(),
+	}
+
+	files, err := pidfd.Files(int(pid), filter...)
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		for _, f := range files {
+			f.Close()
+		}
+	}()
+
+	return registerFiles(e, label, files)
+}
+
+func registerFiles(e *env, label string, files []*os.File) error {
+	if len(files) == 0 {
+		return fmt.Errorf("no sockets: %w", errBadArg)
 	}
 
 	dp, err := e.openDispatcher(false)
@@ -73,8 +140,8 @@ func register(e *env, args ...string) error {
 	defer dp.Close()
 
 	registered := make(map[internal.Destination]bool)
-	for _, conn := range conns {
-		dst, created, err := dp.RegisterSocket(label, conn)
+	for _, file := range files {
+		dst, created, err := dp.RegisterSocket(label, file)
 		if err != nil {
 			return fmt.Errorf("register fd: %w", err)
 		}
@@ -91,7 +158,7 @@ func register(e *env, args ...string) error {
 			msg = fmt.Sprintf("updated destination %s", dst.String())
 		}
 
-		cookie, _ := socketCookie(conn)
+		cookie, _ := socketCookie(file)
 		e.stdout.Logf("registered socket %s: %s\n", cookie, msg)
 	}
 
@@ -102,10 +169,7 @@ func register(e *env, args ...string) error {
 // activation. Only LISTEN_FDS environment variable is taken into
 // account. LISTEN_PID is ignored. LISTEN_FDNAMES are also ignored, name passed
 // as an argument is used instead.  See sd_listen_fds(3) man-page for more info.
-//
-// It is considered an error not exactly one FD has been passed the process,
-// i.e. LISTEN_FDS != 1.
-func listenFds(e *env, name string) (res []*os.File, err error) {
+func listenFds(e *env, p sysconn.Predicate) (res []*os.File, err error) {
 	defer func() {
 		if err == nil {
 			return
@@ -125,11 +189,17 @@ func listenFds(e *env, name string) (res []*os.File, err error) {
 	}
 
 	for i := 0; i < nfds; i++ {
-		file := e.newFile(uintptr(listenFdsStart+i), name)
+		file := e.newFile(uintptr(listenFdsStart+i), "")
 		if file == nil {
 			return nil, errBadFD // Can't happen on Linux if 0 <= fd <= MaxInt
 		}
-
+		if keep, err := sysconn.FilterConn(file, p); err != nil {
+			file.Close()
+			return nil, err
+		} else if !keep {
+			file.Close()
+			continue
+		}
 		res = append(res, file)
 	}
 	return res, nil
@@ -147,17 +217,21 @@ func socketCookie(conn syscall.Conn) (internal.SocketCookie, error) {
 	return internal.SocketCookie(cookie), nil
 }
 
-func inodesEqual(a, b string) (bool, error) {
+func namespacesEqual(want, have string) error {
 	var stat unix.Stat_t
-	if err := unix.Stat(a, &stat); err != nil {
-		return false, err
+	if err := unix.Stat(want, &stat); err != nil {
+		return err
 	}
-	aIno := stat.Ino
+	wantIno := stat.Ino
 
-	if err := unix.Stat(b, &stat); err != nil {
-		return false, err
+	if err := unix.Stat(have, &stat); err != nil {
+		return err
 	}
-	bIno := stat.Ino
+	haveIno := stat.Ino
 
-	return aIno == bIno, nil
+	if wantIno != haveIno {
+		return errors.New("can't register sockets from different network namespace")
+	}
+
+	return nil
 }

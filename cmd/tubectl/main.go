@@ -109,6 +109,7 @@ var cmds = []struct {
 	{"list", list},
 	{"metrics", metrics},
 	{"register", register},
+	{"register-pid", registerPID},
 	{"unregister", unregister},
 }
 
