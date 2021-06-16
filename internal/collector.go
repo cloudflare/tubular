@@ -115,7 +115,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 		)
 	}
 
-	for binding, metric := range metrics.Bindings {
+	for binding, count := range metrics.Bindings {
 		commonLabels := []string{
 			binding.Label,
 			binding.Domain.String(),
@@ -125,7 +125,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 		ch <- prometheus.MustNewConstMetric(
 			c.bindings,
 			prometheus.GaugeValue,
-			float64(metric),
+			float64(count),
 			commonLabels...,
 		)
 	}

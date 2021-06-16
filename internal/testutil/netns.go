@@ -57,6 +57,22 @@ func NewNetNS(tb testing.TB, networks ...string) ns.NetNS {
 	}
 }
 
+func SetupLoopback() error {
+	ip := exec.Command("/sbin/ip", "link", "set", "dev", "lo", "up")
+	ip.SysProcAttr = &syscall.SysProcAttr{
+		AmbientCaps: []uintptr{
+			uintptr(cap.NET_ADMIN),
+		},
+	}
+	if out, err := ip.CombinedOutput(); err != nil {
+		if len(out) > 0 {
+			fmt.Println(string(out))
+		}
+		return err
+	}
+	return nil
+}
+
 func setupNetNS(networks []string, result chan<- ns.NetNS, quit <-chan struct{}) error {
 	if err := unix.Unshare(unix.CLONE_NEWNET); err != nil {
 		return fmt.Errorf("unshare: %s", err)
@@ -81,12 +97,7 @@ func setupNetNS(networks []string, result chan<- ns.NetNS, quit <-chan struct{})
 		},
 	}
 
-	ip := exec.Command("/sbin/ip", "link", "set", "dev", "lo", "up")
-	ip.SysProcAttr = caps
-	if out, err := ip.CombinedOutput(); err != nil {
-		if len(out) > 0 {
-			fmt.Println(string(out))
-		}
+	if err := SetupLoopback(); err != nil {
 		return fmt.Errorf("set up loopback: %s", err)
 	}
 

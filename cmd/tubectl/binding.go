@@ -86,17 +86,17 @@ func bindingFromArgs(args []string) (*internal.Binding, error) {
 	return internal.NewBinding(args[0], proto, args[2], uint16(port))
 }
 
+type bindingJSON struct {
+	Label  string           `json:"label"`
+	Prefix netaddr.IPPrefix `json:"prefix"`
+	Port   *uint16          `json:"port"`
+}
+
+type configJSON struct {
+	Bindings []bindingJSON `json:"bindings"`
+}
+
 func loadBindings(e *env, args ...string) error {
-	type bindingJSON struct {
-		Label  string           `json:"label"`
-		Prefix netaddr.IPPrefix `json:"prefix"`
-		Port   *uint16          `json:"port"`
-	}
-
-	type configJSON struct {
-		Bindings []bindingJSON `json:"bindings"`
-	}
-
 	set := newFlagSet(e.stderr, "load-bindings", "file")
 	set.Description = func() {
 		port := uint16(80)
@@ -128,9 +128,25 @@ func loadBindings(e *env, args ...string) error {
 		return errBadArg
 	}
 
-	file, err := os.Open(set.Arg(0))
+	bindings, err := loadConfig(set.Arg(0))
 	if err != nil {
 		return err
+	}
+
+	dp, err := e.openDispatcher(false)
+	if err != nil {
+		return err
+	}
+	defer dp.Close()
+
+	_, err = dp.ReplaceBindings(bindings)
+	return err
+}
+
+func loadConfig(path string) (internal.Bindings, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
 	}
 	defer file.Close()
 
@@ -138,13 +154,13 @@ func loadBindings(e *env, args ...string) error {
 	decoder := json.NewDecoder(file)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&config); err != nil {
-		return fmt.Errorf("%s: %s", file.Name(), err)
+		return nil, fmt.Errorf("%s: %s", file.Name(), err)
 	}
 
-	var bindings []*internal.Binding
+	var bindings internal.Bindings
 	for _, bind := range config.Bindings {
 		if bind.Port == nil {
-			return fmt.Errorf("binding in json is missing port: %v", bind)
+			return nil, fmt.Errorf("binding in json is missing port: %v", bind)
 		}
 
 		bindings = append(bindings,
@@ -163,12 +179,5 @@ func loadBindings(e *env, args ...string) error {
 		)
 	}
 
-	dp, err := e.openDispatcher(false)
-	if err != nil {
-		return err
-	}
-	defer dp.Close()
-
-	_, err = dp.ReplaceBindings(bindings)
-	return err
+	return bindings, nil
 }

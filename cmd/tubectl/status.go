@@ -6,14 +6,17 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"runtime"
 	"sort"
 	"text/tabwriter"
 	"time"
 
 	"code.cfops.it/sys/tubular/internal"
+	"code.cfops.it/sys/tubular/internal/reachable"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"golang.org/x/sys/unix"
 )
 
 func list(e *env, args ...string) error {
@@ -117,12 +120,16 @@ func sortDestinations(dests []internal.Destination) {
 }
 
 func metrics(e *env, args ...string) error {
-	set := e.newFlagSet("metrics", "address", "port")
+	set := e.newFlagSet("metrics", "address", "port", "--", "bindings-file")
 	set.Description = `
 		Expose metrics in prometheus export format.
+		Given a bindings file, will also perform reachability checks.
 
 		Examples:
 		  $ tubectl metrics 127.0.0.1 8000
+		  OR
+		  $ tubectl metrics 127.0.0.1 8000 /etc/tubular/bindings.json
+		  THEN
 		  $ curl http://127.0.0.1:8000/metrics`
 
 	timeout := set.Duration("timeout", 30*time.Second, "Duration to wait for an HTTP metrics request to complete.")
@@ -132,13 +139,32 @@ func metrics(e *env, args ...string) error {
 
 	address := set.Arg(0)
 	port := set.Arg(1)
+	bindingsPath := set.Arg(2)
 
 	if err := e.setupEnv(); err != nil {
 		return err
 	}
 
+	var bindings internal.Bindings
+	if bindingsPath != "" {
+		// If the netns that we are currently being executed in is not the
+		// same as the one provided through the command args, then exit.
+		// We don't support collecting metrics in a different netns right
+		// now.
+		targetNSPath := fmt.Sprintf("/proc/%d/task/%d/ns/net", os.Getpid(), unix.Gettid())
+		if err := namespacesEqual(e.netns, targetNSPath); err != nil {
+			return err
+		}
+
+		b, err := loadConfig(bindingsPath)
+		if err != nil {
+			return err
+		}
+		bindings = b
+	}
+
 	// Create an instance of the prometheus registry and register all collectors.
-	reg, err := tubularRegistry(e)
+	reg, err := tubularRegistry(e, bindings)
 	if err != nil {
 		return err
 	}
@@ -169,12 +195,20 @@ func metrics(e *env, args ...string) error {
 	return nil
 }
 
-func tubularRegistry(e *env) (*prometheus.Registry, error) {
+func tubularRegistry(e *env, b internal.Bindings) (*prometheus.Registry, error) {
 	reg := prometheus.NewRegistry()
 	tubularReg := prometheus.WrapRegistererWithPrefix("tubular_", reg)
+
 	coll := internal.NewCollector(e.stderr, e.netns, e.bpfFs)
 	if err := tubularReg.Register(coll); err != nil {
 		return nil, fmt.Errorf("register collector: %s", err)
+	}
+
+	if b != nil {
+		reach := reachable.NewReachable(e.stderr, b)
+		if err := tubularReg.Register(reach); err != nil {
+			return nil, fmt.Errorf("register reachability collector: %s", err)
+		}
 	}
 
 	buildInfo := prometheus.NewGauge(prometheus.GaugeOpts{

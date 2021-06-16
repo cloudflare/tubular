@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"code.cfops.it/sys/tubular/internal"
-	"github.com/containernetworking/plugins/pkg/ns"
+	"code.cfops.it/sys/tubular/internal/testutil"
 )
 
 func TestList(t *testing.T) {
@@ -129,12 +129,9 @@ func TestMetrics(t *testing.T) {
 }
 
 func TestMetricsInvalidArgs(t *testing.T) {
-	netns, err := ns.GetCurrentNS()
-	if err != nil {
-		t.Fatal(err)
-	}
+	netns := testutil.CurrentNetNS(t)
 
-	_, err = testTubectl(t, netns, "metrics")
+	_, err := testTubectl(t, netns, "metrics")
 	if err == nil {
 		t.Error("metrics command accepts no arguments")
 	}

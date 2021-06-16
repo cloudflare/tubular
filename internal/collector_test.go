@@ -10,7 +10,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/common/expfmt"
 )
 
 func TestCollector(t *testing.T) {
@@ -28,7 +27,7 @@ func TestCollector(t *testing.T) {
 		t.Fatal("Can't register:", err)
 	}
 
-	metrics := flattenMetrics(t, reg)
+	metrics := testutil.FlattenMetrics(t, reg)
 	if len(metrics) == 0 {
 		t.Error("Expected metrics after bindings are added")
 	}
@@ -59,7 +58,7 @@ func TestCollector(t *testing.T) {
 				`destination_has_socket{domain="ipv6", label="foo", protocol="tcp"}`:            0,
 			}
 
-			if diff := cmp.Diff(want, flattenMetrics(t, reg)); diff != "" {
+			if diff := cmp.Diff(want, testutil.FlattenMetrics(t, reg)); diff != "" {
 				t.Errorf("Metrics don't match (-want +got):\n%s", diff)
 			}
 		}
@@ -83,7 +82,7 @@ func TestCollector(t *testing.T) {
 				`destination_has_socket{domain="ipv6", label="foo", protocol="tcp"}`:            0,
 			}
 
-			if diff := cmp.Diff(want, flattenMetrics(t, reg)); diff != "" {
+			if diff := cmp.Diff(want, testutil.FlattenMetrics(t, reg)); diff != "" {
 				t.Errorf("Metrics don't match (-want +got):\n%s", diff)
 			}
 		}
@@ -105,24 +104,4 @@ func TestLintCollector(t *testing.T) {
 	for _, lint := range lints {
 		t.Errorf("%s: %s", lint.Metric, lint.Text)
 	}
-}
-
-func flattenMetrics(tb testing.TB, g prometheus.Gatherer) map[string]float64 {
-	tb.Helper()
-
-	fams, err := g.Gather()
-	if err != nil {
-		tb.Fatal(err)
-	}
-
-	samples, err := expfmt.ExtractSamples(&expfmt.DecodeOptions{}, fams...)
-	if err != nil {
-		tb.Fatal(err)
-	}
-
-	result := make(map[string]float64)
-	for _, sample := range samples {
-		result[sample.Metric.String()] = float64(sample.Value)
-	}
-	return result
 }
