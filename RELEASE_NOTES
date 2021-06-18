@@ -1,3 +1,11 @@
+2021.6.1
+- 2021-06-10 cmd/tubectl: add register-pid command
+- 2021-06-16 TUBE-81: Add reachability check
+- 2021-06-07 TUBE-57: socket unregister command
+- 2021-06-09 split up metrics function
+- 2021-06-09 update inet.af/netaddr dependency
+- 2021-05-18 cmd/tubectl: always check extraFds flags during tests
+
 2021.6.0
 - 2021-06-01 remove stretch from build plans
 - 2021-05-21 update run-tests.sh
