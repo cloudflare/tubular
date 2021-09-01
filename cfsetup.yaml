@@ -7,7 +7,7 @@ buster: &buster
       - crossbuild-essential-arm64
       - rubygem-fpm
       - clang-9
-      - go
+      - go=1.16.3-2
     post-cache:
       - CC=x86_64-linux-gnu-gcc ARCH=amd64 make package
       - CC=aarch64-linux-gnu-gcc ARCH=arm64 make package
@@ -18,7 +18,7 @@ buster: &buster
     builddeps:
       - build-essential
       - clang-9
-      - go
+      - go=1.16.3-2
       - qemu-system-x86
       - python3-virtme=0.0.3-4
       - wget
