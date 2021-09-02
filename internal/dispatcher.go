@@ -647,8 +647,12 @@ func (d *Dispatcher) UnregisterSocket(label string, domain Domain, proto Protoco
 		Protocol: proto,
 	}
 
-	if err := d.destinations.RemoveSocket(dest); err != nil {
-		return fmt.Errorf("remove socket: %s", err)
+	err := d.destinations.RemoveSocket(dest)
+	if errors.Is(err, ebpf.ErrKeyNotExist) {
+		return fmt.Errorf("socket %s doesn't exist", dest)
+	}
+	if err != nil {
+		return fmt.Errorf("remove socket %s: %s", dest, err)
 	}
 
 	return nil

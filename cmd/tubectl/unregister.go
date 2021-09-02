@@ -1,8 +1,6 @@
 package main
 
 import (
-	"fmt"
-
 	"code.cfops.it/sys/tubular/internal"
 )
 
@@ -39,7 +37,7 @@ func unregister(e *env, args ...string) error {
 	defer dp.Close()
 
 	if err := dp.UnregisterSocket(label, domain, proto); err != nil {
-		return fmt.Errorf("failed to unregister socket %s, %s, %s: %s", label, domain.String(), proto.String(), err)
+		return err
 	}
 
 	return nil
