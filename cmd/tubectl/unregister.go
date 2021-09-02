@@ -10,6 +10,10 @@ func unregister(e *env, args ...string) error {
 	set := e.newFlagSet("unregister", "label", "domain", "proto")
 	set.Description = `
 		Removes the socket mapping for the given label, domain and protocol.
+
+		Examples:
+		  $ tubectl unregister foo ipv4 udp
+		  $ tubectl unregister bar ipv6 tcp
 		`
 
 	if err := set.Parse(args); err != nil {
