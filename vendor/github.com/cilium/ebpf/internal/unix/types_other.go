@@ -1,3 +1,4 @@
+//go:build !linux
 // +build !linux
 
 package unix
@@ -21,6 +22,7 @@ const (
 	ESRCH  = syscall.ESRCH
 	ENODEV = syscall.ENODEV
 	EBADF  = syscall.Errno(0)
+	E2BIG  = syscall.Errno(0)
 	// ENOTSUPP is not the same as ENOTSUP or EOPNOTSUP
 	ENOTSUPP = syscall.Errno(0x20c)
 
@@ -30,6 +32,9 @@ const (
 	BPF_F_WRONLY             = 0
 	BPF_F_RDONLY_PROG        = 0
 	BPF_F_WRONLY_PROG        = 0
+	BPF_F_SLEEPABLE          = 0
+	BPF_F_MMAPABLE           = 0
+	BPF_F_INNER_MAP          = 0
 	BPF_OBJ_NAME_LEN         = 0x10
 	BPF_TAG_SIZE             = 0x8
 	SYS_BPF                  = 321
@@ -42,6 +47,7 @@ const (
 	PROT_READ                = 0x1
 	PROT_WRITE               = 0x2
 	MAP_SHARED               = 0x1
+	PERF_ATTR_SIZE_VER1      = 0
 	PERF_TYPE_SOFTWARE       = 0x1
 	PERF_TYPE_TRACEPOINT     = 0
 	PERF_COUNT_SW_BPF_OUTPUT = 0xa
@@ -216,6 +222,7 @@ func PerfEventOpen(attr *PerfEventAttr, pid int, cpu int, groupFd int, flags int
 // Utsname is a wrapper
 type Utsname struct {
 	Release [65]byte
+	Version [65]byte
 }
 
 // Uname is a wrapper
@@ -241,6 +248,11 @@ func Tgkill(tgid int, tid int, sig syscall.Signal) (err error) {
 // BytePtrFromString is a wrapper
 func BytePtrFromString(s string) (*byte, error) {
 	return nil, errNonLinux
+}
+
+// ByteSliceToString is a wrapper
+func ByteSliceToString(s []byte) string {
+	return ""
 }
 
 // Renameat2 is a wrapper

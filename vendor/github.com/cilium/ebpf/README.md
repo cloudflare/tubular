@@ -13,33 +13,28 @@ be used in long running processes.
 * [perf](https://pkg.go.dev/github.com/cilium/ebpf/perf) allows reading from a
   `PERF_EVENT_ARRAY`
 * [cmd/bpf2go](https://pkg.go.dev/github.com/cilium/ebpf/cmd/bpf2go) allows
-  embedding eBPF in Go
+  compiling and embedding eBPF programs in Go code
 
 The library is maintained by [Cloudflare](https://www.cloudflare.com) and
 [Cilium](https://www.cilium.io). Feel free to
-[join](https://cilium.herokuapp.com/) the
-[#libbpf-go](https://cilium.slack.com/messages/libbpf-go) channel on Slack.
+[join](https://ebpf.io/slack) the
+[#ebpf-go](https://cilium.slack.com/messages/ebpf-go) channel on Slack.
 
-## Current status
+See [ebpf.io](https://ebpf.io) for other projects from the eBPF ecosystem.
 
-The package is production ready, but **the API is explicitly unstable right
-now**. Expect to update your code if you want to follow along.
+## Getting Started
+
+A small collection of Go and eBPF programs that serve as examples for building
+your own tools can be found under [examples/](examples/).
+
+Contributions are highly encouraged, as they highlight certain use cases of
+eBPF and the library, and help shape the future of the project.
 
 ## Requirements
 
 * A version of Go that is [supported by
   upstream](https://golang.org/doc/devel/release.html#policy)
-* Linux 4.9, 4.19 or 5.4 (versions in-between should work, but are not tested)
-
-## Useful resources
-
-* [eBPF.io](https://ebpf.io) (recommended)
-* [Cilium eBPF documentation](https://docs.cilium.io/en/latest/bpf/#bpf-guide)
-  (recommended)
-* [Linux documentation on
-  BPF](https://www.kernel.org/doc/html/latest/networking/filter.html)
-* [eBPF features by Linux
-  version](https://github.com/iovisor/bcc/blob/master/docs/kernel-versions.md)
+* Linux >= 4.9. CI is run against LTS releases.
 
 ## Regenerating Testdata
 

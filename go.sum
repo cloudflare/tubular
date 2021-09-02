@@ -34,8 +34,8 @@ github.com/cenkalti/backoff v2.2.1+incompatible/go.mod h1:90ReRw6GdpyfrHakVjL/QH
 github.com/census-instrumentation/opencensus-proto v0.2.1/go.mod h1:f6KPmirojxKA12rnyqOA5BBL4O983OfeGPqjHWSTneU=
 github.com/cespare/xxhash/v2 v2.1.1 h1:6MnRN8NT7+YBpUIWxHtefFZOKTAPgGjpQSxqLNn0+qY=
 github.com/cespare/xxhash/v2 v2.1.1/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
-github.com/cilium/ebpf v0.4.1-0.20210406100940-bd9c93b60d37 h1:s8pbMnhx/jeiBB0gswGS3AZgPSZ7tvnYcdeBFk8kr4Q=
-github.com/cilium/ebpf v0.4.1-0.20210406100940-bd9c93b60d37/go.mod h1:4tRaxcgiL706VnOzHOdBlY8IEAIdxINsQBcU4xJJXRs=
+github.com/cilium/ebpf v0.6.3-0.20210901122011-c4d3a00089ed h1:2v0r1UVjcbkGMdVjENgZ0tcDhUjqtvfGfPe9bjkYz0Q=
+github.com/cilium/ebpf v0.6.3-0.20210901122011-c4d3a00089ed/go.mod h1:63zIkgzjGpMr5FsPcOqVbPQKVnNymtucTKwakaYF+lw=
 github.com/clbanning/x2j v0.0.0-20191024224557-825249438eec/go.mod h1:jMjuTZXRI4dUb/I5gc9Hdhagfvm9+RyrPryS/auMzxE=
 github.com/client9/misspell v0.3.4/go.mod h1:qj6jICC3Q7zFZvVWo7KLAzC3yx5G7kyvSDkc90ppPyw=
 github.com/cockroachdb/datadriven v0.0.0-20190809214429-80d97fb3cbaa/go.mod h1:zn76sxSg3SzpJ0PPJaLDCu+Bu0Lg3sKTORVIj19EIF8=

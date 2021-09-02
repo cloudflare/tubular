@@ -2,11 +2,14 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"go/format"
+	"go/scanner"
 	"go/token"
 	"io"
 	"io/ioutil"
+	"path/filepath"
 	"strings"
 	"text/template"
 	"unicode"
@@ -25,6 +28,7 @@ package {{ .Package }}
 
 import (
 	"bytes"
+	_ "embed"
 	"fmt"
 	"io"
 
@@ -145,7 +149,8 @@ func {{ .Name.CloseHelper }}(closers ...io.Closer) error {
 }
 
 // Do not access this directly.
-var {{ .Name.Bytes }} = []byte("{{ .Bytes }}")
+//go:embed {{ .File }}
+var {{ .Name.Bytes }} []byte
 
 `
 
@@ -210,12 +215,12 @@ type writeArgs struct {
 	pkg   string
 	ident string
 	tags  []string
-	obj   io.Reader
+	obj   string
 	out   io.Writer
 }
 
 func writeCommon(args writeArgs) error {
-	obj, err := ioutil.ReadAll(args.obj)
+	obj, err := ioutil.ReadFile(args.obj)
 	if err != nil {
 		return fmt.Errorf("read object file contents: %s", err)
 	}
@@ -247,7 +252,7 @@ func writeCommon(args writeArgs) error {
 		Name     templateName
 		Maps     map[string]string
 		Programs map[string]string
-		Bytes    string
+		File     string
 	}{
 		ebpfModule,
 		args.pkg,
@@ -255,7 +260,7 @@ func writeCommon(args writeArgs) error {
 		templateName(args.ident),
 		maps,
 		programs,
-		binaryString(obj),
+		filepath.Base(args.obj),
 	}
 
 	var buf bytes.Buffer
@@ -266,23 +271,37 @@ func writeCommon(args writeArgs) error {
 	return writeFormatted(buf.Bytes(), args.out)
 }
 
-func binaryString(buf []byte) string {
-	var builder strings.Builder
-	for _, b := range buf {
-		builder.WriteString(`\x`)
-		builder.WriteString(fmt.Sprintf("%02x", b))
-	}
-	return builder.String()
-}
-
 func writeFormatted(src []byte, out io.Writer) error {
 	formatted, err := format.Source(src)
-	if err != nil {
-		return fmt.Errorf("can't format source: %s", err)
+	if err == nil {
+		_, err = out.Write(formatted)
+		return err
 	}
 
-	_, err = out.Write(formatted)
-	return err
+	var el scanner.ErrorList
+	if !errors.As(err, &el) {
+		return err
+	}
+
+	var nel scanner.ErrorList
+	for _, err := range el {
+		if !err.Pos.IsValid() {
+			nel = append(nel, err)
+			continue
+		}
+
+		buf := src[err.Pos.Offset:]
+		nl := bytes.IndexRune(buf, '\n')
+		if nl == -1 {
+			nel = append(nel, err)
+			continue
+		}
+
+		err.Msg += ": " + string(buf[:nl])
+		nel = append(nel, err)
+	}
+
+	return nel
 }
 
 func identifier(str string) string {
