@@ -12,7 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"code.cfops.it/sys/tubular/internal/sysconn"
+	"code.cfops.it/sys/tubular/pkg/sysconn"
+
 	"golang.org/x/sys/unix"
 )
 

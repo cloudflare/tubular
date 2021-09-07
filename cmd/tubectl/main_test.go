@@ -14,8 +14,8 @@ import (
 
 	"code.cfops.it/sys/tubular/internal"
 	"code.cfops.it/sys/tubular/internal/log"
-	"code.cfops.it/sys/tubular/internal/sysconn"
 	"code.cfops.it/sys/tubular/internal/testutil"
+	"code.cfops.it/sys/tubular/pkg/sysconn"
 
 	"github.com/containernetworking/plugins/pkg/ns"
 	"golang.org/x/sys/unix"

@@ -8,7 +8,8 @@ import (
 	"syscall"
 	"testing"
 
-	"code.cfops.it/sys/tubular/internal/sysconn"
+	"code.cfops.it/sys/tubular/pkg/sysconn"
+
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/asm"
 	"github.com/containernetworking/plugins/pkg/ns"
