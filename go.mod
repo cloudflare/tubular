@@ -8,7 +8,7 @@ require (
 	github.com/google/go-cmp v0.5.4
 	github.com/prometheus/client_golang v1.9.0
 	github.com/prometheus/common v0.15.0
-	golang.org/x/sys v0.0.0-20210124154548-22da62e12c0c
+	golang.org/x/sys v0.0.0-20211007075335-d3039528d8ac
 	inet.af/netaddr v0.0.0-20210603230628-bf05d8b52dda
 	kernel.org/pub/linux/libs/security/libcap/cap v1.2.49
 )

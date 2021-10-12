@@ -30,14 +30,14 @@ func Files(pid int, ps ...sysconn.Predicate) (files []*os.File, err error) {
 		return nil, fmt.Errorf("can't retrieve files from the same process")
 	}
 
-	pidfd, err := pidfdOpen(pid, 0)
+	pidfd, err := unix.PidfdOpen(pid, 0)
 	if err != nil {
 		return nil, err
 	}
 	defer unix.Close(pidfd)
 
 	for i, gap := 0, 0; i < int(^uint(0)>>1) && gap < maxFDGap; i++ {
-		target, err := pidfdGetFD(pidfd, i, 0)
+		target, err := unix.PidfdGetfd(pidfd, i, 0)
 		if errors.Is(err, unix.EBADF) {
 			gap++
 			continue
@@ -59,20 +59,4 @@ func Files(pid int, ps ...sysconn.Predicate) (files []*os.File, err error) {
 	}
 
 	return files, nil
-}
-
-func pidfdOpen(pid, flags int) (int, error) {
-	fd, _, errNo := unix.Syscall(unix.SYS_PIDFD_OPEN, uintptr(pid), uintptr(flags), 0)
-	if errNo != 0 {
-		return -1, fmt.Errorf("pidfd_open(%d): %w", pid, errNo)
-	}
-	return int(fd), nil
-}
-
-func pidfdGetFD(pidfd, target, flags int) (int, error) {
-	fd, _, errNo := unix.Syscall(unix.SYS_PIDFD_GETFD, uintptr(pidfd), uintptr(target), uintptr(flags))
-	if errNo != 0 {
-		return -1, fmt.Errorf("pidfd_getfd(%d, %d): %w", pidfd, target, errNo)
-	}
-	return int(fd), nil
 }
