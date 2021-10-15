@@ -19,3 +19,6 @@ coverage.html
 
 # Dependency info
 *.d
+
+# bpf2go output
+!*_bpf*.o
