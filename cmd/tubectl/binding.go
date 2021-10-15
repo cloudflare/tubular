@@ -34,7 +34,12 @@ func bind(e *env, args ...string) error {
 	}
 	defer dp.Close()
 
-	return dp.AddBinding(bind)
+	if err := dp.AddBinding(bind); err != nil {
+		return err
+	}
+
+	e.stdout.Logf("bound %s", bind)
+	return nil
 }
 
 func unbind(e *env, args ...string) error {
