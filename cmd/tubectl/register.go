@@ -116,7 +116,7 @@ func registerPID(e *env, args ...string) error {
 
 	files, err := pidfd.Files(int(pid), filter...)
 	if err != nil {
-		return err
+		return fmt.Errorf("pid %d: %w", pid, err)
 	}
 
 	defer func() {
@@ -125,7 +125,11 @@ func registerPID(e *env, args ...string) error {
 		}
 	}()
 
-	return registerFiles(e, label, files)
+	if err := registerFiles(e, label, files); err != nil {
+		return fmt.Errorf("pid %d: %w", pid, err)
+	}
+
+	return nil
 }
 
 func registerFiles(e *env, label string, files []*os.File) error {
