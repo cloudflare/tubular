@@ -1,16 +1,13 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/binary"
 	"fmt"
 	"net"
 	"os"
 	"os/exec"
 	"os/signal"
 	"time"
-	"unsafe"
 
 	"code.cfops.it/sys/tubular/pkg/sysconn"
 
@@ -133,16 +130,27 @@ func run() error {
 				}
 
 				// retrieve the destination address from the SCM.
-				dst, err := retrieveOrigdstaddr(&scms[0])
+				sa, err := unix.ParseOrigDstAddr(&scms[0])
 				if err != nil {
 					fmt.Fprintln(os.Stderr, "retrieve destination:", err)
 					continue
 				}
-				fmt.Fprintln(os.Stderr, "received packet on", dst)
 
-				// Encode the destination address into a cmsg and use it to
-				// send a reply.
-				info := pktInfo(dst.IP)
+				// encode the destination address into a cmsg.
+				var info []byte
+				switch v := sa.(type) {
+				case *unix.SockaddrInet4:
+					info = unix.PktInfo4(&unix.Inet4Pktinfo{
+						Spec_dst: v.Addr,
+					})
+
+				case *unix.SockaddrInet6:
+					info = unix.PktInfo6(&unix.Inet6Pktinfo{
+						Addr: v.Addr,
+					})
+				}
+
+				// reply from the original destination address.
 				_, _, err = conn.WriteMsgUDP(append([]byte("hi "), msg[:n]...), info, remote)
 				if err != nil {
 					select {
@@ -165,72 +173,4 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
 	}
-}
-
-func retrieveOrigdstaddr(scm *unix.SocketControlMessage) (*net.UDPAddr, error) {
-	var rawIP []byte
-	var port int
-	h := scm.Header
-	switch {
-	case h.Level == unix.SOL_IP && h.Type == unix.IP_ORIGDSTADDR:
-		var rsa unix.RawSockaddrInet4
-		err := binary.Read(bytes.NewReader(scm.Data), binary.BigEndian, &rsa)
-		if err != nil {
-			return nil, err
-		}
-		rawIP = rsa.Addr[:]
-		port = int(rsa.Port)
-
-	case h.Level == unix.SOL_IPV6 && h.Type == unix.IPV6_ORIGDSTADDR:
-		var rsa unix.RawSockaddrInet6
-		err := binary.Read(bytes.NewReader(scm.Data), binary.BigEndian, &rsa)
-		if err != nil {
-			return nil, err
-		}
-		rawIP = rsa.Addr[:]
-		port = int(rsa.Port)
-
-	default:
-		return nil, fmt.Errorf("unrecognized control message: %v %v", h.Level, h.Type)
-	}
-
-	ip := make(net.IP, len(rawIP))
-	copy(ip, rawIP)
-
-	return &net.UDPAddr{
-		IP:   ip,
-		Port: port,
-	}, nil
-}
-
-func pktInfo(addr net.IP) []byte {
-	if v4 := addr.To4(); v4 != nil {
-		var info unix.Inet4Pktinfo
-		copy(info.Spec_dst[:], v4)
-		return unixInet4Pktinfo(&info)
-	}
-
-	var info unix.Inet6Pktinfo
-	copy(info.Addr[:], addr.To16())
-	return unixInet6Pktinfo(&info)
-}
-
-func unixInet4Pktinfo(info *unix.Inet4Pktinfo) []byte {
-	b := make([]byte, unix.CmsgSpace(unix.SizeofInet4Pktinfo))
-	h := (*unix.Cmsghdr)(unsafe.Pointer(&b[0]))
-	h.Level = unix.SOL_IP
-	h.Type = unix.IP_PKTINFO
-	h.SetLen(unix.CmsgLen(unix.SizeofInet4Pktinfo))
-	*(*unix.Inet4Pktinfo)(unsafe.Pointer(uintptr(unsafe.Pointer(&b[0])) + uintptr(unix.CmsgLen(0)))) = *info
-	return b
-}
-
-func unixInet6Pktinfo(info *unix.Inet6Pktinfo) []byte {
-	b := make([]byte, unix.CmsgSpace(unix.SizeofInet6Pktinfo))
-	h := (*unix.Cmsghdr)(unsafe.Pointer(&b[0]))
-	h.Level = unix.SOL_IPV6
-	h.Type = unix.IPV6_PKTINFO
-	h.SetLen(unix.CmsgLen(unix.SizeofInet6Pktinfo))
-	*(*unix.Inet6Pktinfo)(unsafe.Pointer(uintptr(unsafe.Pointer(&b[0])) + uintptr(unix.CmsgLen(0)))) = *info
-	return b
 }
