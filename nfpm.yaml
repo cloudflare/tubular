@@ -1,0 +1,11 @@
+name: tubular
+maintainer: "unimog"
+arch: "${TARGET_ARCH}"
+platform: linux
+version: "${VERSION}"
+version_schema: none
+section: default
+priority: extra
+contents:
+  - src: "bin/*/*"
+    dst: /usr/local/bin

@@ -1,3 +1,4 @@
+NAME	:= tubular
 VERSION := $(shell git describe --always --dirty="-dev")
 ARCH    ?= amd64
 GO      ?= go
@@ -21,13 +22,10 @@ internal/%_bpfel.go internal/%_bpfeb.go internal/%.go.d:
 	$(GO) generate ./internal
 
 .PHONY: package
-package: tubular_$(VERSION)_$(ARCH).deb
+package: $(NAME)_$(VERSION)_$(ARCH).deb
 
-tubular_$(VERSION)_%.deb: clean all
-	mkdir -p deb/$*/usr/local/bin
-	cp -f bin/$*/* deb/$*/usr/local/bin
-	fpm --name tubular --version $(VERSION) --architecture $* \
-		--chdir deb/$* --input-type dir --output-type deb .
+$(NAME)_$(VERSION)_%.deb: clean all
+	TARGET_ARCH=$* VERSION="$(VERSION)" nfpm package -p deb -f nfpm.yaml
 
 .PHONY: test
 test:

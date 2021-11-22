@@ -5,7 +5,7 @@ buster: &buster
     builddeps:
       - build-essential
       - crossbuild-essential-arm64
-      - rubygem-fpm
+      - nfpm
       - clang-9
       - go=1.16.3-2
     post-cache:
