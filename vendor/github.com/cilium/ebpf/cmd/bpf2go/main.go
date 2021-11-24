@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"go/token"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sort"
@@ -71,6 +70,8 @@ func run(stdout io.Writer, pkg, outputDir string, args []string) (err error) {
 
 	fs := flag.NewFlagSet("bpf2go", flag.ContinueOnError)
 	fs.StringVar(&b2g.cc, "cc", "clang", "`binary` used to compile C to BPF")
+	fs.StringVar(&b2g.strip, "strip", "llvm-strip", "`binary` used to strip DWARF from compiled BPF")
+	fs.BoolVar(&b2g.disableStripping, "no-strip", false, "disable stripping of DWARF")
 	flagCFlags := fs.String("cflags", "", "flags passed to the compiler, may contain quoted arguments")
 	fs.StringVar(&b2g.tags, "tags", "", "list of Go build tags to include in generated files")
 	flagTarget := fs.String("target", "bpfel,bpfeb", "clang target to compile for")
@@ -186,6 +187,9 @@ type bpf2go struct {
 	ident string
 	// C compiler.
 	cc string
+	// Command used to strip DWARF.
+	strip            string
+	disableStripping bool
 	// C flags passed to the compiler.
 	cFlags []string
 	// Go tags included in the .go
@@ -245,6 +249,13 @@ func (b2g *bpf2go) convert(tgt target, arches []string) (err error) {
 
 	fmt.Fprintln(b2g.stdout, "Compiled", objFileName)
 
+	if !b2g.disableStripping {
+		if err := strip(b2g.strip, objFileName); err != nil {
+			return err
+		}
+		fmt.Fprintln(b2g.stdout, "Stripped", objFileName)
+	}
+
 	// Write out generated go
 	goFileName := filepath.Join(b2g.outputDir, stem+".go")
 	goFile, err := os.Create(goFileName)
@@ -252,12 +263,6 @@ func (b2g *bpf2go) convert(tgt target, arches []string) (err error) {
 		return err
 	}
 	defer removeOnError(goFile)
-
-	obj, err := os.Open(objFileName)
-	if err != nil {
-		return err
-	}
-	defer obj.Close()
 
 	err = writeCommon(writeArgs{
 		pkg:   b2g.pkg,
@@ -289,7 +294,7 @@ func (b2g *bpf2go) convert(tgt target, arches []string) (err error) {
 	}
 
 	depFileName := goFileName + ".d"
-	if err := ioutil.WriteFile(depFileName, depFile, 0666); err != nil {
+	if err := os.WriteFile(depFileName, depFile, 0666); err != nil {
 		return fmt.Errorf("can't write dependency file: %s", err)
 	}
 

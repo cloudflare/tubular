@@ -189,7 +189,7 @@ func TestDispatcherUpgradeFailedLinkUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	updateLink := func(link.NetNsLink, *ebpf.Program) error {
+	updateLink := func(*link.NetNsLink, *ebpf.Program) error {
 		return errors.New("aborted")
 	}
 

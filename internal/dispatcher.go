@@ -19,7 +19,7 @@ import (
 	"code.cfops.it/sys/tubular/internal/log"
 )
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc "$CLANG" -makebase "$MAKEDIR" dispatcher ../ebpf/inet-kern.c -- -mcpu=v2 -nostdinc -Wall -Werror -I../ebpf/include
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc "$CLANG" -strip "$STRIP" -makebase "$MAKEDIR" dispatcher ../ebpf/inet-kern.c -- -mcpu=v2 -nostdinc -Wall -Werror -I../ebpf/include
 
 // Errors returned by the Dispatcher.
 var (
@@ -263,10 +263,10 @@ func loadPatchedDispatcher(to interface{}, opts *ebpf.CollectionOptions) (*ebpf.
 //
 // Returns the program ID of the new dispatcher or an error.
 func UpgradeDispatcher(netnsPath, bpfFsPath string) (ebpf.ProgramID, error) {
-	return upgradeDispatcher(netnsPath, bpfFsPath, link.NetNsLink.Update)
+	return upgradeDispatcher(netnsPath, bpfFsPath, (*link.NetNsLink).Update)
 }
 
-func upgradeDispatcher(netnsPath, bpfFsPath string, linkUpdate func(link.NetNsLink, *ebpf.Program) error) (ebpf.ProgramID, error) {
+func upgradeDispatcher(netnsPath, bpfFsPath string, linkUpdate func(*link.NetNsLink, *ebpf.Program) error) (ebpf.ProgramID, error) {
 	netns, pinPath, err := openNetNS(netnsPath, bpfFsPath)
 	if err != nil {
 		return 0, err
@@ -296,7 +296,7 @@ func upgradeDispatcher(netnsPath, bpfFsPath string, linkUpdate func(link.NetNsLi
 	}
 	progID, _ := progInfo.ID()
 
-	nslink, err := link.LoadPinnedNetNs(linkPath(pinPath), nil)
+	nslink, err := link.LoadPinnedLink(linkPath(pinPath), nil)
 	if err != nil {
 		return 0, err
 	}
@@ -311,7 +311,7 @@ func upgradeDispatcher(netnsPath, bpfFsPath string, linkUpdate func(link.NetNsLi
 	defer os.Remove(tmpPath)
 
 	// This is the start of the critical section. Do as little as possible in here.
-	if err := linkUpdate(*nslink, objs.Dispatcher); err != nil {
+	if err := linkUpdate(nslink.(*link.NetNsLink), objs.Dispatcher); err != nil {
 		return 0, fmt.Errorf("update link: %s", err)
 	}
 

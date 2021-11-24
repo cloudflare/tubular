@@ -3,9 +3,9 @@ module code.cfops.it/sys/tubular
 go 1.17
 
 require (
-	github.com/cilium/ebpf v0.6.3-0.20210901122011-c4d3a00089ed
+	github.com/cilium/ebpf v0.7.1-0.20211123152238-8df2d8a42fb0
 	github.com/containernetworking/plugins v0.8.6
-	github.com/google/go-cmp v0.5.4
+	github.com/google/go-cmp v0.5.6
 	github.com/prometheus/client_golang v1.9.0
 	github.com/prometheus/common v0.15.0
 	golang.org/x/sys v0.0.0-20211025112917-711f33c9992c

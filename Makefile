@@ -4,7 +4,8 @@ ARCH    ?= amd64
 GO      ?= go
 
 export GOFLAGS += -mod=vendor -ldflags=-X=main.Version=$(VERSION)
-export CLANG   ?= clang-9
+export CLANG   ?= clang-13
+export STRIP   ?= llvm-strip-13
 export MAKEDIR  = $(CURDIR)
 
 .SUFFIXES:

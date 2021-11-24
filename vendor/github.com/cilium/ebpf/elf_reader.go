@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"os"
 	"strings"
@@ -415,7 +414,7 @@ func (ec *elfCode) relocateInstruction(ins *asm.Instruction, rel elf.Symbol) err
 
 	case programSection:
 		if ins.OpCode.JumpOp() != asm.Call {
-			return fmt.Errorf("not a call instruction: %s", ins)
+			return fmt.Errorf("not a call instruction: %v", ins)
 		}
 
 		if ins.Src != asm.PseudoCall {
@@ -521,7 +520,7 @@ func (ec *elfCode) loadMaps(maps map[string]*MapSpec) error {
 				return fmt.Errorf("map %s: missing flags", mapName)
 			}
 
-			extra, err := ioutil.ReadAll(lr)
+			extra, err := io.ReadAll(lr)
 			if err != nil {
 				return fmt.Errorf("map %s: reading map tail: %w", mapName, err)
 			}
@@ -554,7 +553,7 @@ func (ec *elfCode) loadBTFMaps(maps map[string]*MapSpec) error {
 		}
 
 		// Each section must appear as a DataSec in the ELF's BTF blob.
-		var ds btf.Datasec
+		var ds *btf.Datasec
 		if err := ec.btf.FindType(sec.Name, &ds); err != nil {
 			return fmt.Errorf("cannot find section '%s' in BTF: %w", sec.Name, err)
 		}
@@ -606,7 +605,7 @@ func (ec *elfCode) loadBTFMaps(maps map[string]*MapSpec) error {
 
 		// Drain the ELF section reader to make sure all bytes are accounted for
 		// with BTF metadata.
-		i, err := io.Copy(ioutil.Discard, rs)
+		i, err := io.Copy(io.Discard, rs)
 		if err != nil {
 			return fmt.Errorf("section %v: unexpected error reading remainder of ELF section: %w", sec.Name, err)
 		}
@@ -926,7 +925,7 @@ func (ec *elfCode) loadDataSections(maps map[string]*MapSpec) error {
 			return errors.New("data sections require BTF, make sure all consts are marked as static")
 		}
 
-		var datasec btf.Datasec
+		var datasec *btf.Datasec
 		if err := ec.btf.FindType(sec.Name, &datasec); err != nil {
 			return fmt.Errorf("data section %s: can't get BTF: %w", sec.Name, err)
 		}
@@ -947,7 +946,7 @@ func (ec *elfCode) loadDataSections(maps map[string]*MapSpec) error {
 			ValueSize:  uint32(len(data)),
 			MaxEntries: 1,
 			Contents:   []MapKV{{uint32(0), data}},
-			BTF:        &btf.Map{Spec: ec.btf, Key: &btf.Void{}, Value: &datasec},
+			BTF:        &btf.Map{Spec: ec.btf, Key: &btf.Void{}, Value: datasec},
 		}
 
 		switch sec.Name {
@@ -991,8 +990,8 @@ func getProgType(sectionName string) (ProgramType, AttachType, uint32, string) {
 		"lwt_seg6local":         {LWTSeg6Local, AttachNone, 0},
 		"sockops":               {SockOps, AttachCGroupSockOps, 0},
 		"sk_skb/stream_parser":  {SkSKB, AttachSkSKBStreamParser, 0},
-		"sk_skb/stream_verdict": {SkSKB, AttachSkSKBStreamParser, 0},
-		"sk_msg":                {SkMsg, AttachSkSKBStreamVerdict, 0},
+		"sk_skb/stream_verdict": {SkSKB, AttachSkSKBStreamVerdict, 0},
+		"sk_msg":                {SkMsg, AttachSkMsgVerdict, 0},
 		"lirc_mode2":            {LircMode2, AttachLircMode2, 0},
 		"flow_dissector":        {FlowDissector, AttachFlowDissector, 0},
 		"iter/":                 {Tracing, AttachTraceIter, 0},

@@ -264,7 +264,7 @@ var errImpossibleRelocation = errors.New("impossible relocation")
 // the better the target is.
 func coreCalculateFixups(local Type, targets []NamedType, relos coreRelos) ([]COREFixup, error) {
 	localID := local.ID()
-	local, err := copyType(local, skipQualifierAndTypedef)
+	local, err := copyType(local, skipQualifiersAndTypedefs)
 	if err != nil {
 		return nil, err
 	}
@@ -273,7 +273,7 @@ func coreCalculateFixups(local Type, targets []NamedType, relos coreRelos) ([]CO
 	var bestFixups []COREFixup
 	for i := range targets {
 		targetID := targets[i].ID()
-		target, err := copyType(targets[i], skipQualifierAndTypedef)
+		target, err := copyType(targets[i], skipQualifiersAndTypedefs)
 		if err != nil {
 			return nil, err
 		}
@@ -467,8 +467,8 @@ func parseCoreAccessor(accessor string) (coreAccessor, error) {
 		return nil, fmt.Errorf("empty accessor")
 	}
 
-	var result coreAccessor
 	parts := strings.Split(accessor, ":")
+	result := make(coreAccessor, 0, len(parts))
 	for _, part := range parts {
 		// 31 bits to avoid overflowing int on 32 bit platforms.
 		index, err := strconv.ParseUint(part, 10, 31)
@@ -813,6 +813,7 @@ func coreAreTypesCompatible(localType Type, targetType Type) error {
  *     least one of enums should be anonymous;
  *   - for ENUMs, check sizes, names are ignored;
  *   - for INT, size and signedness are ignored;
+ *   - any two FLOATs are always compatible;
  *   - for ARRAY, dimensionality is ignored, element types are checked for
  *     compatibility recursively;
  *     [ NB: coreAreMembersCompatible doesn't recurse, this check is done
@@ -848,7 +849,7 @@ func coreAreMembersCompatible(localType Type, targetType Type) error {
 	}
 
 	switch lv := localType.(type) {
-	case *Array, *Pointer:
+	case *Array, *Pointer, *Float:
 		return nil
 
 	case *Enum:
@@ -871,7 +872,7 @@ func coreAreMembersCompatible(localType Type, targetType Type) error {
 	}
 }
 
-func skipQualifierAndTypedef(typ Type) (Type, error) {
+func skipQualifiersAndTypedefs(typ Type) (Type, error) {
 	result := typ
 	for depth := 0; depth <= maxTypeDepth; depth++ {
 		switch v := (result).(type) {
@@ -879,6 +880,19 @@ func skipQualifierAndTypedef(typ Type) (Type, error) {
 			result = v.qualify()
 		case *Typedef:
 			result = v.Type
+		default:
+			return result, nil
+		}
+	}
+	return nil, errors.New("exceeded type depth")
+}
+
+func skipQualifiers(typ Type) (Type, error) {
+	result := typ
+	for depth := 0; depth <= maxTypeDepth; depth++ {
+		switch v := (result).(type) {
+		case qualifier:
+			result = v.qualify()
 		default:
 			return result, nil
 		}

@@ -6,7 +6,8 @@ buster: &buster
       - build-essential
       - crossbuild-essential-arm64
       - nfpm
-      - clang-9
+      - clang-13
+      - llvm-13
       - go=1.16.3-2
     post-cache:
       - CC=x86_64-linux-gnu-gcc ARCH=amd64 make package
@@ -17,7 +18,8 @@ buster: &buster
       - true
     builddeps:
       - build-essential
-      - clang-9
+      - clang-13
+      - llvm-13
       - go=1.16.3-2
       - qemu-system-x86
       - python3-virtme=0.0.3-4
