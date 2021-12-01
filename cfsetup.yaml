@@ -8,7 +8,7 @@ buster: &buster
       - nfpm
       - clang-13
       - llvm-13
-      - go=1.16.3-2
+      - go=1.17.3-1
     post-cache:
       - CC=x86_64-linux-gnu-gcc ARCH=amd64 make package
       - CC=aarch64-linux-gnu-gcc ARCH=arm64 make package
@@ -20,7 +20,7 @@ buster: &buster
       - build-essential
       - clang-13
       - llvm-13
-      - go=1.16.3-2
+      - go=1.17.3-1
       - qemu-system-x86
       - python3-virtme=0.0.3-4
       - wget
