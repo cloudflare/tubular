@@ -96,21 +96,23 @@ func (e *env) newFlagSet(name string, args ...string) *flagSet {
 }
 
 var cmds = []struct {
-	name string
-	fn   func(*env, ...string) error
+	name   string
+	fn     func(*env, ...string) error
+	hidden bool
 }{
-	{"version", version},
-	{"load", load},
-	{"unload", unload},
-	{"upgrade", upgrade},
-	{"bind", bind},
-	{"unbind", unbind},
-	{"load-bindings", loadBindings},
-	{"list", list},
-	{"metrics", metrics},
-	{"register", register},
-	{"register-pid", registerPID},
-	{"unregister", unregister},
+	{"version", version, false},
+	{"status", status, false},
+	{"load", load, false},
+	{"unload", unload, false},
+	{"upgrade", upgrade, false},
+	{"bind", bind, false},
+	{"unbind", unbind, false},
+	{"load-bindings", loadBindings, false},
+	{"list", status, true},
+	{"metrics", metrics, false},
+	{"register", register, false},
+	{"register-pid", registerPID, false},
+	{"unregister", unregister, false},
 }
 
 func tubectl(e env, args []string) (err error) {
@@ -135,6 +137,9 @@ func tubectl(e env, args []string) (err error) {
 
 		fmt.Fprintln(out, "Available commands:")
 		for _, cmd := range cmds {
+			if cmd.hidden {
+				continue
+			}
 			fmt.Fprintln(out, "  "+cmd.name)
 		}
 		fmt.Fprintln(out)

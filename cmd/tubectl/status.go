@@ -20,7 +20,12 @@ import (
 )
 
 func list(e *env, args ...string) error {
-	set := e.newFlagSet("list", "--", "label")
+	fmt.Fprintln(e.stdout, "list is deprecated, please use status instead.")
+	return status(e, args...)
+}
+
+func status(e *env, args ...string) error {
+	set := e.newFlagSet("status", "--", "label")
 	set.Description = "Show current bindings and destinations."
 	if err := set.Parse(args); err != nil {
 		return err

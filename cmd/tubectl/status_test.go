@@ -14,7 +14,7 @@ import (
 	"code.cfops.it/sys/tubular/internal/testutil"
 )
 
-func TestList(t *testing.T) {
+func TestStatus(t *testing.T) {
 	netns := mustReadyNetNS(t)
 
 	dp := mustOpenDispatcher(t, netns)
@@ -23,22 +23,22 @@ func TestList(t *testing.T) {
 	mustRegisterSocket(t, dp, "foo", sock)
 	dp.Close()
 
-	output, err := testTubectl(t, netns, "list")
+	output, err := testTubectl(t, netns, "status")
 	if err != nil {
-		t.Fatal("Can't execute list:", err)
+		t.Fatal("Can't execute status:", err)
 	}
 
 	outputStr := output.String()
 	if !strings.Contains(outputStr, "foo") {
-		t.Error("Output of list doesn't contain label foo")
+		t.Error("Output of status doesn't contain label foo")
 	}
 
 	cookie := mustSocketCookie(t, sock)
 	if !strings.Contains(outputStr, cookie.String()) {
-		t.Error("Output of list doesn't contain", cookie)
+		t.Error("Output of status doesn't contain", cookie)
 	}
 
-	output2, err := testTubectl(t, netns, "list")
+	output2, err := testTubectl(t, netns, "status")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestList(t *testing.T) {
 	}
 }
 
-func TestListFilteredByLabel(t *testing.T) {
+func TestStatusFilteredByLabel(t *testing.T) {
 	netns := mustReadyNetNS(t)
 
 	dp := mustOpenDispatcher(t, netns)
@@ -60,7 +60,7 @@ func TestListFilteredByLabel(t *testing.T) {
 	mustRegisterSocket(t, dp, "foo", sock)
 	dp.Close()
 
-	output, err := testTubectl(t, netns, "list", "foo")
+	output, err := testTubectl(t, netns, "status", "foo")
 	if err != nil {
 		t.Fatal("Can't execute list foo:", err)
 	}
@@ -69,7 +69,7 @@ func TestListFilteredByLabel(t *testing.T) {
 		t.Error("Output of list doesn't contain label foo")
 	}
 
-	output, err = testTubectl(t, netns, "list", "bar")
+	output, err = testTubectl(t, netns, "status", "bar")
 	if err != nil {
 		t.Fatal("Can't execute list bar:", err)
 	}
