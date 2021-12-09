@@ -9,7 +9,7 @@ import (
 )
 
 type flagSet struct {
-	flag.FlagSet
+	*flag.FlagSet
 	args         []string
 	optionalArgs []string
 	Description  interface{}
@@ -33,7 +33,7 @@ func newFlagSet(output io.Writer, name string, args ...string) *flagSet {
 	}
 
 	fs := &flagSet{
-		*set,
+		set,
 		args,
 		optionalArgs,
 		nil,
@@ -51,7 +51,12 @@ func newFlagSet(output io.Writer, name string, args ...string) *flagSet {
 		default:
 			panic("unsupported type")
 		}
-		fs.PrintDefaults()
+		haveFlags := false
+		fs.VisitAll(func(f *flag.Flag) { haveFlags = true })
+		if haveFlags {
+			io.WriteString(fs.Output(), "Available flags:\n")
+			fs.PrintDefaults()
+		}
 	}
 
 	return fs
