@@ -31,15 +31,35 @@ func status(e *env, args ...string) error {
 		return err
 	}
 
-	dp, err := e.openDispatcher(true)
-	if err != nil {
-		return err
-	}
-	defer dp.Close()
+	var (
+		bindings internal.Bindings
+		dests    []internal.Destination
+		cookies  map[internal.Destination]internal.SocketCookie
+		metrics  *internal.Metrics
+	)
+	{
+		dp, err := e.openDispatcher(true)
+		if err != nil {
+			return err
+		}
+		defer dp.Close()
 
-	bindings, err := dp.Bindings()
-	if err != nil {
-		return fmt.Errorf("can't get bindings: %s", err)
+		bindings, err = dp.Bindings()
+		if err != nil {
+			return fmt.Errorf("can't get bindings: %s", err)
+		}
+
+		dests, cookies, err = dp.Destinations()
+		if err != nil {
+			return fmt.Errorf("get destinations: %s", err)
+		}
+
+		metrics, err = dp.Metrics()
+		if err != nil {
+			return fmt.Errorf("get metrics: %s", err)
+		}
+
+		dp.Close()
 	}
 
 	// Output from most specific to least specific.
@@ -66,17 +86,7 @@ func status(e *env, args ...string) error {
 		return err
 	}
 
-	dests, cookies, err := dp.Destinations()
-	if err != nil {
-		return fmt.Errorf("get destinations: %s", err)
-	}
-
 	sortDestinations(dests)
-
-	metrics, err := dp.Metrics()
-	if err != nil {
-		return fmt.Errorf("get metrics: %s", err)
-	}
 
 	e.stdout.Log("\nDestinations:")
 	fmt.Fprintln(w, "label\tdomain\tprotocol\tsocket\tlookups\tmisses\terrors\t")
