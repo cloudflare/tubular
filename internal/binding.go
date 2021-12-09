@@ -23,7 +23,7 @@ type Binding struct {
 // prefix may either be in CIDR notation (::1/128) or a plain IP address.
 // Specifying ::1 is equivalent to passing ::1/128.
 func NewBinding(label string, proto Protocol, prefix string, port uint16) (*Binding, error) {
-	cidr, err := parseCIDR(prefix)
+	cidr, err := ParsePrefix(prefix)
 	if err != nil {
 		return nil, err
 	}
@@ -171,30 +171,25 @@ func diffBindings(have, want map[bindingKey]string) (added, removed []*Binding) 
 	return
 }
 
-// parseCIDR must be called on all new bindings to ensure addresses are
-// correctly parsed and validated.
-func parseCIDR(prefix string) (*netaddr.IPPrefix, error) {
-	if !strings.Contains(prefix, "/") {
-		ip, err := netaddr.ParseIP(prefix)
-		if err != nil {
-			return nil, err
-		}
-
-		var prefixBits uint8
-		if ip.Is4() {
-			prefixBits = 32
-		} else {
-			prefixBits = 128
-		}
-
-		ipPrefix := netaddr.IPPrefixFrom(ip, prefixBits)
-
-		return &ipPrefix, nil
+// ParsePrefix parses a prefix with an optional mask into an IPPrefix.
+//
+// A missing prefix is interpreted as a /128 or /32.
+func ParsePrefix(prefix string) (netaddr.IPPrefix, error) {
+	if strings.ContainsRune(prefix, '/') {
+		return netaddr.ParseIPPrefix(prefix)
 	}
-	cidr, err := netaddr.ParseIPPrefix(prefix)
+
+	ip, err := netaddr.ParseIP(prefix)
 	if err != nil {
-		return nil, err
+		return netaddr.IPPrefix{}, err
 	}
 
-	return &cidr, nil
+	var prefixBits uint8
+	if ip.Is4() {
+		prefixBits = 32
+	} else {
+		prefixBits = 128
+	}
+
+	return netaddr.IPPrefixFrom(ip, prefixBits), nil
 }

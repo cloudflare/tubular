@@ -237,13 +237,13 @@ func TestParseCIDR(t *testing.T) {
 	}
 
 	for _, testCase := range valid {
-		output, err := parseCIDR(testCase.input)
+		output, err := ParsePrefix(testCase.input)
 		if err != nil {
 			t.Errorf("Rejected valid input prefix %s\n", testCase.input)
 		}
 
-		if testCase.expected != *output {
-			t.Errorf("Prefix parsed incorrectly:\nexpected: %v\ngot: %v\n", testCase.expected, *output)
+		if testCase.expected != output {
+			t.Errorf("Prefix parsed incorrectly:\nexpected: %v\ngot: %v\n", testCase.expected, output)
 		}
 	}
 }
