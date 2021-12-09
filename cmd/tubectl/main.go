@@ -108,7 +108,7 @@ var cmds = []struct {
 	{"bind", bind, false},
 	{"unbind", unbind, false},
 	{"load-bindings", loadBindings, false},
-	{"list", status, true},
+	{"list", list, true},
 	{"metrics", metrics, false},
 	{"register", register, false},
 	{"register-pid", registerPID, false},

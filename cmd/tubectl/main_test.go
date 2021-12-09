@@ -42,9 +42,9 @@ func TestHelp(t *testing.T) {
 func TestSubcommandHelp(t *testing.T) {
 	for _, cmd := range cmds {
 		t.Run(cmd.name, func(t *testing.T) {
-			var stderr log.Buffer
-			err := cmd.fn(&env{stderr: &stderr}, "-help")
-			t.Log(stderr.String())
+			var output log.Buffer
+			err := cmd.fn(&env{stdout: &output, stderr: &output}, "-help")
+			t.Log(output.String())
 			if !errors.Is(err, flag.ErrHelp) {
 				t.Error("Doesn't return ErrHelp")
 			}
