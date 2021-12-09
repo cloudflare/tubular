@@ -62,27 +62,28 @@ func status(e *env, args ...string) error {
 		dp.Close()
 	}
 
-	// Output from most specific to least specific.
-	sort.Sort(bindings)
-
-	label := set.Arg(0)
-
-	w := tabwriter.NewWriter(e.stdout, 0, 0, 1, ' ', tabwriter.AlignRight)
-	e.stdout.Log("Bindings:")
-	fmt.Fprintln(w, "protocol\tprefix\tport\tlabel\t")
-
-	for _, bind := range bindings {
-		if label != "" && bind.Label != label {
-			continue
+	if label := set.Arg(0); label != "" {
+		var filtered internal.Bindings
+		for _, bind := range bindings {
+			if bind.Label == label {
+				filtered = append(filtered, bind)
+			}
 		}
+		bindings = filtered
 
-		_, err := fmt.Fprintf(w, "%v\t%s\t%d\t%s\t\n", bind.Protocol, bind.Prefix, bind.Port, bind.Label)
-		if err != nil {
-			return err
+		var filteredDests []internal.Destination
+		for _, dest := range dests {
+			if dest.Label == label {
+				filteredDests = append(filteredDests, dest)
+			}
 		}
+		dests = filteredDests
 	}
 
-	if err := w.Flush(); err != nil {
+	w := tabwriter.NewWriter(e.stdout, 0, 0, 1, ' ', tabwriter.AlignRight)
+
+	e.stdout.Log("Bindings:")
+	if err := printBindings(w, bindings); err != nil {
 		return err
 	}
 
@@ -92,10 +93,6 @@ func status(e *env, args ...string) error {
 	fmt.Fprintln(w, "label\tdomain\tprotocol\tsocket\tlookups\tmisses\terrors\t")
 
 	for _, dest := range dests {
-		if label != "" && dest.Label != label {
-			continue
-		}
-
 		destMetrics := metrics.Destinations[dest]
 		_, err := fmt.Fprint(w,
 			dest.Label, "\t",
@@ -117,6 +114,22 @@ func status(e *env, args ...string) error {
 	}
 
 	return nil
+}
+
+func printBindings(w *tabwriter.Writer, bindings internal.Bindings) error {
+	// Output from most specific to least specific.
+	sort.Sort(bindings)
+
+	fmt.Fprintln(w, "protocol\tprefix\tport\tlabel\t")
+
+	for _, bind := range bindings {
+		_, err := fmt.Fprintf(w, "%v\t%s\t%d\t%s\t\n", bind.Protocol, bind.Prefix, bind.Port, bind.Label)
+		if err != nil {
+			return err
+		}
+	}
+
+	return w.Flush()
 }
 
 func sortDestinations(dests []internal.Destination) {
