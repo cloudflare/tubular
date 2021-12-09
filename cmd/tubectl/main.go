@@ -100,19 +100,25 @@ var cmds = []struct {
 	fn     func(*env, ...string) error
 	hidden bool
 }{
+	// Noun commands should not make any changes to state.
+	// Verb commands should make changes to state.
 	{"version", version, false},
+	// Dispatcher lifecycle.
 	{"status", status, false},
+	{"metrics", metrics, false},
 	{"load", load, false},
 	{"unload", unload, false},
 	{"upgrade", upgrade, false},
+	// Bindings
 	{"bind", bind, false},
 	{"unbind", unbind, false},
 	{"load-bindings", loadBindings, false},
-	{"list", list, true},
-	{"metrics", metrics, false},
+	// Destinations
 	{"register", register, false},
 	{"register-pid", registerPID, false},
 	{"unregister", unregister, false},
+	// Deprecated
+	{"list", list, true},
 }
 
 func tubectl(e env, args []string) (err error) {
