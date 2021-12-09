@@ -67,14 +67,20 @@ func (fs *flagSet) Parse(args []string) error {
 		return err
 	}
 
+	var err error
 	minArgs := len(fs.args)
 	maxArgs := minArgs + len(fs.optionalArgs)
-	if n := fs.NArg(); n >= minArgs && n <= maxArgs {
+	switch n := fs.NArg(); {
+	case n < minArgs:
+		err = fmt.Errorf("%w: expected at least %d arguments, got %d", errBadArg, minArgs, n)
+	case n > maxArgs:
+		err = fmt.Errorf("%w: expected at most %d arguments, got %d", errBadArg, maxArgs, n)
+	default:
 		return nil
 	}
 
 	fs.PrintCommand()
-	return errBadArg
+	return err
 }
 
 func (fs *flagSet) PrintCommand() {
