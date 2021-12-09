@@ -135,7 +135,7 @@ func tubectl(e env, args []string) (err error) {
 		set.PrintDefaults()
 		fmt.Fprintln(out)
 
-		fmt.Fprintln(out, "Available commands:")
+		fmt.Fprintln(out, "Available commands (use <command> -h for help):")
 		for _, cmd := range cmds {
 			if cmd.hidden {
 				continue
