@@ -4,8 +4,6 @@ import (
 	"os"
 	"syscall"
 	"testing"
-
-	"github.com/containernetworking/plugins/pkg/ns"
 )
 
 func TestNetNS(t *testing.T) {
@@ -20,13 +18,13 @@ func TestNetNS(t *testing.T) {
 		t.Fatal("NewNetNS doesn't create a new network namespace")
 	}
 
-	var current ns.NetNS
-	JoinNetNS(t, newNs, func() (err error) {
-		current, err = ns.GetCurrentNS()
-		return
+	var changedInode uint64
+	JoinNetNS(t, newNs, func() error {
+		changedInode = getInode(t, CurrentNetNS(t).Path())
+		return nil
 	})
 
-	if getInode(t, current.Path()) != newInode {
+	if changedInode != newInode {
 		t.Fatal("JoinNetNS() doesn't change network namespace")
 	}
 }
@@ -68,6 +66,8 @@ func TestCanDial(t *testing.T) {
 }
 
 func getInode(t *testing.T, path string) uint64 {
+	t.Helper()
+
 	stat, err := os.Stat(path)
 	if err != nil {
 		t.Fatal("Can't stat:", err.Error())
