@@ -1,6 +1,12 @@
 package cap
 
-import "strings"
+import (
+	"fmt"
+	"io/ioutil"
+	"strconv"
+	"strings"
+	"sync"
+)
 
 // omask returns the offset and mask for a specific capability.
 func omask(c Value) (uint, uint32) {
@@ -15,6 +21,7 @@ func omask(c Value) (uint, uint32) {
 // Value from the process' Bounding set. This convention is used to
 // support the empty IAB as being mostly harmless.
 type IAB struct {
+	mu       sync.RWMutex
 	a, i, nb []uint32
 }
 
@@ -31,6 +38,24 @@ const (
 	Bound
 )
 
+// IABDiff holds the non-error result of an (*IAB).Cf()
+// function call. It can be interpreted with the function
+// (IABDiff).Has().
+type IABDiff uint
+
+// iBits, iBits and bBits track the (semi-)independent parts of an
+// IABDiff.
+const (
+	iBits IABDiff = 1 << Inh
+	aBits IABDiff = 1 << Amb
+	bBits IABDiff = 1 << Bound
+)
+
+// Has determines if an IAB comparison differs in a specific vector.
+func (d IABDiff) Has(v Vector) bool {
+	return d&(1<<v) != 0
+}
+
 // String identifies a Vector value by its conventional I A or B
 // string abbreviation.
 func (v Vector) String() string {
@@ -46,8 +71,8 @@ func (v Vector) String() string {
 	}
 }
 
-// IABInit returns an empty IAB.
-func IABInit() *IAB {
+// NewIAB returns an empty IAB.
+func NewIAB() *IAB {
 	startUp.Do(multisc.cInit)
 	return &IAB{
 		i:  make([]uint32, words),
@@ -56,10 +81,47 @@ func IABInit() *IAB {
 	}
 }
 
-// IABGetProc summarizes the Inh, Amb and Bound capabilty vectors of
+// good confirms the iab looks to be initialized.
+func (iab *IAB) good() error {
+	if iab == nil || len(iab.i) == 0 || len(iab.i) != words || len(iab.a) != words || len(iab.nb) != words {
+		return ErrBadValue
+	}
+	return nil
+}
+
+// Dup returns a duplicate copy of the IAB.
+func (iab *IAB) Dup() (*IAB, error) {
+	if err := iab.good(); err != nil {
+		return nil, err
+	}
+	v := NewIAB()
+	iab.mu.RLock()
+	defer iab.mu.RUnlock()
+	copy(v.i, iab.i)
+	copy(v.a, iab.a)
+	copy(v.nb, iab.nb)
+	return v, nil
+}
+
+// IABInit allocates a new IAB tuple.
+//
+// Deprecated: Replace with NewIAB.
+//
+// Example, replace this:
+//
+//    iab := IABInit()
+//
+// with this:
+//
+//    iab := NewIAB()
+func IABInit() *IAB {
+	return NewIAB()
+}
+
+// IABGetProc summarizes the Inh, Amb and Bound capability vectors of
 // the current process.
 func IABGetProc() *IAB {
-	iab := IABInit()
+	iab := NewIAB()
 	current := GetProc()
 	iab.Fill(Inh, current, Inheritable)
 	for c := MaxBits(); c > 0; {
@@ -78,7 +140,7 @@ func IABGetProc() *IAB {
 // IABFromText parses a string representing an IAB, as generated
 // by IAB.String(), to generate an IAB.
 func IABFromText(text string) (*IAB, error) {
-	iab := IABInit()
+	iab := NewIAB()
 	if len(text) == 0 {
 		return iab, nil
 	}
@@ -119,7 +181,12 @@ func IABFromText(text string) (*IAB, error) {
 
 // String serializes an IAB to a string format.
 func (iab *IAB) String() string {
+	if err := iab.good(); err != nil {
+		return "<invalid>"
+	}
 	var vs []string
+	iab.mu.RLock()
+	defer iab.mu.RUnlock()
 	for c := Value(0); c < Value(maxValues); c++ {
 		offset, mask := omask(c)
 		i := (iab.i[offset] & mask) != 0
@@ -141,6 +208,8 @@ func (iab *IAB) String() string {
 	return strings.Join(vs, ",")
 }
 
+// iabSetProc uses a syscaller to apply an IAB tuple to the process.
+// The iab is known to be locked by the caller.
 func (sc *syscaller) iabSetProc(iab *IAB) (err error) {
 	temp := GetProc()
 	var raising uint32
@@ -188,22 +257,32 @@ func (sc *syscaller) iabSetProc(iab *IAB) (err error) {
 }
 
 // SetProc attempts to change the Inheritable, Ambient and Bounding
-// capabilty vectors of the current process using the content,
+// capability vectors of the current process using the content,
 // iab. The Bounding vector strongly affects the potential for setting
-// other bits, so this function carefully performs the the combined
+// other bits, so this function carefully performs the combined
 // operation in the most flexible manner.
 func (iab *IAB) SetProc() error {
+	if err := iab.good(); err != nil {
+		return err
+	}
 	state, sc := scwStateSC()
 	defer scwSetState(launchBlocked, state, -1)
+	iab.mu.RLock()
+	defer iab.mu.RUnlock()
 	return sc.iabSetProc(iab)
 }
 
 // GetVector returns the raised state of the specific capability bit
 // of the indicated vector.
 func (iab *IAB) GetVector(vec Vector, val Value) (bool, error) {
+	if err := iab.good(); err != nil {
+		return false, err
+	}
 	if val >= MaxBits() {
 		return false, ErrBadValue
 	}
+	iab.mu.RLock()
+	defer iab.mu.RUnlock()
 	offset, mask := omask(val)
 	switch vec {
 	case Inh:
@@ -225,6 +304,11 @@ func (iab *IAB) GetVector(vec Vector, val Value) (bool, error) {
 // equivalent to lowering the Bounding vector of the process (when
 // successfully applied with (*IAB).SetProc()).
 func (iab *IAB) SetVector(vec Vector, raised bool, vals ...Value) error {
+	if err := iab.good(); err != nil {
+		return err
+	}
+	iab.mu.Lock()
+	defer iab.mu.Unlock()
 	for _, val := range vals {
 		if val >= Value(maxValues) {
 			return ErrBadValue
@@ -265,18 +349,25 @@ func (iab *IAB) SetVector(vec Vector, raised bool, vals ...Value) error {
 // the bits are inverted from what you might expect - that is lowered
 // bits from the Set will be raised in the Bound vector.
 func (iab *IAB) Fill(vec Vector, c *Set, flag Flag) error {
-	if len(c.flat) != 0 || flag > Inheritable {
-		return ErrBadSet
+	if err := iab.good(); err != nil {
+		return err
 	}
+	// work with a copy to avoid potential deadlock.
+	s, err := c.Dup()
+	if err != nil {
+		return err
+	}
+	iab.mu.Lock()
+	defer iab.mu.Unlock()
 	for i := 0; i < words; i++ {
-		flat := c.flat[i][flag]
+		flat := s.flat[i][flag]
 		switch vec {
 		case Inh:
 			iab.i[i] = flat
-			iab.a[i] &= ^flat
+			iab.a[i] &= flat
 		case Amb:
 			iab.a[i] = flat
-			iab.i[i] |= ^flat
+			iab.i[i] |= flat
 		case Bound:
 			iab.nb[i] = ^flat
 		default:
@@ -284,4 +375,109 @@ func (iab *IAB) Fill(vec Vector, c *Set, flag Flag) error {
 		}
 	}
 	return nil
+}
+
+// Cf compares two IAB values. Its return value is 0 if the compared
+// tuples are considered identical. The macroscopic differences can be
+// investigated with (IABDiff).Has().
+func (iab *IAB) Cf(alt *IAB) (IABDiff, error) {
+	if err := iab.good(); err != nil {
+		return 0, err
+	}
+	if iab == alt {
+		return 0, nil
+	}
+	// Avoid holding two locks at once.
+	ref, err := alt.Dup()
+	if err != nil {
+		return 0, err
+	}
+	iab.mu.RLock()
+	defer iab.mu.RUnlock()
+
+	var cf IABDiff
+	for i := 0; i < words; i++ {
+		if iab.i[i] != ref.i[i] {
+			cf |= iBits
+		}
+		if iab.a[i] != ref.a[i] {
+			cf |= aBits
+		}
+		if iab.nb[i] != ref.nb[i] {
+			cf |= bBits
+		}
+	}
+	return cf, nil
+}
+
+// parseHex converts the /proc/*/status string into an array of
+// uint32s suitable for storage in an IAB structure.
+func parseHex(hex string, invert bool) []uint32 {
+	if len(hex) != 8*words {
+		// Invalid string
+		return nil
+	}
+	var result []uint32
+	for i := 0; i < words; i++ {
+		upper := 8 * (words - i)
+		raw, err := strconv.ParseUint(hex[upper-8:upper], 16, 32)
+		if err != nil {
+			return nil
+		}
+		if invert {
+			raw = ^raw
+		}
+		bits := allMask(uint(i)) & uint32(raw)
+		result = append(result, bits)
+	}
+	return result
+}
+
+var procRoot = "/proc"
+
+// ProcRoot sets the local mount point for the Linux /proc filesystem.
+// It defaults to "/proc", but might be mounted elsewhere on any given
+// system. The function returns the previous value of the local mount
+// point. If the user attempts to set it to "", the value is left
+// unchanged.
+func ProcRoot(path string) string {
+	was := procRoot
+	if path != "" {
+		procRoot = path
+	}
+	return was
+}
+
+// IABGetPID returns the IAB tuple of a specified process. The kernel
+// ABI does not support this query via system calls, so the function
+// works by parsing the /proc/<pid>/status file content.
+func IABGetPID(pid int) (*IAB, error) {
+	tf := fmt.Sprintf("%s/%d/status", procRoot, pid)
+	d, err := ioutil.ReadFile(tf)
+	if err != nil {
+		return nil, err
+	}
+	iab := &IAB{}
+	for _, line := range strings.Split(string(d), "\n") {
+		if !strings.HasPrefix(line, "Cap") {
+			continue
+		}
+		flavor := line[3:]
+		if strings.HasPrefix(flavor, "Inh:\t") {
+			iab.i = parseHex(line[8:], false)
+			continue
+		}
+		if strings.HasPrefix(flavor, "Bnd:\t") {
+			iab.nb = parseHex(line[8:], true)
+			continue
+		}
+		if strings.HasPrefix(flavor, "Amb:\t") {
+			iab.a = parseHex(line[8:], false)
+			continue
+		}
+	}
+	if len(iab.i) != words || len(iab.a) != words || len(iab.nb) != words {
+		return nil, ErrBadValue
+	}
+	return iab, nil
 }

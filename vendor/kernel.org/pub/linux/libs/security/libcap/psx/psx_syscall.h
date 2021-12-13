@@ -59,7 +59,7 @@ long int psx_syscall6(long int syscall_nr,
  * is to define this function as weak in a library that can optionally
  * use libpsx and then, should the caller link -lpsx, that library can
  * implicitly use these POSIX semantics syscalls. See libcap for an
- * example of this useage.
+ * example of this usage.
  */
 void psx_load_syscalls(long int (**syscall_fn)(long int,
 					       long int, long int, long int),

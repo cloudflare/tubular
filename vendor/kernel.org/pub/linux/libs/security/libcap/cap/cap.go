@@ -28,7 +28,7 @@
 //       log.Fatalf("failed to drop privilege: %q -> %q: %v", old, empty, err)
 //   }
 //   now := cap.GetProc()
-//   if cf, _ := now.Compare(empty); cf != 0 {
+//   if cf, _ := now.Cf(empty); cf != 0 {
 //       log.Fatalf("failed to fully drop privilege: have=%q, wanted=%q", now, empty)
 //   }
 //
@@ -103,6 +103,15 @@ const (
 	Inheritable
 )
 
+// Diff summarizes the result of the (*Set).Cf() function.
+type Diff uint
+
+const (
+	effectiveDiff   Diff = 1 << Effective
+	permittedDiff   Diff = 1 << Permitted
+	inheritableDiff Diff = 1 << Inheritable
+)
+
 // String identifies a Flag value by its conventional "e", "p" or "i"
 // string abbreviation.
 func (f Flag) String() string {
@@ -151,7 +160,7 @@ const (
 )
 
 var (
-	// starUp protects setting of the following values: magic,
+	// startUp protects setting of the following values: magic,
 	// words, maxValues.
 	startUp sync.Once
 
@@ -261,7 +270,7 @@ func (sc *syscaller) prctlwcall6(prVal, v1, v2, v3, v4, v5 uintptr) (int, error)
 	return int(r), nil
 }
 
-// cInit perfoms the lazy identification of the capability vintage of
+// cInit performs the lazy identification of the capability vintage of
 // the running system.
 func (sc *syscaller) cInit() {
 	h := &header{
@@ -309,10 +318,18 @@ func NewSet() *Set {
 // request of the Set is invalid in some way.
 var ErrBadSet = errors.New("bad capability set")
 
+// good confirms that c looks valid.
+func (c *Set) good() error {
+	if c == nil || len(c.flat) == 0 {
+		return ErrBadSet
+	}
+	return nil
+}
+
 // Dup returns a copy of the specified capability set.
 func (c *Set) Dup() (*Set, error) {
-	if c == nil || len(c.flat) == 0 {
-		return nil, ErrBadSet
+	if err := c.good(); err != nil {
+		return nil, err
 	}
 	n := NewSet()
 	c.mu.RLock()
@@ -343,10 +360,9 @@ func GetProc() *Set {
 	return c
 }
 
+// setProc uses syscaller to set process capabilities.  Note, c is
+// either private to or (read) locked by the caller.
 func (sc *syscaller) setProc(c *Set) error {
-	if c == nil || len(c.flat) == 0 {
-		return ErrBadSet
-	}
 	return sc.capwcall(syscall.SYS_CAPSET, &header{magic: magic}, c.flat)
 }
 
@@ -360,8 +376,13 @@ func (sc *syscaller) setProc(c *Set) error {
 // function as part of a (*Launcher).Launch(), the call only sets the
 // capabilities of the thread being used to perform the launch.
 func (c *Set) SetProc() error {
+	if err := c.good(); err != nil {
+		return err
+	}
 	state, sc := scwStateSC()
 	defer scwSetState(launchBlocked, state, -1)
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return sc.setProc(c)
 }
 

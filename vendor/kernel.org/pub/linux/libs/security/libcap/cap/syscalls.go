@@ -40,7 +40,7 @@ const (
 )
 
 // scwMu is used to fully serialize the write system calls. Note, this
-// would generally not be necesary, but in the case of Launch we get
+// would generally not be necessary, but in the case of Launch we get
 // into a situation where the launching thread is temporarily allowed
 // to deviate from the kernel state of the rest of the runtime and
 // allowing other threads to perform w* syscalls will potentially

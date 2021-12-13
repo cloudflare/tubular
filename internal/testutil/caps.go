@@ -16,7 +16,7 @@ func EnterUnprivilegedMode() {
 	const secbits = cap.SecbitNoRoot | cap.SecbitNoSetUIDFixup
 
 	empty := cap.NewSet()
-	if c, err := cap.GetProc().Compare(empty); err != nil {
+	if c, err := cap.GetProc().Cf(empty); err != nil {
 		panic(err)
 	} else if c == 0 {
 		fmt.Println("Already unprivileged, not setting securebits")

@@ -105,9 +105,9 @@ google.golang.org/protobuf/types/known/timestamppb
 # inet.af/netaddr v0.0.0-20210603230628-bf05d8b52dda
 ## explicit; go 1.12
 inet.af/netaddr
-# kernel.org/pub/linux/libs/security/libcap/cap v1.2.49
+# kernel.org/pub/linux/libs/security/libcap/cap v1.2.62
 ## explicit; go 1.11
 kernel.org/pub/linux/libs/security/libcap/cap
-# kernel.org/pub/linux/libs/security/libcap/psx v1.2.49
+# kernel.org/pub/linux/libs/security/libcap/psx v1.2.62
 ## explicit; go 1.11
 kernel.org/pub/linux/libs/security/libcap/psx

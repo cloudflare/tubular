@@ -57,7 +57,7 @@ func (sc *syscaller) setSecbits(s Secbits) error {
 
 // Set attempts to force the process Secbits to a value. This function
 // will raise cap.SETPCAP in order to achieve this operation, and will
-// completely lower the Effective  vector of the process returning.
+// completely lower the Effective Flag of the process upon returning.
 func (s Secbits) Set() error {
 	state, sc := scwStateSC()
 	defer scwSetState(launchBlocked, state, -1)
@@ -75,6 +75,7 @@ const (
 	ModeNoPriv
 	ModePure1EInit
 	ModePure1E
+	ModeHybrid
 )
 
 // GetMode assesses the current process state and summarizes it as
@@ -82,6 +83,9 @@ const (
 // declared ModeUncertain.
 func GetMode() Mode {
 	b := GetSecbits()
+	if b == 0 {
+		return ModeHybrid
+	}
 	if b&securedBasicBits != securedBasicBits {
 		return ModeUncertain
 	}
@@ -101,12 +105,12 @@ func GetMode() Mode {
 
 	w := GetProc()
 	e := NewSet()
-	cf, _ := w.Compare(e)
+	cf, _ := w.Cf(e)
 
-	if Differs(cf, Inheritable) {
+	if cf.Has(Inheritable) {
 		return ModePure1E
 	}
-	if Differs(cf, Permitted) || Differs(cf, Effective) {
+	if cf.Has(Permitted) || cf.Has(Effective) {
 		return ModePure1EInit
 	}
 
@@ -139,6 +143,10 @@ func (sc *syscaller) setMode(m Mode) error {
 	}
 	if err := sc.setProc(w); err != nil {
 		return err
+	}
+
+	if m == ModeHybrid {
+		return sc.setSecbits(0)
 	}
 
 	if m == ModeNoPriv || m == ModePure1EInit {
@@ -199,6 +207,8 @@ func (m Mode) String() string {
 		return "PURE1E_INIT"
 	case ModePure1E:
 		return "PURE1E"
+	case ModeHybrid:
+		return "HYBRID"
 	default:
 		return "UNKNOWN"
 	}
@@ -234,11 +244,11 @@ func (sc *syscaller) setUID(uid int) error {
 // all other variants of UID (EUID etc) to the specified value without
 // dropping the privilege of the current process. This function will
 // raise cap.SETUID in order to achieve this operation, and will
-// completely lower the Effective vector of the process before
+// completely lower the Effective Flag of the process before
 // returning. Unlike the traditional method of dropping privilege when
-// changing from [E]UID=0 to some other UID, this function only
-// performs a change of UID cap.SETUID is available, and the action
-// does not alter the Permitted Flag of the process' Set.
+// changing from [E]UID=0 to some other UID, this function only can
+// perform any change of UID if cap.SETUID is available, and this
+// operation will not alter the Permitted Flag of the process' Set.
 func SetUID(uid int) error {
 	state, sc := scwStateSC()
 	defer scwSetState(launchBlocked, state, -1)
@@ -293,7 +303,7 @@ func SetGroups(gid int, suppl ...int) error {
 	return sc.setGroups(gid, suppl)
 }
 
-//go:unintptrescapes
+//go:uintptrescapes
 
 // Prctlw is a convenience function for performing a syscall.Prctl()
 // call that executes on all the threads of the process. It is called
@@ -313,7 +323,7 @@ func Prctlw(prVal uintptr, args ...uintptr) (int, error) {
 	return sc.prctlwcall6(prVal, as[0], as[1], as[2], as[3], as[4])
 }
 
-//go:unintptrescapes
+//go:uintptrescapes
 
 // Prctl is a convenience function that performs a syscall.Prctl()
 // that either reads state using a single OS thread, or performs a

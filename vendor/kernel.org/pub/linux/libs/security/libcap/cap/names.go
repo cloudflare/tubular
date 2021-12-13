@@ -50,7 +50,7 @@ const (
 	// file.
 	FSETID
 
-	// KILL allows a process to sent a kill(2) signal to any other
+	// KILL allows a process to send a kill(2) signal to any other
 	// process - overriding the limitation that there be a
 	// [E]UID match between source and target process.
 	KILL
@@ -63,31 +63,36 @@ const (
 	SETGID
 
 	// SETUID allows a process to freely manipulate its own UIDs:
-	//   - arbitraily set the UID, EUID, REUID and RESUID
+	//   - arbitrarily set the UID, EUID, REUID and RESUID
 	//     values
 	//   - allows the forging of UID credentials passed over a
 	//     socket
 	SETUID
 
 	// SETPCAP allows a process to freely manipulate its inheritable
-	// capabilities.  Linux supports the POSIX.1e Inheritable
-	// set, as well as Bounding and Ambient Linux extension
-	// vectors. This capability permits dropping bits from the
-	// Bounding vector. It also permits the process to raise
-	// Ambient vector bits that are both raised in the
-	// Permitted and Inheritable sets of the process. This
-	// capability cannot be used to raise Permitted bits, or
-	// Effective bits beyond those already present in the
-	// process' permitted set.
+	// capabilities.
 	//
-	// [Historical note: prior to the advent of file
-	// capabilities (2008), this capability was suppressed by
-	// default, as its unsuppressed behavior was not
-	// auditable: it could asynchronously grant its own
-	// Permitted capabilities to and remove capabilities from
-	// other processes arbitraily. The former leads to
-	// undefined behavior, and the latter is better served by
-	// the kill system call.]
+	// Linux supports the POSIX.1e Inheritable set, the POXIX.1e (X
+	// vector) known in Linux as the Bounding vector, as well as
+	// the Linux extension Ambient vector.
+	//
+	// This capability permits dropping bits from the Bounding
+	// vector (ie. raising B bits in the libcap IAB
+	// representation). It also permits the process to raise
+	// Ambient vector bits that are both raised in the Permitted
+	// and Inheritable sets of the process. This capability cannot
+	// be used to raise Permitted bits, Effective bits beyond those
+	// already present in the process' permitted set, or
+	// Inheritable bits beyond those present in the Bounding
+	// vector.
+	//
+	// [Historical note: prior to the advent of file capabilities
+	// (2008), this capability was suppressed by default, as its
+	// unsuppressed behavior was not auditable: it could
+	// asynchronously grant its own Permitted capabilities to and
+	// remove capabilities from other processes arbitrarily. The
+	// former leads to undefined behavior, and the latter is better
+	// served by the kill system call.]
 	SETPCAP
 
 	// LINUX_IMMUTABLE allows a process to modify the S_IMMUTABLE and
@@ -230,8 +235,6 @@ const (
 	//   - override the maximum number of consoles for console
 	//     allocation
 	//   - override the maximum number of keymaps
-	//
-	//
 	SYS_RESOURCE
 
 	// SYS_TIME allows a process to perform time manipulation of clocks:
@@ -261,6 +264,11 @@ const (
 	AUDIT_CONTROL
 
 	// SETFCAP allows a process to set capabilities on files.
+	// Permits a process to uid_map the uid=0 of the
+	// parent user namespace into that of the child
+	// namespace. Also, permits a process to override
+	// securebits locks through user namespace
+	// creation.
 	SETFCAP
 
 	// MAC_OVERRIDE allows a process to override Manditory Access Control

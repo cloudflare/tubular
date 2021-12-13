@@ -463,9 +463,9 @@ honnef.co/go/tools v0.0.0-20190523083050-ea95bdfd59fc/go.mod h1:rf3lG4BRIbNafJWh
 honnef.co/go/tools v0.0.1-2019.2.3/go.mod h1:a3bituU0lyd329TUQxRnasdCoJDkEUEAqEt0JzvZhAg=
 inet.af/netaddr v0.0.0-20210603230628-bf05d8b52dda h1:N1UNOTFyoz00Zw10uv9elxer4zdyqqhsMOOqAFPVTfM=
 inet.af/netaddr v0.0.0-20210603230628-bf05d8b52dda/go.mod h1:z0nx+Dh+7N7CC8V5ayHtHGpZpxLQZZxkIaaz6HN65Ls=
-kernel.org/pub/linux/libs/security/libcap/cap v1.2.49 h1:l/z5YU1YTeIo872V3L577f49PgLvSGTstopFJMASdAc=
-kernel.org/pub/linux/libs/security/libcap/cap v1.2.49/go.mod h1:SDveHFdFe7G0H/t18WEsVxAsBGUGvSF5tuOY6yN0+xo=
-kernel.org/pub/linux/libs/security/libcap/psx v1.2.49 h1:hlS5NSqyydHYranE120TzuEEaTAPLVyi1dm0tYSYMbg=
-kernel.org/pub/linux/libs/security/libcap/psx v1.2.49/go.mod h1:+l6Ee2F59XiJ2I6WR5ObpC1utCQJZ/VLsEbQCD8RG24=
+kernel.org/pub/linux/libs/security/libcap/cap v1.2.62 h1:9iE7a676uhvcBUqPaX1m8vsGPLxWhY6HacTae4fAZ4M=
+kernel.org/pub/linux/libs/security/libcap/cap v1.2.62/go.mod h1:IZIlNB3lc6EmaOILJvTigHdE+vE5DrVDEEm6CB133Ak=
+kernel.org/pub/linux/libs/security/libcap/psx v1.2.62 h1:Tko+77IH7RReA/jcHqaVgtUJ9zAaXH4I0ZE3YHluBdw=
+kernel.org/pub/linux/libs/security/libcap/psx v1.2.62/go.mod h1:+l6Ee2F59XiJ2I6WR5ObpC1utCQJZ/VLsEbQCD8RG24=
 sigs.k8s.io/yaml v1.1.0/go.mod h1:UJmg0vDUVViEyp3mgSv9WPwZCDxu4rQW1olrI1uml+o=
 sourcegraph.com/sourcegraph/appdash v0.0.0-20190731080439-ebfcffb1b5c0/go.mod h1:hI742Nqp5OhwiqlzhgfbWU4mW4yO10fP+LoT9WOswdU=

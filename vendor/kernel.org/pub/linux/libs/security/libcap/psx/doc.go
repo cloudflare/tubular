@@ -1,5 +1,5 @@
 // Package psx provides support for system calls that are run
-// simultanously on all threads under Linux.
+// simultaneously on all threads under Linux.
 //
 // This property can be used to work around a historical lack of
 // native Go support for such a feature. Something that is the subject

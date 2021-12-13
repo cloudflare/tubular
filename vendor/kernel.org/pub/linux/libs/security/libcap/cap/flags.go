@@ -2,13 +2,13 @@ package cap
 
 import "errors"
 
-// GetFlag determines if the requested bit is enabled in the Flag
-// vector of the capability Set.
+// GetFlag determines if the requested Value is enabled in the
+// specified Flag of the capability Set.
 func (c *Set) GetFlag(vec Flag, val Value) (bool, error) {
-	if c == nil || len(c.flat) == 0 {
+	if err := c.good(); err != nil {
 		// Checked this first, because otherwise we are sure
 		// cInit has been called.
-		return false, ErrBadSet
+		return false, err
 	}
 	offset, mask, err := bitOf(vec, val)
 	if err != nil {
@@ -25,10 +25,10 @@ func (c *Set) GetFlag(vec Flag, val Value) (bool, error) {
 // bits be checked for validity and permission by the kernel. If the
 // function returns an error, the Set will not be modified.
 func (c *Set) SetFlag(vec Flag, enable bool, val ...Value) error {
-	if c == nil || len(c.flat) == 0 {
+	if err := c.good(); err != nil {
 		// Checked this first, because otherwise we are sure
 		// cInit has been called.
-		return ErrBadSet
+		return err
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -62,8 +62,8 @@ func (c *Set) SetFlag(vec Flag, enable bool, val ...Value) error {
 
 // Clear fully clears a capability set.
 func (c *Set) Clear() error {
-	if c == nil || len(c.flat) == 0 {
-		return ErrBadSet
+	if err := c.good(); err != nil {
+		return err
 	}
 	// startUp.Do(cInit) is not called here because c cannot be
 	// initialized except via this package and doing that will
@@ -75,13 +75,52 @@ func (c *Set) Clear() error {
 	return nil
 }
 
+// FillFlag copies the from flag values of ref into the to flag of
+// c. With this function, you can raise all of the permitted values in
+// the c Set from those in ref with c.Fill(cap.Permitted, ref,
+// cap.Permitted).
+func (c *Set) FillFlag(to Flag, ref *Set, from Flag) error {
+	if err := c.good(); err != nil {
+		return err
+	}
+	if err := ref.good(); err != nil {
+		return err
+	}
+	if to > Inheritable || from > Inheritable {
+		return ErrBadValue
+	}
+
+	// Avoid deadlock by using a copy.
+	if c != ref {
+		var err error
+		ref, err = ref.Dup()
+		if err != nil {
+			return err
+		}
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for i := range c.flat {
+		c.flat[i][to] = ref.flat[i][from]
+	}
+	return nil
+}
+
+// Fill copies the from flag values into the to flag. With this
+// function, you can raise all of the permitted values in the
+// effective flag with c.Fill(cap.Effective, cap.Permitted).
+func (c *Set) Fill(to, from Flag) error {
+	return c.FillFlag(to, c, from)
+}
+
 // ErrBadValue indicates a bad capability value was specified.
 var ErrBadValue = errors.New("bad capability value")
 
-// bitOf converts from a Value into the offset and mask for a
-// specific Value bit in the compressed (kernel ABI) representation of
-// a capability vector. If the requested bit is unsupported, an error
-// is returned.
+// bitOf converts from a Value into the offset and mask for a specific
+// Value bit in the compressed (kernel ABI) representation of a
+// capabilities. If the requested bit is unsupported, an error is
+// returned.
 func bitOf(vec Flag, val Value) (uint, uint32, error) {
 	if vec > Inheritable || val > Value(words*32) {
 		return 0, 0, ErrBadValue
@@ -108,9 +147,12 @@ func allMask(index uint) (mask uint32) {
 }
 
 // forceFlag sets 'all' capability values (supported by the kernel) of
-// a flag vector to enable.
+// a specified Flag to enable.
 func (c *Set) forceFlag(vec Flag, enable bool) error {
-	if c == nil || len(c.flat) == 0 || vec > Inheritable {
+	if err := c.good(); err != nil {
+		return err
+	}
+	if vec > Inheritable {
 		return ErrBadSet
 	}
 	m := uint32(0)
@@ -125,37 +167,105 @@ func (c *Set) forceFlag(vec Flag, enable bool) error {
 	return nil
 }
 
-// ClearFlag clears a specific vector of Values associated with the
-// specified Flag.
+// ClearFlag clears all the Values associated with the specified Flag.
 func (c *Set) ClearFlag(vec Flag) error {
 	return c.forceFlag(vec, false)
 }
 
-// Compare returns 0 if c and d are identical in content. Otherwise,
-// this function returns a non-zero value of 3 independent bits:
-// (differE ? 1:0) | (differP ? 2:0) | (differI ? 4:0). The Differs()
-// function can be used to test for a difference in a specific Flag.
-func (c *Set) Compare(d *Set) (uint, error) {
-	if c == nil || len(c.flat) == 0 || d == nil || len(d.flat) == 0 {
-		return 0, ErrBadSet
+// Cf returns 0 if c and d are identical. A non-zero Diff value
+// captures a simple macroscopic summary of how they differ. The
+// (Diff).Has() function can be used to determine how the two
+// capability sets differ.
+func (c *Set) Cf(d *Set) (Diff, error) {
+	if err := c.good(); err != nil {
+		return 0, err
 	}
-	var cf uint
+	if c == d {
+		return 0, nil
+	}
+	d, err := d.Dup()
+	if err != nil {
+		return 0, err
+	}
+
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	var cf Diff
 	for i := 0; i < words; i++ {
 		if c.flat[i][Effective]^d.flat[i][Effective] != 0 {
-			cf |= (1 << Effective)
+			cf |= effectiveDiff
 		}
 		if c.flat[i][Permitted]^d.flat[i][Permitted] != 0 {
-			cf |= (1 << Permitted)
+			cf |= permittedDiff
 		}
 		if c.flat[i][Inheritable]^d.flat[i][Inheritable] != 0 {
-			cf |= (1 << Inheritable)
+			cf |= inheritableDiff
 		}
 	}
 	return cf, nil
 }
 
+// Compare returns 0 if c and d are identical in content.
+//
+// Deprecated: Replace with (*Set).Cf().
+//
+// Example, replace this:
+//
+//    diff, err := a.Compare(b)
+//    if err != nil {
+//      return err
+//    }
+//    if diff == 0 {
+//      return nil
+//    }
+//    if diff & (1 << Effective) {
+//      log.Print("a and b difference includes Effective values")
+//    }
+//
+// with this:
+//
+//    diff, err := a.Cf(b)
+//    if err != nil {
+//      return err
+//    }
+//    if diff == 0 {
+//      return nil
+//    }
+//    if diff.Has(Effective) {
+//      log.Print("a and b difference includes Effective values")
+//    }
+func (c *Set) Compare(d *Set) (uint, error) {
+	u, err := c.Cf(d)
+	return uint(u), err
+}
+
 // Differs processes the result of Compare and determines if the
 // Flag's components were different.
+//
+// Deprecated: Replace with (Diff).Has().
+//
+// Example, replace this:
+//
+//    diff, err := a.Compare(b)
+//    ...
+//    if diff & (1 << Effective) {
+//       ... different effective capabilities ...
+//    }
+//
+// with this:
+//
+//    diff, err := a.Cf(b)
+//    ...
+//    if diff.Has(Effective) {
+//       ... different effective capabilities ...
+//    }
 func Differs(cf uint, vec Flag) bool {
 	return cf&(1<<vec) != 0
+}
+
+// Has processes the Diff result of (*Set).Cf() and determines if the
+// Flag's components were different in that result.
+func (cf Diff) Has(vec Flag) bool {
+	return uint(cf)&(1<<vec) != 0
 }
