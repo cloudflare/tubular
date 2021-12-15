@@ -110,6 +110,7 @@ var cmds = []struct {
 	{"unload", unload, false},
 	{"upgrade", upgrade, false},
 	// Bindings
+	{"bindings", bindings, false},
 	{"bind", bind, false},
 	{"unbind", unbind, false},
 	{"load-bindings", loadBindings, false},

@@ -5,10 +5,93 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"text/tabwriter"
 
 	"code.cfops.it/sys/tubular/internal"
 	"inet.af/netaddr"
 )
+
+func bindings(e *env, args ...string) error {
+	set := e.newFlagSet("bindings", "--", "protocol", "prefix[/mask]", "port")
+	set.Description = `
+		List bindings which match certain criteria.
+
+		Examples:
+		  $ tubectl bindings
+		  $ tubectl bindings any 127.0.0.0/8
+		  $ tubectl bindings udp ::1 443`
+	if err := set.Parse(args); err != nil {
+		return err
+	}
+
+	var proto internal.Protocol
+	if f := set.Arg(0); set.NArg() >= 1 && f != "any" {
+		if err := proto.UnmarshalText([]byte(f)); err != nil {
+			return fmt.Errorf("parse protocol: %w", err)
+		}
+	}
+
+	var prefix netaddr.IPPrefix
+	var err error
+	if set.NArg() >= 2 {
+		prefix, err = internal.ParsePrefix(set.Arg(1))
+		if err != nil {
+			return err
+		}
+	}
+
+	var port uint16
+	if set.NArg() >= 3 {
+		port64, err := strconv.ParseUint(set.Arg(2), 10, 16)
+		if err != nil {
+			return fmt.Errorf("port %q: %w", set.Arg(2), err)
+		}
+		port = uint16(port64)
+	}
+
+	var bindings internal.Bindings
+	{
+		dp, err := e.openDispatcher(true)
+		if err != nil {
+			return fmt.Errorf("open dispatcher: %w", err)
+		}
+		defer dp.Close()
+
+		bindings, err = dp.Bindings()
+		if err != nil {
+			return fmt.Errorf("get bindings: %s", err)
+		}
+
+		dp.Close()
+	}
+
+	var filtered internal.Bindings
+	for _, bind := range bindings {
+		if proto != 0 && bind.Protocol != proto {
+			continue
+		}
+
+		if !prefix.IsZero() && !prefix.Overlaps(bind.Prefix) {
+			continue
+		}
+
+		if port != 0 && bind.Port != 0 && bind.Port != port {
+			continue
+		}
+
+		filtered = append(filtered, bind)
+	}
+	bindings = filtered
+
+	if len(bindings) == 0 {
+		e.stdout.Log("no bindings matched")
+		return nil
+	}
+
+	e.stdout.Log("Bindings:")
+	w := tabwriter.NewWriter(e.stdout, 0, 0, 1, ' ', tabwriter.AlignRight)
+	return printBindings(w, bindings)
+}
 
 func bind(e *env, args ...string) error {
 	set := e.newFlagSet("bind", "label", "protocol", "ip[/mask]", "port")

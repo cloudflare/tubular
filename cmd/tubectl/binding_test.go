@@ -2,12 +2,78 @@ package main
 
 import (
 	"sort"
+	"strings"
 	"testing"
 
 	"code.cfops.it/sys/tubular/internal"
 	"code.cfops.it/sys/tubular/internal/testutil"
 	"github.com/google/go-cmp/cmp"
 )
+
+func TestBindings(t *testing.T) {
+	netns := mustReadyNetNS(t)
+
+	bindings := map[string]struct {
+		proto  internal.Protocol
+		prefix string
+		port   uint16
+	}{
+		"foo":  {internal.TCP, "::1", 80},
+		"bar":  {internal.TCP, "1::", 443},
+		"baz":  {internal.UDP, "127.0.1.0/24", 443},
+		"boo":  {internal.UDP, "::1", 443},
+		"wild": {internal.UDP, "2::1", 0},
+	}
+
+	{
+		dp := mustOpenDispatcher(t, netns)
+		for label, bind := range bindings {
+			mustAddBinding(t, dp, label, bind.proto, bind.prefix, bind.port)
+		}
+		dp.Close()
+	}
+
+	set := func(strs ...string) map[string]struct{} {
+		result := make(map[string]struct{})
+		for _, str := range strs {
+			result[str] = struct{}{}
+		}
+		return result
+	}
+
+	for _, test := range []struct {
+		args   []string
+		labels map[string]struct{}
+	}{
+		{[]string{}, set("foo", "bar", "baz", "boo", "wild")},
+		{[]string{"tcp", "::/0"}, set("foo", "bar")},
+		{[]string{"tcp", "::/16"}, set("foo")},
+		{[]string{"tcp", "::/0", "443"}, set("bar")},
+		{[]string{"udp", "0.0.0.0/0"}, set("baz")},
+		{[]string{"any", "::/0", "443"}, set("bar", "boo", "wild")},
+		{[]string{"udp", "2::1", "443"}, set("wild")},
+	} {
+		t.Run(strings.Join(test.args, " "), func(t *testing.T) {
+			output, err := testTubectl(t, netns, "bindings", test.args...)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			outputStr := output.String()
+			for label := range bindings {
+				if _, ok := test.labels[label]; ok {
+					if !strings.Contains(outputStr, label) {
+						t.Error("Output doesn't contain label", label)
+					}
+				} else {
+					if strings.Contains(outputStr, label) {
+						t.Error("Output contains label", label)
+					}
+				}
+			}
+		})
+	}
+}
 
 func TestBindUnbind(t *testing.T) {
 	netns := mustReadyNetNS(t)
