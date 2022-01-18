@@ -1,3 +1,34 @@
+2022.1.0
+- 2021-12-13 TUBE-93: update kernel.org/pub/linux/libs/security/libcap/cap
+- 2021-12-10 testutil: fix flaky JoinNetNS test
+- 2021-12-15 TUBE-92: cmd/tubectl: add bindings command
+- 2021-12-01 cfsetup: use Go 1.17
+- 2021-12-02 cmd/tubectl: rename list to status
+- 2021-12-09 cmd/tubectl: allow defining flags on flagSet
+- 2021-12-09 cmd/tubectl: tell users about subcommand help
+- 2021-12-09 cmd/tubectl: call correct function for list
+- 2021-12-09 cmd/tubectl: close dispatcher early in status
+- 2021-12-09 cmd/tubectl: return better error on argument mismatch
+- 2021-12-09 cmd/tubectl: explain noun vs verb commands and clarify ordering
+- 2021-12-09 dispatcher: export ParsePrefix
+- 2021-12-09 cmd/tubectl: factor out printing bindings
+- 2021-11-22 replace rubygem-fpm with nfpm
+- 2021-11-24 update ebpf library
+- 2021-10-25 example: use upstreamed x/sys/unix functions
+- 2021-10-12 use pidfd wrappers from x/sys/unix
+- 2021-10-12 require go 1.17 and clean up vendor
+- 2021-10-13 add a quickstart to the readme
+- 2021-10-15 cmd/tubectl: provide feedback when adding a binding
+- 2021-10-15 cmd/tubectl: include pid in error output
+- 2021-10-15 sysconn: name function arguments
+- 2021-10-15 dispatcher: commit compiled BPF
+- 2021-10-15 example: add a TCP and UDP echo server
+- 2021-09-01 pin to Go 1.16
+- 2021-09-02 update github.com/cilium/ebpf
+- 2021-09-02 cmd/tubectl: add unregister example
+- 2021-09-02 cmd/tubectl: simplify unregister error message
+- 2021-09-07 move sysconn and pidfd packages out of internal
+
 2021.6.1
 - 2021-06-10 cmd/tubectl: add register-pid command
 - 2021-06-16 TUBE-81: Add reachability check
