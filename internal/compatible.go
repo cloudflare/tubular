@@ -21,7 +21,8 @@ func isLinkCompatible(link link.Link, prog *ebpf.Program, spec *ebpf.ProgramSpec
 		return fmt.Errorf("get dispatcher program info: %s", err)
 	}
 
-	if progID, _ := progInfo.ID(); progID != linkInfo.Program {
+	progID, _ := progInfo.ID()
+	if progID != linkInfo.Program {
 		return fmt.Errorf("program id %v doesn't match link %v", progID, linkInfo.Program)
 	}
 
@@ -31,7 +32,7 @@ func isLinkCompatible(link link.Link, prog *ebpf.Program, spec *ebpf.ProgramSpec
 	}
 
 	if tag != progInfo.Tag {
-		return fmt.Errorf("loaded tag %q doesn't match %q", progInfo.Tag, tag)
+		return fmt.Errorf("loaded program #%d has differing tag: %q doesn't match %q", progID, progInfo.Tag, tag)
 	}
 
 	return nil
