@@ -72,6 +72,21 @@ func (fl *File) Lock() {
 	}
 }
 
+// TryLock attempts to lock the file without blocking.
+//
+// It panics if the underlying syscalls return an error.
+func (fl *File) TryLock() bool {
+	err := fl.flock(fl.how | unix.LOCK_NB)
+	if err != nil {
+		if errors.Is(err, unix.EWOULDBLOCK) {
+			return false
+		}
+
+		panic(err.Error())
+	}
+	return true
+}
+
 // Unlock implements sync.Locker.
 //
 // It panics if the underlying syscalls return an error.

@@ -23,18 +23,22 @@ func TestUnregister(t *testing.T) {
 	tubectl.MustRun(t)
 
 	// Open the dispatcher and verify the numer of destinations
-	dp := mustOpenDispatcher(t, netns)
+	{
+		dp := mustOpenDispatcher(t, netns)
 
-	dests := destinations(t, dp)
-	if len(dests) != len(fds) {
-		t.Fatalf("expected %v registered destination(s), have %v", len(fds), len(dests))
-	}
-
-	for _, f := range fds {
-		cookie := mustSocketCookie(t, f)
-		if _, ok := dests[cookie]; !ok {
-			t.Fatalf("expected registered destination for socket %v", cookie)
+		dests := destinations(t, dp)
+		if len(dests) != len(fds) {
+			t.Fatalf("expected %v registered destination(s), have %v", len(fds), len(dests))
 		}
+
+		for _, f := range fds {
+			cookie := mustSocketCookie(t, f)
+			if _, ok := dests[cookie]; !ok {
+				t.Fatalf("expected registered destination for socket %v", cookie)
+			}
+		}
+
+		dp.Close()
 	}
 
 	tubectl = tubectlTestCall{
@@ -45,8 +49,10 @@ func TestUnregister(t *testing.T) {
 	}
 	tubectl.MustRun(t)
 
+	dp := mustOpenDispatcher(t, netns)
+
 	// Verify the numer of destinations, should only be 1 left
-	dests = destinations(t, dp)
+	dests := destinations(t, dp)
 	if len(dests) != 1 {
 		t.Fatalf("unexpected number of sockets, wanted 1, got %v", len(dests))
 	}

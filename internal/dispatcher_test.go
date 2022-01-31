@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"code.cfops.it/sys/tubular/internal/lock"
 	"code.cfops.it/sys/tubular/internal/log"
 	"code.cfops.it/sys/tubular/internal/testutil"
 	"golang.org/x/sys/unix"
@@ -1044,9 +1045,31 @@ func mustCreateDispatcher(tb testing.TB, logger log.Logger, netns ns.NetNS) *Dis
 		tb.Fatal("Can't create dispatcher:", err)
 	}
 
+	dir, err := os.Open(dp.Path)
+	if err != nil {
+		tb.Fatal("Can't open state directory:", err)
+	}
+	defer dir.Close()
+
+	if lock.Exclusive(dir).TryLock() {
+		tb.Fatal("State directory isn't locked after creation")
+	}
+
 	tb.Cleanup(func() {
+		dir, err := os.Open(dp.Path)
+		locked := false
+		if err == nil {
+			defer dir.Close()
+			locked = !lock.Exclusive(dir).TryLock()
+		}
+
 		os.RemoveAll(dp.Path)
-		dp.Close()
+		if err := dp.Close(); err == nil {
+			// Only check locking if the dispatcher wasn't closed before.
+			if dir != nil && !locked {
+				tb.Error("State directory isn't locked at end of execution")
+			}
+		}
 	})
 	return dp
 }

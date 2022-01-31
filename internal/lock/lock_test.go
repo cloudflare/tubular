@@ -65,6 +65,25 @@ func TestLocking(t *testing.T) {
 	}
 }
 
+func TestTryLock(t *testing.T) {
+	newHandle := mustTempDir(t)
+	a := Exclusive(newHandle())
+	defer a.Close()
+
+	b := Exclusive(newHandle())
+	defer b.Close()
+
+	a.Lock()
+	if b.TryLock() {
+		t.Fatal("TryLock shouldn't succeed")
+	}
+
+	a.Unlock()
+	if !b.TryLock() {
+		t.Fatal("TryLock should succeed")
+	}
+}
+
 func mustTempDir(tb testing.TB) func() *os.File {
 	tb.Helper()
 

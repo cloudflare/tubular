@@ -514,9 +514,6 @@ func (d *Dispatcher) RemoveBinding(bind *Binding) error {
 //
 // Returns a boolean indicating whether any changes were made.
 func (d *Dispatcher) ReplaceBindings(bindings Bindings) (bool, error) {
-	d.stateDir.Lock()
-	defer d.stateDir.Unlock()
-
 	want := make(map[bindingKey]string)
 	for _, bind := range bindings {
 		key := newBindingKey(bind)
@@ -588,9 +585,6 @@ func (d *Dispatcher) iterBindings(fn func(bindingKey, string)) error {
 
 // Bindings lists known bindings.
 func (d *Dispatcher) Bindings() (Bindings, error) {
-	d.stateDir.Lock()
-	defer d.stateDir.Unlock()
-
 	var bindings Bindings
 	err := d.iterBindings(func(key bindingKey, label string) {
 		bindings = append(bindings, newBindingFromBPF(label, &key))
@@ -626,9 +620,6 @@ func (d *Dispatcher) RegisterSocket(label string, conn syscall.Conn) (dest *Dest
 		return nil, false, err
 	}
 
-	d.stateDir.Lock()
-	defer d.stateDir.Unlock()
-
 	created, err = d.destinations.AddSocket(dest, conn)
 	if err != nil {
 		return nil, false, fmt.Errorf("add socket: %s", err)
@@ -638,9 +629,6 @@ func (d *Dispatcher) RegisterSocket(label string, conn syscall.Conn) (dest *Dest
 }
 
 func (d *Dispatcher) UnregisterSocket(label string, domain Domain, proto Protocol) error {
-	d.stateDir.Lock()
-	defer d.stateDir.Unlock()
-
 	dest := &Destination{
 		Label:    label,
 		Domain:   domain,
@@ -667,9 +655,6 @@ type Metrics struct {
 
 // Metrics returns current counters from the data plane.
 func (d *Dispatcher) Metrics() (*Metrics, error) {
-	d.stateDir.Lock()
-	defer d.stateDir.Unlock()
-
 	bindings, err := d.Bindings()
 	if err != nil {
 		return nil, fmt.Errorf("bindings metrics: %s", err)
@@ -715,9 +700,6 @@ func (d *Dispatcher) Metrics() (*Metrics, error) {
 
 // Destinations returns a set of existing destinations, i.e. sockets and labels.
 func (d *Dispatcher) Destinations() ([]Destination, map[Destination]SocketCookie, error) {
-	d.stateDir.Lock()
-	defer d.stateDir.Unlock()
-
 	destsByID, err := d.destinations.List()
 	if err != nil {
 		return nil, nil, fmt.Errorf("list destinations: %s", err)
