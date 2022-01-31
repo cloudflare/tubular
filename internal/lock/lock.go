@@ -6,7 +6,8 @@ import (
 	"fmt"
 	"os"
 	"sync"
-	"syscall"
+
+	"code.cfops.it/sys/tubular/pkg/sysconn"
 
 	"golang.org/x/sys/unix"
 )
@@ -17,7 +18,6 @@ import (
 // same lock.
 type File struct {
 	*os.File
-	raw syscall.RawConn
 	how int
 }
 
@@ -26,13 +26,8 @@ var _ sync.Locker = (*File)(nil)
 // Exclusive creates a new exclusive lock.
 //
 // Returns an unlocked lock.
-func Exclusive(file *os.File) (*File, error) {
-	raw, err := file.SyscallConn()
-	if err != nil {
-		return nil, fmt.Errorf("lock exclusive: %s", err)
-	}
-
-	return &File{file, raw, unix.LOCK_EX}, nil
+func Exclusive(file *os.File) *File {
+	return &File{file, unix.LOCK_EX}
 }
 
 // OpenLockedExclusive opens the given path and acquires an exclusive lock.
@@ -42,11 +37,7 @@ func OpenLockedExclusive(path string) (*File, error) {
 		return nil, err
 	}
 
-	lock, err := Exclusive(file)
-	if err != nil {
-		return nil, err
-	}
-
+	lock := Exclusive(file)
 	lock.Lock()
 	return lock, nil
 }
@@ -56,13 +47,8 @@ func OpenLockedExclusive(path string) (*File, error) {
 // The lock is implicitly released when the file description of file is closed.
 //
 // Returns an unlocked lock.
-func Shared(file *os.File) (*File, error) {
-	raw, err := file.SyscallConn()
-	if err != nil {
-		return nil, fmt.Errorf("lock exclusive: %s", err)
-	}
-
-	return &File{file, raw, unix.LOCK_SH}, nil
+func Shared(file *os.File) *File {
+	return &File{file, unix.LOCK_SH}
 }
 
 // OpenShared opens the given path and acquires a shared lock.
@@ -72,11 +58,7 @@ func OpenLockedShared(path string) (*File, error) {
 		return nil, err
 	}
 
-	lock, err := Shared(file)
-	if err != nil {
-		return nil, err
-	}
-
+	lock := Shared(file)
 	lock.Lock()
 	return lock, nil
 }
@@ -100,21 +82,18 @@ func (fl *File) Unlock() {
 }
 
 func (fl *File) flock(how int) error {
-	var flockErr error
-	err := fl.raw.Control(func(fd uintptr) {
+	err := sysconn.Control(fl.File, func(fd int) (err error) {
 		for {
-			flockErr = unix.Flock(int(fd), how)
-			if errors.Is(flockErr, unix.EINTR) {
+			err = unix.Flock(int(fd), how)
+			if errors.Is(err, unix.EINTR) {
 				continue
-			}
-			if flockErr != nil {
-				flockErr = fmt.Errorf("lock exclusive: %w", flockErr)
 			}
 			return
 		}
 	})
+
 	if err != nil {
-		return fmt.Errorf("lock exclusive: acquire fd: %s", err)
+		return fmt.Errorf("flock: %w", err)
 	}
-	return flockErr
+	return nil
 }

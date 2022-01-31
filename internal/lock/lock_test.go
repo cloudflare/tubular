@@ -10,7 +10,7 @@ import (
 func TestLocking(t *testing.T) {
 	tests := []struct {
 		name        string
-		a, b        func(*os.File) (*File, error)
+		a, b        func(*os.File) *File
 		shouldBlock bool
 	}{
 		{"Ex-Ex", Exclusive, Exclusive, true},
@@ -33,15 +33,8 @@ func TestLocking(t *testing.T) {
 			t.Parallel()
 
 			newHandle := mustTempDir(t)
-			a, err := test.a(newHandle())
-			if err != nil {
-				t.Fatal("Can't create lock a:", err)
-			}
-
-			b, err := test.b(newHandle())
-			if err != nil {
-				t.Fatal("Can't create lock:", err)
-			}
+			a := test.a(newHandle())
+			b := test.b(newHandle())
 
 			a.Lock()
 			acquired := make(chan struct{})
