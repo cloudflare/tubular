@@ -116,10 +116,11 @@ func CreateDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispat
 
 func adjustPermissions(path string) error {
 	const (
-		// Allow user and group full access, and let others list the directory.
-		dirMode os.FileMode = 0775
-		// Allow user and group full access, and let others read the state.
-		objMode os.FileMode = 0664
+		// Only let group list and open the directory. This is important since
+		// being able to open a directory implies being able to flock it.
+		dirMode os.FileMode = 0750
+		// Allow group read-only access to state.
+		objMode os.FileMode = 0640
 	)
 
 	if err := os.Chmod(path, dirMode); err != nil {

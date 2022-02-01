@@ -354,36 +354,9 @@ func TestDispatcherAccess(t *testing.T) {
 	}
 
 	t.Run("group read-write", func(t *testing.T) {
-		var dp *Dispatcher
 		err := testutil.WithCapabilities(func() (err error) {
 			if err := cap.SetUID(uid); err != nil {
 				return fmt.Errorf("set uid: %s", err)
-			}
-
-			dp, err = OpenDispatcher(log.Discard, netns.Path(), "/sys/fs/bpf", false)
-			return
-		})
-		if err != nil {
-			t.Fatal("Open dispatcher with shared group", err)
-		}
-		defer dp.Close()
-
-		mustAddBinding(t, dp, bind)
-		if err := dp.RemoveBinding(bind); err != nil {
-			t.Error("Remove binding:", err)
-		}
-		ln := testutil.Listen(t, netns, "tcp", "")
-		mustRegisterSocket(t, dp, "foo", ln)
-	})
-
-	t.Run("others read-write", func(t *testing.T) {
-		err := testutil.WithCapabilities(func() (err error) {
-			if err := cap.SetUID(uid); err != nil {
-				return fmt.Errorf("set uid: %s", err)
-			}
-
-			if err := cap.SetGroups(gid); err != nil {
-				return fmt.Errorf("set gid: %s", err)
 			}
 
 			dp, err := OpenDispatcher(log.Discard, netns.Path(), "/sys/fs/bpf", false)
@@ -394,54 +367,58 @@ func TestDispatcherAccess(t *testing.T) {
 		})
 
 		if err == nil {
-			t.Fatal("Managed to open R/W dispatcher as nobody")
+			t.Fatal("Managed to open R/W dispatcher as group")
 		}
 	})
 
-	t.Run("others read-only", func(t *testing.T) {
+	t.Run("group read-only", func(t *testing.T) {
 		var dp *Dispatcher
 		err := testutil.WithCapabilities(func() (err error) {
 			if err := cap.SetUID(uid); err != nil {
 				return fmt.Errorf("set uid: %s", err)
 			}
 
-			if err := cap.SetGroups(gid); err != nil {
-				return fmt.Errorf("set gid: %s", err)
-			}
-
 			dp, err = OpenDispatcher(log.Discard, netns.Path(), "/sys/fs/bpf", true)
 			return
 		})
 		if err != nil {
-			t.Fatal("Open read-only dispatcher as nobody:", err)
+			t.Fatal("Open dispatcher with shared group:", err)
 		}
 		defer dp.Close()
 
-		if _, err := dp.Metrics(); err != nil {
-			t.Error("Can't get metrics:", err)
-		}
-
-		if _, err := dp.Bindings(); err != nil {
-			t.Error("Can't get bindings:", err)
-		}
-
-		if _, _, err := dp.Destinations(); err != nil {
-			t.Error("Can't get destinations:", err)
+		if err := dp.AddBinding(bind); err == nil {
+			t.Fatal("Group is able to add binding")
 		}
 
 		ln := testutil.Listen(t, netns, "tcp", "")
 		if _, _, err := dp.RegisterSocket("foo", ln); err == nil {
-			t.Error("Read-only RegisterSocket doesn't return an error")
-		}
-
-		if err := dp.AddBinding(mustNewBinding(t, "bar", UDP, "::1", 1234)); err == nil {
-			t.Error("Read-only AddBinding doesn't return an error")
-		}
-
-		if err := dp.RemoveBinding(bind); err == nil {
-			t.Error("Read-only RemoveBinding doesn't return an error")
+			t.Fatal("Group is able to add socket")
 		}
 	})
+
+	for _, readOnly := range []bool{true, false} {
+		t.Run(fmt.Sprintf("others read-only=%t", readOnly), func(t *testing.T) {
+			err := testutil.WithCapabilities(func() (err error) {
+				if err := cap.SetUID(uid); err != nil {
+					return fmt.Errorf("set uid: %s", err)
+				}
+
+				if err := cap.SetGroups(gid); err != nil {
+					return fmt.Errorf("set gid: %s", err)
+				}
+
+				dp, err := OpenDispatcher(log.Discard, netns.Path(), "/sys/fs/bpf", readOnly)
+				if err == nil {
+					dp.Close()
+				}
+				return err
+			})
+
+			if err == nil {
+				t.Fatal("Managed to open dispatcher")
+			}
+		})
+	}
 }
 
 func TestAddAndRemoveBindings(t *testing.T) {
