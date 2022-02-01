@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"sort"
 	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -997,6 +998,20 @@ func BenchmarkDispatcherManyBindings(b *testing.B) {
 			b.ReportMetric(float64(duration.Nanoseconds())/float64(n), "ns/op")
 		})
 	}
+}
+
+func TestMain(m *testing.M) {
+	contents, err := os.ReadFile("/proc/sys/kernel/unprivileged_bpf_disabled")
+	if err != nil {
+		panic(err)
+	}
+
+	if value := strings.TrimSpace(string(contents)); value != "0" {
+		fmt.Fprintln(os.Stderr, "Tests require kernel.unprivileged_bpf_disabled=0")
+		os.Exit(1)
+	}
+
+	os.Exit(m.Run())
 }
 
 func mustNewBinding(tb testing.TB, label string, proto Protocol, prefix string, port uint16) *Binding {
