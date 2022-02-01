@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"math/rand"
 	"net"
 	"os"
@@ -205,20 +206,33 @@ func TestDispatcherUpgradeFailedLinkUpdate(t *testing.T) {
 	check(dp)
 }
 
-func filesInDirectory(tb testing.TB, path string) []string {
+type fileInfo struct {
+	Name string
+	Mode fs.FileMode
+}
+
+func filesInDirectory(tb testing.TB, path string) []fileInfo {
 	dir, err := os.Open(path)
 	if err != nil {
 		tb.Fatal(err)
 	}
 	defer dir.Close()
 
-	files, err := dir.Readdirnames(0)
+	files, err := dir.Readdir(0)
 	if err != nil {
 		tb.Fatal(err)
 	}
 
-	sort.Strings(files)
-	return files
+	var infos []fileInfo
+	for _, file := range files {
+		infos = append(infos, fileInfo{file.Name(), file.Mode()})
+	}
+
+	sort.Slice(infos, func(i, j int) bool {
+		return infos[i].Name < infos[j].Name
+	})
+
+	return infos
 }
 
 func assertDispatcherState(tb testing.TB, dp *Dispatcher, netns ns.NetNS) func(*Dispatcher) {
@@ -271,7 +285,7 @@ func assertDispatcherState(tb testing.TB, dp *Dispatcher, netns ns.NetNS) func(*
 
 		filesAfter := filesInDirectory(tb, dp.Path)
 		if diff := cmp.Diff(filesBefore, filesAfter); diff != "" {
-			tb.Fatal("Filesystem state before and after don't match:\n", diff)
+			tb.Fatal("Filesystem state before and after doesn't match:\n", diff)
 		}
 	}
 }

@@ -310,6 +310,13 @@ func upgradeDispatcher(netnsPath, bpfFsPath string, linkUpdate func(*link.NetNsL
 	// Remove the temporary program pin if the update fails.
 	defer os.Remove(tmpPath)
 
+	// Adjust permissions, since the mode we want may have changed.
+	// There is a risk here that we change permissions to something that an
+	// old version of the binary can't deal with.
+	if err := adjustPermissions(pinPath); err != nil {
+		return 0, fmt.Errorf("adjust permissions: %s", err)
+	}
+
 	// This is the start of the critical section. Do as little as possible in here.
 	if err := linkUpdate(nslink.(*link.NetNsLink), objs.Dispatcher); err != nil {
 		return 0, fmt.Errorf("update link: %s", err)
