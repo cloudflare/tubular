@@ -195,17 +195,6 @@ func mustNewDestinations(tb testing.TB) *destinations {
 	return dests
 }
 
-func mustRawConn(tb testing.TB, conn syscall.Conn) syscall.RawConn {
-	tb.Helper()
-
-	raw, err := conn.SyscallConn()
-	if err != nil {
-		tb.Fatal(err)
-	}
-
-	return raw
-}
-
 func checkDestinations(tb testing.TB, dests *destinations, want ...*Destination) {
 	tb.Helper()
 
