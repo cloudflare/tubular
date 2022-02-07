@@ -72,9 +72,9 @@ type MapSpec struct {
 	InnerMap *MapSpec
 
 	// Extra trailing bytes found in the ELF map definition when using structs
-	// larger than libbpf's bpf_map_def. Must be empty before instantiating
-	// the MapSpec into a Map.
-	Extra bytes.Reader
+	// larger than libbpf's bpf_map_def. nil if no trailing bytes were present.
+	// Must be nil or empty before instantiating the MapSpec into a Map.
+	Extra *bytes.Reader
 
 	// The BTF associated with this map.
 	BTF *btf.Map
@@ -100,6 +100,12 @@ func (ms *MapSpec) Copy() *MapSpec {
 	cpy.InnerMap = ms.InnerMap.Copy()
 
 	return &cpy
+}
+
+// hasBTF returns true if the MapSpec has a valid BTF spec and if its
+// map type supports associated BTF metadata in the kernel.
+func (ms *MapSpec) hasBTF() bool {
+	return ms.BTF != nil && ms.Type.hasBTF()
 }
 
 func (ms *MapSpec) clampPerfEventArraySize() error {
@@ -316,8 +322,10 @@ func (spec *MapSpec) createMap(inner *sys.FD, opts MapOptions, handles *handleCa
 	// additional 'inner_map_idx' and later 'numa_node' fields.
 	// In order to support loading these definitions, tolerate the presence of
 	// extra bytes, but require them to be zeroes.
-	if _, err := io.Copy(internal.DiscardZeroes{}, &spec.Extra); err != nil {
-		return nil, errors.New("extra contains unhandled non-zero bytes, drain before creating map")
+	if spec.Extra != nil {
+		if _, err := io.Copy(internal.DiscardZeroes{}, spec.Extra); err != nil {
+			return nil, errors.New("extra contains unhandled non-zero bytes, drain before creating map")
+		}
 	}
 
 	switch spec.Type {
@@ -389,11 +397,9 @@ func (spec *MapSpec) createMap(inner *sys.FD, opts MapOptions, handles *handleCa
 		attr.MapName = sys.NewObjName(spec.Name)
 	}
 
-	var btfDisabled bool
-	if spec.BTF != nil {
+	if spec.hasBTF() {
 		handle, err := handles.btfHandle(spec.BTF.Spec)
-		btfDisabled = errors.Is(err, btf.ErrNotSupported)
-		if err != nil && !btfDisabled {
+		if err != nil && !errors.Is(err, btf.ErrNotSupported) {
 			return nil, fmt.Errorf("load BTF: %w", err)
 		}
 
@@ -407,9 +413,9 @@ func (spec *MapSpec) createMap(inner *sys.FD, opts MapOptions, handles *handleCa
 	fd, err := sys.MapCreate(&attr)
 	if err != nil {
 		if errors.Is(err, unix.EPERM) {
-			return nil, fmt.Errorf("map create: %w (MEMLOCK bay be too low, consider rlimit.RemoveMemlock)", err)
+			return nil, fmt.Errorf("map create: %w (MEMLOCK may be too low, consider rlimit.RemoveMemlock)", err)
 		}
-		if btfDisabled {
+		if !spec.hasBTF() {
 			return nil, fmt.Errorf("map create without BTF: %w", err)
 		}
 		return nil, fmt.Errorf("map create: %w", err)

@@ -21,7 +21,8 @@ import (
 // ErrNotSupported is returned whenever the kernel doesn't support a feature.
 var ErrNotSupported = internal.ErrNotSupported
 
-var errUnsatisfiedReference = errors.New("unsatisfied reference")
+var errUnsatisfiedMap = errors.New("unsatisfied map reference")
+var errUnsatisfiedProgram = errors.New("unsatisfied program reference")
 
 // ProgramID represents the unique ID of an eBPF program.
 type ProgramID uint32
@@ -62,11 +63,17 @@ type ProgramSpec struct {
 	// Type determines at which hook in the kernel a program will run.
 	Type       ProgramType
 	AttachType AttachType
+
 	// Name of a kernel data structure or function to attach to. Its
 	// interpretation depends on Type and AttachType.
 	AttachTo string
+
 	// The program to attach to. Must be provided manually.
 	AttachTarget *Program
+
+	// The name of the ELF section this program orininated from.
+	SectionName string
+
 	Instructions asm.Instructions
 
 	// Flags is passed to the kernel and specifies additional program
@@ -92,6 +99,9 @@ type ProgramSpec struct {
 
 	// The byte order this program was compiled for, may be nil.
 	ByteOrder binary.ByteOrder
+
+	// Programs called by this ProgramSpec. Includes all dependencies.
+	references map[string]*ProgramSpec
 }
 
 // Copy returns a copy of the spec.
@@ -111,6 +121,83 @@ func (ps *ProgramSpec) Copy() *ProgramSpec {
 // Use asm.Instructions.Tag if you need to calculate for non-native endianness.
 func (ps *ProgramSpec) Tag() (string, error) {
 	return ps.Instructions.Tag(internal.NativeEndian)
+}
+
+// flatten returns spec's full instruction stream including all of its
+// dependencies and an expanded map of references that includes all symbols
+// appearing in the instruction stream.
+//
+// Returns nil, nil if spec was already visited.
+func (spec *ProgramSpec) flatten(visited map[*ProgramSpec]bool) (asm.Instructions, map[string]*ProgramSpec) {
+	if visited == nil {
+		visited = make(map[*ProgramSpec]bool)
+	}
+
+	// This program and its dependencies were already collected.
+	if visited[spec] {
+		return nil, nil
+	}
+
+	visited[spec] = true
+
+	// Start off with spec's direct references and instructions.
+	progs := spec.references
+	insns := spec.Instructions
+
+	// Recurse into each reference and append/merge its references into
+	// a temporary buffer as to not interfere with the resolution process.
+	for _, ref := range spec.references {
+		if ri, rp := ref.flatten(visited); ri != nil || rp != nil {
+			insns = append(insns, ri...)
+
+			// Merge nested references into the top-level scope.
+			for n, p := range rp {
+				progs[n] = p
+			}
+		}
+	}
+
+	return insns, progs
+}
+
+// A reference describes a byte offset an Symbol Instruction pointing
+// to another ProgramSpec.
+type reference struct {
+	offset uint64
+	spec   *ProgramSpec
+}
+
+// layout returns a unique list of programs that must be included
+// in spec's instruction stream when inserting it into the kernel.
+// Always returns spec itself as the first entry in the chain.
+func (spec *ProgramSpec) layout() ([]reference, error) {
+	out := []reference{{0, spec}}
+
+	name := spec.Instructions.Name()
+
+	var ins *asm.Instruction
+	iter := spec.Instructions.Iterate()
+	for iter.Next() {
+		ins = iter.Ins
+
+		// Skip non-symbols and symbols that describe the ProgramSpec itself,
+		// which is usually the first instruction in Instructions.
+		// ProgramSpec itself is already included and not present in references.
+		if ins.Symbol == "" || ins.Symbol == name {
+			continue
+		}
+
+		// Failure to look up a reference is not an error. There are existing tests
+		// with valid progs that contain multiple symbols and don't have references
+		// populated. Assume ProgramSpec is used similarly in the wild, so don't
+		// alter this behaviour.
+		ref := spec.references[ins.Symbol]
+		if ref != nil {
+			out = append(out, reference{iter.Offset.Bytes(), ref})
+		}
+	}
+
+	return out, nil
 }
 
 // Program represents BPF program loaded into the kernel.
@@ -140,11 +227,15 @@ func NewProgram(spec *ProgramSpec) (*Program, error) {
 // Loading a program for the first time will perform
 // feature detection by loading small, temporary programs.
 func NewProgramWithOptions(spec *ProgramSpec, opts ProgramOptions) (*Program, error) {
+	if spec == nil {
+		return nil, errors.New("can't load a program from a nil spec")
+	}
+
 	handles := newHandleCache()
 	defer handles.close()
 
 	prog, err := newProgramWithOptions(spec, opts, handles)
-	if errors.Is(err, errUnsatisfiedReference) {
+	if errors.Is(err, errUnsatisfiedMap) {
 		return nil, fmt.Errorf("cannot load program without loading its whole collection: %w", err)
 	}
 	return prog, err
@@ -153,6 +244,10 @@ func NewProgramWithOptions(spec *ProgramSpec, opts ProgramOptions) (*Program, er
 func newProgramWithOptions(spec *ProgramSpec, opts ProgramOptions, handles *handleCache) (*Program, error) {
 	if len(spec.Instructions) == 0 {
 		return nil, errors.New("instructions cannot be empty")
+	}
+
+	if spec.Type == UnspecifiedProgram {
+		return nil, errors.New("can't load program of unspecified type")
 	}
 
 	if spec.ByteOrder != nil && spec.ByteOrder != internal.NativeEndian {
@@ -193,6 +288,11 @@ func newProgramWithOptions(spec *ProgramSpec, opts ProgramOptions, handles *hand
 		}
 	}
 
+	layout, err := spec.layout()
+	if err != nil {
+		return nil, fmt.Errorf("get program layout: %w", err)
+	}
+
 	var btfDisabled bool
 	var core btf.COREFixups
 	if spec.BTF != nil {
@@ -210,21 +310,21 @@ func newProgramWithOptions(spec *ProgramSpec, opts ProgramOptions, handles *hand
 		if handle != nil {
 			attr.ProgBtfFd = uint32(handle.FD())
 
-			recSize, bytes, err := spec.BTF.LineInfos()
+			fib, err := marshalFuncInfos(layout)
 			if err != nil {
-				return nil, fmt.Errorf("get BTF line infos: %w", err)
+				return nil, err
 			}
-			attr.LineInfoRecSize = recSize
-			attr.LineInfoCnt = uint32(uint64(len(bytes)) / uint64(recSize))
-			attr.LineInfo = sys.NewSlicePointer(bytes)
+			attr.FuncInfoRecSize = uint32(binary.Size(btf.FuncInfo{}))
+			attr.FuncInfoCnt = uint32(len(fib)) / attr.FuncInfoRecSize
+			attr.FuncInfo = sys.NewSlicePointer(fib)
 
-			recSize, bytes, err = spec.BTF.FuncInfos()
+			lib, err := marshalLineInfos(layout)
 			if err != nil {
-				return nil, fmt.Errorf("get BTF function infos: %w", err)
+				return nil, err
 			}
-			attr.FuncInfoRecSize = recSize
-			attr.FuncInfoCnt = uint32(uint64(len(bytes)) / uint64(recSize))
-			attr.FuncInfo = sys.NewSlicePointer(bytes)
+			attr.LineInfoRecSize = uint32(binary.Size(btf.LineInfo{}))
+			attr.LineInfoCnt = uint32(len(lib)) / attr.LineInfoRecSize
+			attr.LineInfo = sys.NewSlicePointer(lib)
 		}
 	}
 
@@ -297,7 +397,7 @@ func newProgramWithOptions(spec *ProgramSpec, opts ProgramOptions, handles *hand
 
 	fd, err := sys.ProgLoad(attr)
 	if err == nil {
-		return &Program{internal.CString(logBuf), fd, spec.Name, "", spec.Type}, nil
+		return &Program{unix.ByteSliceToString(logBuf), fd, spec.Name, "", spec.Type}, nil
 	}
 
 	logErr := err
@@ -314,10 +414,10 @@ func newProgramWithOptions(spec *ProgramSpec, opts ProgramOptions, handles *hand
 		}
 	}
 
-	if errors.Is(logErr, unix.EPERM) && logBuf[0] == 0 {
+	if errors.Is(logErr, unix.EPERM) && len(logBuf) > 0 && logBuf[0] == 0 {
 		// EPERM due to RLIMIT_MEMLOCK happens before the verifier, so we can
 		// check that the log is empty to reduce false positives.
-		return nil, fmt.Errorf("load program: %w (MEMLOCK bay be too low, consider rlimit.RemoveMemlock)", logErr)
+		return nil, fmt.Errorf("load program: %w (MEMLOCK may be too low, consider rlimit.RemoveMemlock)", logErr)
 	}
 
 	err = internal.ErrorWithLog(err, logBuf, logErr)
@@ -761,11 +861,11 @@ func resolveBTFType(spec *btf.Spec, name string, progType ProgramType, attachTyp
 
 	if isBTFTypeFunc {
 		var targetFunc *btf.Func
-		err = spec.FindType(typeName, &targetFunc)
+		err = spec.TypeByName(typeName, &targetFunc)
 		target = targetFunc
 	} else {
 		var targetTypedef *btf.Typedef
-		err = spec.FindType(typeName, &targetTypedef)
+		err = spec.TypeByName(typeName, &targetTypedef)
 		target = targetTypedef
 	}
 
