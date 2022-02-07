@@ -192,7 +192,7 @@ func OpenDispatcher(logger log.Logger, netnsPath, bpfFsPath string, readOnly boo
 			return nil, err
 		}
 
-		link, err := link.LoadPinnedNetNs(linkPath(pinPath), nil)
+		link, err := link.LoadPinnedLink(linkPath(pinPath), nil)
 		if err != nil {
 			return nil, err
 		}

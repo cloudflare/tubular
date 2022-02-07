@@ -7,7 +7,7 @@ import (
 	"github.com/cilium/ebpf/link"
 )
 
-func isLinkCompatible(link *link.NetNsLink, prog *ebpf.Program, spec *ebpf.ProgramSpec) error {
+func isLinkCompatible(link link.Link, prog *ebpf.Program, spec *ebpf.ProgramSpec) error {
 	linkInfo, err := link.Info()
 	if err != nil {
 		return fmt.Errorf("link info: %s", err)
