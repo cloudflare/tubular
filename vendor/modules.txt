@@ -57,7 +57,7 @@ go4.org/unsafe/assume-no-moving-gc
 golang.org/x/sys/internal/unsafeheader
 golang.org/x/sys/unix
 golang.org/x/sys/windows
-# golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543
+# golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
 golang.org/x/xerrors
 golang.org/x/xerrors/internal
 # google.golang.org/protobuf v1.23.0
@@ -91,7 +91,7 @@ google.golang.org/protobuf/runtime/protoimpl
 google.golang.org/protobuf/types/known/anypb
 google.golang.org/protobuf/types/known/durationpb
 google.golang.org/protobuf/types/known/timestamppb
-# inet.af/netaddr v0.0.0-20210317195617-2d42ec05f8a1
+# inet.af/netaddr v0.0.0-20210603230628-bf05d8b52dda
 ## explicit
 inet.af/netaddr
 # kernel.org/pub/linux/libs/security/libcap/cap v1.2.49

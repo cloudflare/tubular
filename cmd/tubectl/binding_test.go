@@ -139,7 +139,7 @@ func TestLoadBindings(t *testing.T) {
 	sort.Sort(bindings)
 	sort.Sort(want)
 
-	if diff := cmp.Diff(want, bindings, testutil.IPComparer()); diff != "" {
+	if diff := cmp.Diff(want, bindings, testutil.IPPrefixComparer()); diff != "" {
 		t.Errorf("Bindings don't match (+y -x):\n%s", diff)
 	}
 }

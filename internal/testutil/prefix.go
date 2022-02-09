@@ -5,8 +5,8 @@ import (
 	"inet.af/netaddr"
 )
 
-func IPComparer() cmp.Option {
-	return cmp.Comparer(func(x, y netaddr.IP) bool {
+func IPPrefixComparer() cmp.Option {
+	return cmp.Comparer(func(x, y netaddr.IPPrefix) bool {
 		return x == y
 	})
 }

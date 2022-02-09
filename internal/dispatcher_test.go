@@ -243,7 +243,7 @@ func assertDispatcherState(tb testing.TB, dp *Dispatcher, netns ns.NetNS) func(*
 			tb.Fatal(err)
 		}
 
-		if diff := cmp.Diff(Bindings{bind}, bindings, testutil.IPComparer()); diff != "" {
+		if diff := cmp.Diff(Bindings{bind}, bindings, testutil.IPPrefixComparer()); diff != "" {
 			tb.Errorf("Bindings don't match (+y -x):\n%s", diff)
 		}
 
@@ -646,7 +646,7 @@ func TestReplaceBindings(t *testing.T) {
 				return a.Label < b.Label
 			})
 
-			if diff := cmp.Diff(test.replacement, have, sort, testutil.IPComparer()); diff != "" {
+			if diff := cmp.Diff(test.replacement, have, sort, testutil.IPPrefixComparer()); diff != "" {
 				t.Errorf("bindings don't match (-want +got):\n%s", diff)
 			}
 		})
@@ -890,10 +890,10 @@ func BenchmarkDispatcherManyBindings(b *testing.B) {
 	var v4, v6 []netaddr.IP
 	bindings := mustReadBindings(b, label)
 	for _, bind := range bindings {
-		if bind.Prefix.IP.Is4() {
-			v4 = append(v4, bind.Prefix.IP)
+		if bind.Prefix.IP().Is4() {
+			v4 = append(v4, bind.Prefix.IP())
 		} else {
-			v6 = append(v6, bind.Prefix.IP)
+			v6 = append(v6, bind.Prefix.IP())
 		}
 	}
 	b.Log(len(bindings), "bindings")
@@ -1091,7 +1091,7 @@ func mustReadBindings(tb testing.TB, label string) []*Binding {
 		}
 
 		r := prefix.Range()
-		for ip := r.From; ip.Compare(r.To) <= 0; ip = ip.Next() {
+		for ip := r.From(); ip.Compare(r.To()) <= 0; ip = ip.Next() {
 			bind := mustNewBinding(tb, label, UDP, ip.String(), 53)
 			bindings = append(bindings, bind)
 		}

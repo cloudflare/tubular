@@ -9,6 +9,6 @@ require (
 	github.com/prometheus/client_golang v1.9.0
 	github.com/prometheus/common v0.15.0
 	golang.org/x/sys v0.0.0-20210124154548-22da62e12c0c
-	inet.af/netaddr v0.0.0-20210317195617-2d42ec05f8a1
+	inet.af/netaddr v0.0.0-20210603230628-bf05d8b52dda
 	kernel.org/pub/linux/libs/security/libcap/cap v1.2.49
 )

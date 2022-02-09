@@ -31,7 +31,7 @@ func NewBinding(label string, proto Protocol, prefix string, port uint16) (*Bind
 	return &Binding{
 		label,
 		proto,
-		netaddr.IPPrefix{IP: cidr.IP, Bits: cidr.Bits}.Masked(),
+		netaddr.IPPrefixFrom(cidr.IP(), cidr.Bits()).Masked(),
 		port,
 	}, nil
 }
@@ -42,9 +42,9 @@ func newBindingFromBPF(label string, key *bindingKey) *Binding {
 
 	var prefix netaddr.IPPrefix
 	if ip.Is4() {
-		prefix = netaddr.IPPrefix{IP: ip, Bits: ones - 96}
+		prefix = netaddr.IPPrefixFrom(ip, ones-96)
 	} else {
-		prefix = netaddr.IPPrefix{IP: ip, Bits: ones}
+		prefix = netaddr.IPPrefixFrom(ip, ones)
 	}
 
 	return &Binding{
@@ -71,10 +71,10 @@ const bindingKeyHeaderBits = uint8(unsafe.Sizeof(bindingKey{}.Protocol)+unsafe.S
 
 func newBindingKey(bind *Binding) *bindingKey {
 	// Get the length of the prefix
-	prefixLen := bind.Prefix.Bits
+	prefixLen := bind.Prefix.Bits()
 
 	// If the prefix is v4, offset it by 96
-	if bind.Prefix.IP.Is4() {
+	if bind.Prefix.IP().Is4() {
 		prefixLen += 96
 	}
 
@@ -82,7 +82,7 @@ func newBindingKey(bind *Binding) *bindingKey {
 		PrefixLen: uint32(bindingKeyHeaderBits + prefixLen),
 		Protocol:  bind.Protocol,
 		Port:      bind.Port,
-		IP:        bind.Prefix.IP.As16(),
+		IP:        bind.Prefix.IP().As16(),
 	}
 
 	return &key
@@ -109,18 +109,18 @@ func (sb Bindings) Less(i, j int) bool {
 		return a.Protocol < b.Protocol
 	}
 
-	if a.Prefix.IP.Is4() != b.Prefix.IP.Is4() {
-		return a.Prefix.IP.Is4()
+	if a.Prefix.IP().Is4() != b.Prefix.IP().Is4() {
+		return a.Prefix.IP().Is4()
 	}
 
 	// We only care to sort on overlap if the prefix length is different
-	if a.Prefix.Bits != b.Prefix.Bits && a.Prefix.Overlaps(b.Prefix) {
+	if a.Prefix.Bits() != b.Prefix.Bits() && a.Prefix.Overlaps(b.Prefix) {
 		// Both prefixes overlap, like fd::/64 and fd::1. The longer prefix
 		// is more specific.
-		return a.Prefix.Bits > b.Prefix.Bits
+		return a.Prefix.Bits() > b.Prefix.Bits()
 	}
 
-	if c := a.Prefix.IP.Compare(b.Prefix.IP); c != 0 {
+	if c := a.Prefix.IP().Compare(b.Prefix.IP()); c != 0 {
 		// Prefixes don't share a prefix, use lexicographical order.
 		return c < 0
 	}
@@ -145,7 +145,7 @@ func (bindings Bindings) metrics() map[Destination]uint64 {
 	for _, b := range bindings {
 		label := b.Label
 		domain := AF_INET
-		if b.Prefix.IP.Unmap().Is6() {
+		if b.Prefix.IP().Unmap().Is6() {
 			domain = AF_INET6
 		}
 		protocol := b.Protocol
@@ -187,7 +187,9 @@ func parseCIDR(prefix string) (*netaddr.IPPrefix, error) {
 			prefixBits = 128
 		}
 
-		return &netaddr.IPPrefix{IP: ip, Bits: prefixBits}, nil
+		ipPrefix := netaddr.IPPrefixFrom(ip, prefixBits)
+
+		return &ipPrefix, nil
 	}
 	cidr, err := netaddr.ParseIPPrefix(prefix)
 	if err != nil {

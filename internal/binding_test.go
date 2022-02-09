@@ -41,12 +41,12 @@ func TestBinding(t *testing.T) {
 				t.Fatal("Can't create binding:", tc.prefix, err)
 			}
 
-			if bind.Prefix.IP != ip {
-				t.Errorf("Binding IP doesn't match: %s != %s", bind.Prefix.IP, ip)
+			if bind.Prefix.IP() != ip {
+				t.Errorf("Binding IP doesn't match: %s != %s", bind.Prefix.IP(), ip)
 			}
 
-			if bind.Prefix.Bits != tc.maskLen {
-				t.Errorf("Binding mask has wrong length: %d != %d", bind.Prefix.Bits, tc.maskLen)
+			if bind.Prefix.Bits() != tc.maskLen {
+				t.Errorf("Binding mask has wrong length: %d != %d", bind.Prefix.Bits(), tc.maskLen)
 			}
 		})
 	}
@@ -78,7 +78,7 @@ func TestBinding(t *testing.T) {
 	}
 
 	out := newBindingFromBPF(in.Label, key)
-	if diff := cmp.Diff(in, out, testutil.IPComparer()); diff != "" {
+	if diff := cmp.Diff(in, out, testutil.IPPrefixComparer()); diff != "" {
 		t.Errorf("Decoded binding doesn't match input (-want +got):\n%s", diff)
 	}
 }
@@ -166,16 +166,16 @@ func TestBindingsSortMatchesDataplane(t *testing.T) {
 			cpy := copyAndShuffleBindings(bindings, rng)
 
 			sort.Sort(cpy)
-			if diff := cmp.Diff(bindings, cpy, testutil.IPComparer()); diff != "" {
+			if diff := cmp.Diff(bindings, cpy, testutil.IPPrefixComparer()); diff != "" {
 				t.Errorf("Order not as expected (-want +got):\n%s", diff)
 			}
 
 			addrFmt := "%s:%d"
-			if test.win.Prefix.IP.Is6() {
+			if test.win.Prefix.IP().Is6() {
 				addrFmt = "[%s]:%d"
 			}
 
-			addr := fmt.Sprintf(addrFmt, test.win.Prefix.IP, 80)
+			addr := fmt.Sprintf(addrFmt, test.win.Prefix.IP(), 80)
 			testutil.CanDialName(t, netns, "tcp", addr, test.win.Label)
 		})
 	}
@@ -212,7 +212,7 @@ func TestBindingsSortIsGoodForHumans(t *testing.T) {
 			cpy := copyAndShuffleBindings(test.Bindings, rng)
 
 			sort.Sort(cpy)
-			if diff := cmp.Diff(test.Bindings, cpy, testutil.IPComparer()); diff != "" {
+			if diff := cmp.Diff(test.Bindings, cpy, testutil.IPPrefixComparer()); diff != "" {
 				t.Errorf("Order not as expected (-want +got):\n%s", diff)
 			}
 		})
@@ -224,16 +224,16 @@ func TestParseCIDR(t *testing.T) {
 		input    string
 		expected netaddr.IPPrefix
 	}{
-		{"127.0.0.1", netaddr.IPPrefix{IP: netaddr.IPv4(127, 0, 0, 1), Bits: 32}},
-		{"127.0.0.1/24", netaddr.IPPrefix{IP: netaddr.IPv4(127, 0, 0, 1), Bits: 24}},
-		{"127.0.0.1/32", netaddr.IPPrefix{IP: netaddr.IPv4(127, 0, 0, 1), Bits: 32}},
-		{"2001:20::1", netaddr.IPPrefix{IP: netaddr.IPv6Raw([16]byte{0x20, 0x01, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}), Bits: 128}},
-		{"2001:20::1/64", netaddr.IPPrefix{IP: netaddr.IPv6Raw([16]byte{0x20, 0x01, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}), Bits: 64}},
-		{"2001:20::1/128", netaddr.IPPrefix{IP: netaddr.IPv6Raw([16]byte{0x20, 0x01, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}), Bits: 128}},
-		{"0.0.0.0", netaddr.IPPrefix{IP: netaddr.IPv4(0, 0, 0, 0), Bits: 32}},
-		{"0.0.0.0/0", netaddr.IPPrefix{IP: netaddr.IPv4(0, 0, 0, 0), Bits: 0}},
-		{"::", netaddr.IPPrefix{IP: netaddr.IPv6Raw([16]byte{}), Bits: 128}},
-		{"::/0", netaddr.IPPrefix{IP: netaddr.IPv6Raw([16]byte{}), Bits: 0}},
+		{"127.0.0.1", netaddr.IPPrefixFrom(netaddr.IPv4(127, 0, 0, 1), 32)},
+		{"127.0.0.1/24", netaddr.IPPrefixFrom(netaddr.IPv4(127, 0, 0, 1), 24)},
+		{"127.0.0.1/32", netaddr.IPPrefixFrom(netaddr.IPv4(127, 0, 0, 1), 32)},
+		{"2001:20::1", netaddr.IPPrefixFrom(netaddr.IPv6Raw([16]byte{0x20, 0x01, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}), 128)},
+		{"2001:20::1/64", netaddr.IPPrefixFrom(netaddr.IPv6Raw([16]byte{0x20, 0x01, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}), 64)},
+		{"2001:20::1/128", netaddr.IPPrefixFrom(netaddr.IPv6Raw([16]byte{0x20, 0x01, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}), 128)},
+		{"0.0.0.0", netaddr.IPPrefixFrom(netaddr.IPv4(0, 0, 0, 0), 32)},
+		{"0.0.0.0/0", netaddr.IPPrefixFrom(netaddr.IPv4(0, 0, 0, 0), 0)},
+		{"::", netaddr.IPPrefixFrom(netaddr.IPv6Raw([16]byte{}), 128)},
+		{"::/0", netaddr.IPPrefixFrom(netaddr.IPv6Raw([16]byte{}), 0)},
 	}
 
 	for _, testCase := range valid {
