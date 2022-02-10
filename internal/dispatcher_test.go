@@ -646,6 +646,77 @@ func TestReplaceBindings(t *testing.T) {
 	}
 }
 
+func TestReplaceBindingsOverlapping(t *testing.T) {
+	netns := testutil.NewNetNS(t, "2001:db8::/32")
+	dp := mustCreateDispatcher(t, netns)
+	mustRegisterSocket(t, dp, "foo", testutil.ListenAndEchoWithName(t, netns, "tcp6", "", "foo"))
+	mustRegisterSocket(t, dp, "bar", testutil.ListenAndEchoWithName(t, netns, "tcp6", "", "bar"))
+
+	foo := mustNewBinding(t, "foo", TCP, "2001:db8::1", 0)
+	bar := mustNewBinding(t, "bar", TCP, "2001:db8::1", 80)
+
+	next := make(chan struct{}, 1)
+	applied := make(chan struct{}, 1)
+	t.Cleanup(func() { close(next) })
+
+	add := func(b *Binding) error {
+		<-next
+		t.Log("adding", b)
+		err := dp.AddBinding(b)
+		select {
+		case applied <- struct{}{}:
+		default:
+		}
+		return err
+	}
+
+	go func() {
+		_, _, err := dp.replaceBindings(Bindings{foo, bar}, add, nil)
+		if err != nil {
+			t.Error("Failed to replace bindings:", err)
+		}
+	}()
+
+	next <- struct{}{}
+	<-applied
+	testutil.CanDialName(t, netns, "tcp6", "[2001:db8::1]:80", "bar")
+
+	next <- struct{}{}
+	<-applied
+	testutil.CanDialName(t, netns, "tcp6", "[2001:db8::1]:81", "foo")
+
+	remove := func(b *Binding) error {
+		<-next
+		t.Log("removing", b)
+		err := dp.RemoveBinding(b)
+		select {
+		case applied <- struct{}{}:
+		default:
+		}
+		return err
+	}
+
+	go func() {
+		_, _, err := dp.replaceBindings(nil, nil, remove)
+		if err != nil {
+			t.Error("Failed to replace bindings:", err)
+		}
+	}()
+
+	next <- struct{}{}
+	<-applied
+	testutil.CanDialName(t, netns, "tcp6", "[2001:db8::1]:80", "bar")
+	if testutil.CanDial(t, netns, "tcp6", "[2001:db8::1]:81") {
+		t.Error("bar wasn't removed")
+	}
+
+	next <- struct{}{}
+	<-applied
+	if testutil.CanDial(t, netns, "tcp6", "[2001:db8::1]:80") {
+		t.Error("foo wasn't removed")
+	}
+}
+
 func TestRegisterSupportedSocketKind(t *testing.T) {
 	netns := testutil.NewNetNS(t)
 	dp := mustCreateDispatcher(t, netns)

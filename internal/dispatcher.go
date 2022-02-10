@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sort"
 	"syscall"
 
 	"github.com/cilium/ebpf"
@@ -520,6 +521,10 @@ func (d *Dispatcher) RemoveBinding(bind *Binding) error {
 //
 // Returns a boolean indicating whether any changes were made.
 func (d *Dispatcher) ReplaceBindings(bindings Bindings) (added, removed Bindings, _ error) {
+	return d.replaceBindings(bindings, d.AddBinding, d.RemoveBinding)
+}
+
+func (d *Dispatcher) replaceBindings(bindings Bindings, add, remove func(*Binding) error) (added, removed Bindings, _ error) {
 	want := make(map[bindingKey]string)
 	for _, bind := range bindings {
 		key := newBindingKey(bind)
@@ -539,19 +544,26 @@ func (d *Dispatcher) ReplaceBindings(bindings Bindings) (added, removed Bindings
 		return nil, nil, fmt.Errorf("get existing bindings: %s", err)
 	}
 
-	// TUBE-45: we should add bindings in most to least, and remove them
-	// in least to most specific order. Instead, we can replace this code
-	// with an atomic map swap in the future.
 	added, removed = diffBindings(have, want)
 
+	// There is a chance of misdirecting traffic when adding overlapping bindings.
+	// Consider a scenario where (2) is added before (1):
+	//   1. IP:80 -> foo
+	//   2. IP:*  -> bar
+	// Traffic to IP:80 could be directed at bar. To avoid this, add bindings
+	// in order of decreasing precedence. The same applies when removing bindings,
+	// except in reverse.
+	sort.Sort(added)
+	sort.Sort(sort.Reverse(removed))
+
 	for _, bind := range added {
-		if err := d.AddBinding(bind); err != nil {
+		if err := add(bind); err != nil {
 			return nil, nil, fmt.Errorf("add binding %s: %s", bind, err)
 		}
 	}
 
 	for _, bind := range removed {
-		if err := d.RemoveBinding(bind); err != nil {
+		if err := remove(bind); err != nil {
 			return nil, nil, fmt.Errorf("remove binding %s: %s", bind, err)
 		}
 	}
