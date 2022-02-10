@@ -83,7 +83,7 @@ func mustLoadDispatcher(tb testing.TB, netns ns.NetNS) {
 
 	var dp *internal.Dispatcher
 	err := testutil.WithCapabilities(func() (err error) {
-		dp, err = internal.CreateDispatcher(log.Discard, netns.Path(), "/sys/fs/bpf")
+		dp, err = internal.CreateDispatcher(netns.Path(), "/sys/fs/bpf")
 		return
 	}, internal.CreateCapabilities...)
 	if err != nil {
@@ -98,7 +98,7 @@ func mustLoadDispatcher(tb testing.TB, netns ns.NetNS) {
 
 func mustOpenDispatcher(tb testing.TB, netns ns.NetNS) *internal.Dispatcher {
 	tb.Helper()
-	dp, err := internal.OpenDispatcher(log.Discard, netns.Path(), "/sys/fs/bpf", false)
+	dp, err := internal.OpenDispatcher(netns.Path(), "/sys/fs/bpf", false)
 	if err != nil {
 		tb.Fatal(err)
 	}

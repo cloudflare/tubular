@@ -68,7 +68,7 @@ func (e *env) createDispatcher() (*internal.Dispatcher, error) {
 		return nil, err
 	}
 
-	dp, err := internal.CreateDispatcher(e.stdout, e.netns, e.bpfFs)
+	dp, err := internal.CreateDispatcher(e.netns, e.bpfFs)
 	if err != nil {
 		return nil, fmt.Errorf("can't load dispatcher: %w", err)
 	}
@@ -82,7 +82,7 @@ func (e *env) openDispatcher(readOnly bool) (*internal.Dispatcher, error) {
 		return nil, err
 	}
 
-	dp, err := internal.OpenDispatcher(e.stdout, e.netns, e.bpfFs, readOnly)
+	dp, err := internal.OpenDispatcher(e.netns, e.bpfFs, readOnly)
 	if err != nil {
 		return nil, fmt.Errorf("can't open dispatcher: %w", err)
 	}

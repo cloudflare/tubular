@@ -85,7 +85,7 @@ func TestBinding(t *testing.T) {
 
 func TestBindingsSortMatchesDataplane(t *testing.T) {
 	netns := testutil.NewNetNS(t, "192.0.2.0/24", "2001:20::/64")
-	dp := mustCreateDispatcher(t, nil, netns)
+	dp := mustCreateDispatcher(t, netns)
 
 	labels := []string{"a", "b"}
 

@@ -14,7 +14,7 @@ import (
 
 func TestCollector(t *testing.T) {
 	netns := testutil.NewNetNS(t)
-	dp := mustCreateDispatcher(t, nil, netns)
+	dp := mustCreateDispatcher(t, netns)
 
 	mustAddBinding(t, dp, mustNewBinding(t, "foo", TCP, "::1/64", 8080))
 	mustAddBinding(t, dp, mustNewBinding(t, "bar", UDP, "127.0.0.1", 443))
@@ -91,7 +91,7 @@ func TestCollector(t *testing.T) {
 
 func TestLintCollector(t *testing.T) {
 	netns := testutil.NewNetNS(t)
-	dp := mustCreateDispatcher(t, nil, netns)
+	dp := mustCreateDispatcher(t, netns)
 	dp.Close()
 
 	c := NewCollector(log.Discard, netns.Path(), "/sys/fs/bpf")

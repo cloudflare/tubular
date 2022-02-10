@@ -147,7 +147,7 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 }
 
 func (c *Collector) metrics() (*Metrics, error) {
-	dp, err := OpenDispatcher(c.logger, c.netnsPath, c.bpffsPath, true)
+	dp, err := OpenDispatcher(c.netnsPath, c.bpffsPath, true)
 	if err != nil {
 		return nil, fmt.Errorf("open dispatcher: %s", err)
 	}

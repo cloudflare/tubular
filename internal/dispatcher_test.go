@@ -40,7 +40,7 @@ func init() {
 func TestLoadDispatcher(t *testing.T) {
 	netns := testutil.NewNetNS(t)
 
-	dp := mustCreateDispatcher(t, nil, netns)
+	dp := mustCreateDispatcher(t, netns)
 	if err := dp.Close(); err != nil {
 		t.Fatal("Can't close dispatcher:", err)
 	}
@@ -50,7 +50,7 @@ func TestLoadDispatcher(t *testing.T) {
 	}
 
 	err := testutil.WithCapabilities(func() error {
-		_, err := CreateDispatcher(log.Discard, netns.Path(), "/sys/fs/bpf")
+		_, err := CreateDispatcher(netns.Path(), "/sys/fs/bpf")
 		return err
 	}, CreateCapabilities...)
 	if !errors.Is(err, ErrLoaded) {
@@ -60,7 +60,7 @@ func TestLoadDispatcher(t *testing.T) {
 
 func TestUnloadDispatcher(t *testing.T) {
 	netns := testutil.NewNetNS(t)
-	dp := mustCreateDispatcher(t, nil, netns)
+	dp := mustCreateDispatcher(t, netns)
 
 	dir, err := os.Open(dp.Path)
 	if err != nil {
@@ -116,7 +116,7 @@ func TestDispatcherConcurrentAccess(t *testing.T) {
 	done := make(chan struct{}, procs-1)
 	open := func() {
 		for {
-			dp, err := OpenDispatcher(log.Discard, netnsPath, "/sys/fs/bpf", false)
+			dp, err := OpenDispatcher(netnsPath, "/sys/fs/bpf", false)
 			if errors.Is(err, ErrNotLoaded) {
 				continue
 			}
@@ -137,7 +137,7 @@ func TestDispatcherConcurrentAccess(t *testing.T) {
 
 	time.Sleep(50 * time.Millisecond)
 
-	dp := mustCreateDispatcher(t, nil, netns)
+	dp := mustCreateDispatcher(t, netns)
 	defer dp.Close()
 
 	select {
@@ -162,7 +162,7 @@ func TestDispatcherConcurrentAccess(t *testing.T) {
 
 func TestDispatcherUpgrade(t *testing.T) {
 	netns := testutil.NewNetNS(t)
-	dp := mustCreateDispatcher(t, nil, netns)
+	dp := mustCreateDispatcher(t, netns)
 	check := assertDispatcherState(t, dp, netns)
 	if err := dp.Close(); err != nil {
 		t.Fatal(err)
@@ -185,7 +185,7 @@ func TestDispatcherUpgrade(t *testing.T) {
 
 func TestDispatcherUpgradeFailedLinkUpdate(t *testing.T) {
 	netns := testutil.NewNetNS(t)
-	dp := mustCreateDispatcher(t, nil, netns)
+	dp := mustCreateDispatcher(t, netns)
 	check := assertDispatcherState(t, dp, netns)
 	if err := dp.Close(); err != nil {
 		t.Fatal(err)
@@ -291,7 +291,7 @@ func assertDispatcherState(tb testing.TB, dp *Dispatcher, netns ns.NetNS) func(*
 
 func TestDispatcherUpgradeWithIncompatibleMap(t *testing.T) {
 	netns := testutil.NewNetNS(t)
-	dp := mustCreateDispatcher(t, nil, netns)
+	dp := mustCreateDispatcher(t, netns)
 	path := dp.Path
 	dp.Close()
 
@@ -332,7 +332,7 @@ func TestDispatcherUpgradeWithIncompatibleMap(t *testing.T) {
 
 func TestDispatcherAccess(t *testing.T) {
 	netns := testutil.NewNetNS(t)
-	dp := mustCreateDispatcher(t, nil, netns)
+	dp := mustCreateDispatcher(t, netns)
 	bind := mustNewBinding(t, "foo", TCP, "127.0.0.1", 8080)
 	mustAddBinding(t, dp, bind)
 	dp.Close()
@@ -358,7 +358,7 @@ func TestDispatcherAccess(t *testing.T) {
 				return fmt.Errorf("set uid: %s", err)
 			}
 
-			dp, err := OpenDispatcher(log.Discard, netns.Path(), "/sys/fs/bpf", false)
+			dp, err := OpenDispatcher(netns.Path(), "/sys/fs/bpf", false)
 			if err == nil {
 				dp.Close()
 			}
@@ -377,7 +377,7 @@ func TestDispatcherAccess(t *testing.T) {
 				return fmt.Errorf("set uid: %s", err)
 			}
 
-			dp, err = OpenDispatcher(log.Discard, netns.Path(), "/sys/fs/bpf", true)
+			dp, err = OpenDispatcher(netns.Path(), "/sys/fs/bpf", true)
 			return
 		})
 		if err != nil {
@@ -406,7 +406,7 @@ func TestDispatcherAccess(t *testing.T) {
 					return fmt.Errorf("set gid: %s", err)
 				}
 
-				dp, err := OpenDispatcher(log.Discard, netns.Path(), "/sys/fs/bpf", readOnly)
+				dp, err := OpenDispatcher(netns.Path(), "/sys/fs/bpf", readOnly)
 				if err == nil {
 					dp.Close()
 				}
@@ -422,7 +422,7 @@ func TestDispatcherAccess(t *testing.T) {
 
 func TestAddAndRemoveBindings(t *testing.T) {
 	netns := testutil.NewNetNS(t)
-	dp := mustCreateDispatcher(t, nil, netns)
+	dp := mustCreateDispatcher(t, netns)
 
 	testcases := []struct {
 		ip string
@@ -467,7 +467,7 @@ func TestAddAndRemoveBindings(t *testing.T) {
 
 func TestAddInvalidBinding(t *testing.T) {
 	netns := testutil.NewNetNS(t)
-	dp := mustCreateDispatcher(t, nil, netns)
+	dp := mustCreateDispatcher(t, netns)
 
 	testCases := []struct {
 		ip string
@@ -490,7 +490,7 @@ func TestAddInvalidBinding(t *testing.T) {
 
 func TestBindingWithEmptyLabel(t *testing.T) {
 	netns := testutil.NewNetNS(t)
-	dp := mustCreateDispatcher(t, nil, netns)
+	dp := mustCreateDispatcher(t, netns)
 
 	if err := dp.AddBinding(mustNewBinding(t, "", TCP, "::1", 80)); err == nil {
 		t.Fatal("AddBinding accepts empty label")
@@ -521,7 +521,7 @@ func TestUpdateBinding(t *testing.T) {
 	for _, test := range testcases {
 		t.Run(test.name, func(t *testing.T) {
 			netns := testutil.NewNetNS(t)
-			dp := mustCreateDispatcher(t, nil, netns)
+			dp := mustCreateDispatcher(t, netns)
 
 			if err := dp.AddBinding(test.first); err != nil {
 				t.Fatal(err)
@@ -538,7 +538,7 @@ func TestUpdateBinding(t *testing.T) {
 
 func TestRemoveBinding(t *testing.T) {
 	netns := testutil.NewNetNS(t)
-	dp := mustCreateDispatcher(t, nil, netns)
+	dp := mustCreateDispatcher(t, netns)
 	bindA := mustNewBinding(t, "foo", TCP, "::1", 80)
 	bindB := mustNewBinding(t, "bar", TCP, "::1", 80)
 
@@ -584,7 +584,7 @@ func TestReplaceBindings(t *testing.T) {
 
 	t.Run("multiple labels", func(t *testing.T) {
 		netns := testutil.NewNetNS(t)
-		dp := mustCreateDispatcher(t, nil, netns)
+		dp := mustCreateDispatcher(t, netns)
 
 		if _, _, err := dp.ReplaceBindings(Bindings{a, aRelabeled}); err == nil {
 			t.Error("ReplaceBindings doesn't reject multiple labels for the same binding")
@@ -607,7 +607,7 @@ func TestReplaceBindings(t *testing.T) {
 		name := fmt.Sprintf("%v->%v", test.initial, test.replacement)
 		t.Run(name, func(t *testing.T) {
 			netns := testutil.NewNetNS(t)
-			dp := mustCreateDispatcher(t, nil, netns)
+			dp := mustCreateDispatcher(t, netns)
 
 			for _, bind := range test.initial {
 				if err := dp.AddBinding(bind); err != nil {
@@ -648,7 +648,7 @@ func TestReplaceBindings(t *testing.T) {
 
 func TestRegisterSupportedSocketKind(t *testing.T) {
 	netns := testutil.NewNetNS(t)
-	dp := mustCreateDispatcher(t, nil, netns)
+	dp := mustCreateDispatcher(t, netns)
 
 	networks := []string{
 		"tcp4",
@@ -675,7 +675,7 @@ func TestRegisterSupportedSocketKind(t *testing.T) {
 
 func TestUpdateRegisteredSocket(t *testing.T) {
 	netns := testutil.NewNetNS(t)
-	dp := mustCreateDispatcher(t, nil, netns)
+	dp := mustCreateDispatcher(t, netns)
 
 	for i := 0; i < 3; i++ {
 		conn := testutil.Listen(t, netns, "tcp4", "")
@@ -692,7 +692,7 @@ func TestUpdateRegisteredSocket(t *testing.T) {
 
 func TestRegisterUnixSocket(t *testing.T) {
 	netns := testutil.NewNetNS(t)
-	dp := mustCreateDispatcher(t, nil, netns)
+	dp := mustCreateDispatcher(t, netns)
 
 	networks := []string{
 		"unix",
@@ -712,7 +712,7 @@ func TestRegisterUnixSocket(t *testing.T) {
 
 func TestRegisterConnectedSocket(t *testing.T) {
 	netns := testutil.NewNetNS(t)
-	dp := mustCreateDispatcher(t, nil, netns)
+	dp := mustCreateDispatcher(t, netns)
 
 	networks := []string{
 		"tcp4",
@@ -734,7 +734,7 @@ func TestRegisterConnectedSocket(t *testing.T) {
 
 func TestMetrics(t *testing.T) {
 	netns := testutil.NewNetNS(t)
-	dp := mustCreateDispatcher(t, nil, netns)
+	dp := mustCreateDispatcher(t, netns)
 	ln := testutil.ListenAndEcho(t, netns, "tcp4", "").(*net.TCPListener)
 
 	bind := mustNewBinding(t, "foo", TCP, "127.0.0.1", 8080)
@@ -818,7 +818,7 @@ func TestMetrics(t *testing.T) {
 
 func TestBindingPrecedence(t *testing.T) {
 	netns := testutil.NewNetNS(t, "1.2.3.0/24", "4.3.2.0/24")
-	dp := mustCreateDispatcher(t, nil, netns)
+	dp := mustCreateDispatcher(t, netns)
 
 	testcases := []*Binding{
 		mustNewBinding(t, "spectrum", TCP, "1.2.3.0/24", 0),
@@ -866,7 +866,7 @@ func TestBindingPrecedence(t *testing.T) {
 
 func BenchmarkDispatcherAddBinding(b *testing.B) {
 	netns := testutil.NewNetNS(b)
-	dp := mustCreateDispatcher(b, nil, netns)
+	dp := mustCreateDispatcher(b, netns)
 	bindings := mustReadBindings(b, "some-label")
 
 	b.ResetTimer()
@@ -936,7 +936,7 @@ func BenchmarkDispatcherManyBindings(b *testing.B) {
 
 		b.Run(target.name, func(b *testing.B) {
 			netns := testutil.NewNetNS(b, networks...)
-			dp := mustCreateDispatcher(b, nil, netns)
+			dp := mustCreateDispatcher(b, netns)
 
 			// We need a socket registered, otherwise the kernel will send
 			// ICMP destination unreachable.
@@ -1035,16 +1035,12 @@ func mustRegisterSocket(tb testing.TB, dp *Dispatcher, label string, conn syscal
 	return dest
 }
 
-func mustCreateDispatcher(tb testing.TB, logger log.Logger, netns ns.NetNS) *Dispatcher {
+func mustCreateDispatcher(tb testing.TB, netns ns.NetNS) *Dispatcher {
 	tb.Helper()
-
-	if logger == nil {
-		logger = log.Discard
-	}
 
 	var dp *Dispatcher
 	err := testutil.WithCapabilities(func() (err error) {
-		dp, err = CreateDispatcher(logger, netns.Path(), "/sys/fs/bpf")
+		dp, err = CreateDispatcher(netns.Path(), "/sys/fs/bpf")
 		return
 	}, CreateCapabilities...)
 	if err != nil {
@@ -1087,7 +1083,7 @@ func mustOpenDispatcher(tb testing.TB, logger log.Logger, netns ns.NetNS) *Dispa
 		logger = log.Discard
 	}
 
-	dp, err := OpenDispatcher(logger, netns.Path(), "/sys/fs/bpf", false)
+	dp, err := OpenDispatcher(netns.Path(), "/sys/fs/bpf", false)
 	if err != nil {
 		tb.Fatal("Can't open dispatcher:", err)
 	}

@@ -27,7 +27,7 @@ func TestReachable(t *testing.T) {
 	}
 
 	// Create the dispatcher
-	dp := mustCreateDispatcher(t, nil, netns)
+	dp := mustCreateDispatcher(t, netns)
 
 	// Make some bindings
 	bindings := internal.Bindings{
@@ -66,7 +66,7 @@ func TestReachable(t *testing.T) {
 
 	// Create one listening socket and register it
 	ln := testutil.Listen(t, netns, "tcp4", "").(*net.TCPListener)
-	dp = mustOpenDispatcher(t, nil, netns)
+	dp = mustOpenDispatcher(t, netns)
 	mustRegisterSocket(t, dp, "foo", ln)
 	dp.Close()
 
@@ -84,7 +84,7 @@ func TestReachable(t *testing.T) {
 
 	// Create another listening socket and register it
 	ln = testutil.Listen(t, netns, "tcp6", "").(*net.TCPListener)
-	dp = mustOpenDispatcher(t, nil, netns)
+	dp = mustOpenDispatcher(t, netns)
 	mustRegisterSocket(t, dp, "foo", ln)
 	dp.Close()
 
@@ -103,7 +103,7 @@ func TestReachable(t *testing.T) {
 
 func TestLintReachable(t *testing.T) {
 	netns := testutil.CurrentNetNS(t)
-	dp := mustCreateDispatcher(t, nil, netns)
+	dp := mustCreateDispatcher(t, netns)
 	dp.Close()
 
 	c := NewReachable(log.Discard, nil)
@@ -181,16 +181,12 @@ func mustRegisterSocket(tb testing.TB, dp *internal.Dispatcher, label string, co
 	return dest
 }
 
-func mustCreateDispatcher(tb testing.TB, logger log.Logger, netns ns.NetNS) *internal.Dispatcher {
+func mustCreateDispatcher(tb testing.TB, netns ns.NetNS) *internal.Dispatcher {
 	tb.Helper()
-
-	if logger == nil {
-		logger = log.Discard
-	}
 
 	var dp *internal.Dispatcher
 	err := testutil.WithCapabilities(func() (err error) {
-		dp, err = internal.CreateDispatcher(logger, netns.Path(), "/sys/fs/bpf")
+		dp, err = internal.CreateDispatcher(netns.Path(), "/sys/fs/bpf")
 		return
 	}, internal.CreateCapabilities...)
 	if err != nil {
@@ -204,14 +200,10 @@ func mustCreateDispatcher(tb testing.TB, logger log.Logger, netns ns.NetNS) *int
 	return dp
 }
 
-func mustOpenDispatcher(tb testing.TB, logger log.Logger, netns ns.NetNS) *internal.Dispatcher {
+func mustOpenDispatcher(tb testing.TB, netns ns.NetNS) *internal.Dispatcher {
 	tb.Helper()
 
-	if logger == nil {
-		logger = log.Discard
-	}
-
-	dp, err := internal.OpenDispatcher(logger, netns.Path(), "/sys/fs/bpf", false)
+	dp, err := internal.OpenDispatcher(netns.Path(), "/sys/fs/bpf", false)
 	if err != nil {
 		tb.Fatal("Can't open dispatcher:", err)
 	}

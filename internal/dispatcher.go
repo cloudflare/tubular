@@ -16,7 +16,6 @@ import (
 	"kernel.org/pub/linux/libs/security/libcap/cap"
 
 	"code.cfops.it/sys/tubular/internal/lock"
-	"code.cfops.it/sys/tubular/internal/log"
 )
 
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc "$CLANG" -strip "$STRIP" -makebase "$MAKEDIR" dispatcher ../ebpf/inet-kern.c -- -mcpu=v2 -nostdinc -Wall -Werror -I../ebpf/include
@@ -41,13 +40,12 @@ type Dispatcher struct {
 	Path         string
 	bindings     *ebpf.Map
 	destinations *destinations
-	log          log.Logger
 }
 
 // CreateDispatcher loads the dispatcher into a network namespace.
 //
 // Returns ErrLoaded if the namespace already has the dispatcher enabled.
-func CreateDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
+func CreateDispatcher(netnsPath, bpfFsPath string) (_ *Dispatcher, err error) {
 	closeOnError := func(c io.Closer) {
 		if err != nil {
 			c.Close()
@@ -111,7 +109,7 @@ func CreateDispatcher(logger log.Logger, netnsPath, bpfFsPath string) (_ *Dispat
 	}
 
 	dests := newDestinations(objs.dispatcherMaps)
-	return &Dispatcher{dir, pinPath, objs.Bindings, dests, logger}, nil
+	return &Dispatcher{dir, pinPath, objs.Bindings, dests}, nil
 }
 
 func adjustPermissions(path string) error {
@@ -149,7 +147,7 @@ func adjustPermissions(path string) error {
 // OpenDispatcher loads an existing dispatcher from a namespace.
 //
 // Returns ErrNotLoaded if the dispatcher is not loaded yet.
-func OpenDispatcher(logger log.Logger, netnsPath, bpfFsPath string, readOnly bool) (_ *Dispatcher, err error) {
+func OpenDispatcher(netnsPath, bpfFsPath string, readOnly bool) (_ *Dispatcher, err error) {
 	closeOnError := func(c io.Closer) {
 		if err != nil {
 			c.Close()
@@ -224,7 +222,7 @@ func OpenDispatcher(logger log.Logger, netnsPath, bpfFsPath string, readOnly boo
 	defer closeOnError(&maps)
 
 	dests := newDestinations(maps)
-	return &Dispatcher{dir, pinPath, maps.Bindings, dests, logger}, nil
+	return &Dispatcher{dir, pinPath, maps.Bindings, dests}, nil
 }
 
 func loadPatchedDispatcher(to interface{}, opts *ebpf.CollectionOptions) (*ebpf.CollectionSpec, error) {
