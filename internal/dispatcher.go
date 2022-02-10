@@ -521,13 +521,13 @@ func (d *Dispatcher) RemoveBinding(bind *Binding) error {
 // and therefore not atomic: the function may return without applying all changes.
 //
 // Returns a boolean indicating whether any changes were made.
-func (d *Dispatcher) ReplaceBindings(bindings Bindings) (bool, error) {
+func (d *Dispatcher) ReplaceBindings(bindings Bindings) (added, removed Bindings, _ error) {
 	want := make(map[bindingKey]string)
 	for _, bind := range bindings {
 		key := newBindingKey(bind)
 
 		if label := want[*key]; label != "" {
-			return false, fmt.Errorf("duplicate binding %s: already assigned to %s", bind, label)
+			return nil, nil, fmt.Errorf("duplicate binding %s: already assigned to %s", bind, label)
 		}
 
 		want[*key] = bind.Label
@@ -538,29 +538,27 @@ func (d *Dispatcher) ReplaceBindings(bindings Bindings) (bool, error) {
 		have[key] = label
 	})
 	if err != nil {
-		return false, fmt.Errorf("get existing bindings: %s", err)
+		return nil, nil, fmt.Errorf("get existing bindings: %s", err)
 	}
 
 	// TUBE-45: we should add bindings in most to least, and remove them
 	// in least to most specific order. Instead, we can replace this code
 	// with an atomic map swap in the future.
-	added, removed := diffBindings(have, want)
+	added, removed = diffBindings(have, want)
 
 	for _, bind := range added {
 		if err := d.AddBinding(bind); err != nil {
-			return false, fmt.Errorf("add binding %s: %s", bind, err)
+			return nil, nil, fmt.Errorf("add binding %s: %s", bind, err)
 		}
-		d.log.Log("added binding", bind)
 	}
 
 	for _, bind := range removed {
 		if err := d.RemoveBinding(bind); err != nil {
-			return false, fmt.Errorf("remove binding %s: %s", bind, err)
+			return nil, nil, fmt.Errorf("remove binding %s: %s", bind, err)
 		}
-		d.log.Log("removed binding", bind)
 	}
 
-	return len(added) > 0 || len(removed) > 0, nil
+	return added, removed, nil
 }
 
 func (d *Dispatcher) iterBindings(fn func(bindingKey, string)) error {

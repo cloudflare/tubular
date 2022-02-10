@@ -179,9 +179,12 @@ func TestLoadBindings(t *testing.T) {
 		t.Error("Invalid bindings json must return an error")
 	}
 
-	_, err = testTubectl(t, netns, "load-bindings", "testdata/bindings.json")
+	output, err := testTubectl(t, netns, "load-bindings", "testdata/bindings.json")
 	if err != nil {
 		t.Fatal("Can't load valid bindings:", err)
+	}
+	if output.Len() == 0 {
+		t.Error("Loading bindings doesn't produce output")
 	}
 
 	dp := mustOpenDispatcher(t, netns)

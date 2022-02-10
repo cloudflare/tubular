@@ -227,8 +227,19 @@ func loadBindings(e *env, args ...string) error {
 	}
 	defer dp.Close()
 
-	_, err = dp.ReplaceBindings(bindings)
-	return err
+	added, removed, err := dp.ReplaceBindings(bindings)
+	if err != nil {
+		return err
+	}
+
+	for _, bind := range added {
+		e.stdout.Log("added", bind)
+	}
+	for _, bind := range removed {
+		e.stdout.Log("removed", bind)
+	}
+
+	return nil
 }
 
 func loadConfig(path string) (internal.Bindings, error) {

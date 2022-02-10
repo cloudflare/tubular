@@ -159,7 +159,7 @@ func TestBindingsSortMatchesDataplane(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			bindings := Bindings{test.win, test.lose}
 
-			if _, err := dp.ReplaceBindings(bindings); err != nil {
+			if _, _, err := dp.ReplaceBindings(bindings); err != nil {
 				t.Fatal("Can't replace bindings:", err)
 			}
 

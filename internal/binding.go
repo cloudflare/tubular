@@ -155,7 +155,7 @@ func (bindings Bindings) metrics() map[Destination]uint64 {
 	return metrics
 }
 
-func diffBindings(have, want map[bindingKey]string) (added, removed []*Binding) {
+func diffBindings(have, want map[bindingKey]string) (added, removed Bindings) {
 	for key, label := range want {
 		if have[key] != label {
 			added = append(added, newBindingFromBPF(label, &key))

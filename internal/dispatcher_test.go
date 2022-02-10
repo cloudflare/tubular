@@ -29,7 +29,6 @@ import (
 	"github.com/cilium/ebpf/link"
 	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 	"kernel.org/pub/linux/libs/security/libcap/cap"
 )
 
@@ -587,29 +586,28 @@ func TestReplaceBindings(t *testing.T) {
 		netns := testutil.NewNetNS(t)
 		dp := mustCreateDispatcher(t, nil, netns)
 
-		if _, err := dp.ReplaceBindings(Bindings{a, aRelabeled}); err == nil {
+		if _, _, err := dp.ReplaceBindings(Bindings{a, aRelabeled}); err == nil {
 			t.Error("ReplaceBindings doesn't reject multiple labels for the same binding")
 		}
 	})
 
 	testcases := []struct {
-		initial, replacement Bindings
+		initial, replacement, added, removed Bindings
 	}{
-		{nil, nil},
-		{nil, Bindings{a}},
-		{Bindings{a}, Bindings{a}},
-		{nil, Bindings{a, b}},
-		{Bindings{a}, Bindings{b}},
-		{Bindings{a}, Bindings{aRelabeled}},
-		{Bindings{a, b}, nil},
+		{nil, nil, nil, nil},
+		{nil, Bindings{a}, Bindings{a}, nil},
+		{Bindings{a}, Bindings{a}, nil, nil},
+		{nil, Bindings{a, b}, Bindings{a, b}, nil},
+		{Bindings{a}, Bindings{b}, Bindings{b}, Bindings{a}},
+		{Bindings{a}, Bindings{aRelabeled}, Bindings{aRelabeled}, nil},
+		{Bindings{a, b}, nil, nil, Bindings{a, b}},
 	}
 
 	for _, test := range testcases {
 		name := fmt.Sprintf("%v->%v", test.initial, test.replacement)
 		t.Run(name, func(t *testing.T) {
 			netns := testutil.NewNetNS(t)
-			output := new(log.Buffer)
-			dp := mustCreateDispatcher(t, output, netns)
+			dp := mustCreateDispatcher(t, nil, netns)
 
 			for _, bind := range test.initial {
 				if err := dp.AddBinding(bind); err != nil {
@@ -617,17 +615,21 @@ func TestReplaceBindings(t *testing.T) {
 				}
 			}
 
-			output.Reset()
-			changed, err := dp.ReplaceBindings(test.replacement)
+			added, removed, err := dp.ReplaceBindings(test.replacement)
 			if err != nil {
 				t.Fatal("ReplaceBindings failed:", err)
 			}
 
-			if changed && output.Len() == 0 {
-				t.Error("No output generated even though changes were made")
-			} else if !changed && output.Len() > 0 {
-				t.Error("Generated output even though no changes were made")
-				t.Log(output.String())
+			sort.Sort(test.added)
+			sort.Sort(added)
+			if diff := cmp.Diff(test.added, added, testutil.IPPrefixComparer()); diff != "" {
+				t.Errorf("added doesn't match (-want +got):\n%s", diff)
+			}
+
+			sort.Sort(test.removed)
+			sort.Sort(removed)
+			if diff := cmp.Diff(test.removed, removed, testutil.IPPrefixComparer()); diff != "" {
+				t.Errorf("removed doesn't match (-want +got):\n%s", diff)
 			}
 
 			have, err := dp.Bindings()
@@ -635,11 +637,9 @@ func TestReplaceBindings(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			sort := cmpopts.SortSlices(func(a, b *Binding) bool {
-				return a.Label < b.Label
-			})
-
-			if diff := cmp.Diff(test.replacement, have, sort, testutil.IPPrefixComparer()); diff != "" {
+			sort.Sort(test.replacement)
+			sort.Sort(have)
+			if diff := cmp.Diff(test.replacement, have, testutil.IPPrefixComparer()); diff != "" {
 				t.Errorf("bindings don't match (-want +got):\n%s", diff)
 			}
 		})
