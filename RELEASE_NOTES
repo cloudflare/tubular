@@ -1,3 +1,15 @@
+2022.2.1
+ - 2022-02-01 TUBE-95: dispatcher: apply file mode on upgrade
+ - 2022-02-01 TUBE-95: Prevent DoS from local user
+ - 2022-02-07 dispatcher: remove unused mustRawConn
+ - 2022-02-07 update github.com/cilium/ebpf
+ - 2022-02-07 dispatcher: stop using link.LoadPinnedNetNs
+ - 2022-01-31 dispatcher: include id of incomatible program
+ - 2022-02-11 add ARCHITECTURE.md
+ - 2022-02-10 dispatcher: return added and removed bindings from ReplaceBindings
+ - 2022-02-10 dispatcher: remove unused Logger
+ - 2022-02-10 TUBE-45: dispatcher: prevent misdirecting traffic when replacing bindings
+
 2022.2.0
 - 2022-01-31 lock: use sysconn
 - 2022-01-31 TUBE-97: fix buggy dispatcher locking
