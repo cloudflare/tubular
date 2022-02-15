@@ -92,16 +92,14 @@ readonly tmp_dir="${TMPDIR:-/tmp}"
 
 fetch() {
   echo Fetching "${1}"
-  local flags=(-f -o "${2}/${1}" -z "${2}/${1}")
-  # $CI is set by teamcity.
-  if [[ -z "${CI:-}" ]]; then
-    cloudflared access curl "https://unimog.cfdata.org/kernels/${1}" "${flags[@]}"
-  else
-    curl "https://unimog.s3.cfdata.org/kernels/${1}" "${flags[@]}"
-  fi
+  pushd "${tmp_dir}" > /dev/null
+  curl -s -L -O --fail -z "${1}" "https://github.com/cilium/ci-kernels/raw/master/${1}"
+  local ret=$?
+  popd > /dev/null
+  return $ret
 }
 
-fetch "${kernel}" "${tmp_dir}"
+fetch "${kernel}"
 cp "${tmp_dir}/${kernel}" "${input}/bzImage"
 
 export GOFLAGS=-mod=readonly

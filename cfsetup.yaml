@@ -28,5 +28,5 @@ buster: &buster
       - CC=x86_64-linux-gnu-gcc ARCH=amd64 make all
       - git diff --exit-code || { echo "generated files are not up to date" >&2; false; }
       - sudo chgrp $(id -g) /dev/kvm
-      - make test RUNNER="./run-tests.sh 5.10.8" TESTFLAGS="-json -v"
+      - make test RUNNER="./run-tests.sh 5.10" TESTFLAGS="-json -v"
       - make cover && mkdir .cover && mv coverage.html .cover/all.html
