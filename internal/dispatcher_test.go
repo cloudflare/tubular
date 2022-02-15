@@ -352,6 +352,24 @@ func TestDispatcherAccess(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	err = testutil.WithCapabilities(func() error {
+		if err := cap.SetUID(uid); err != nil {
+			return fmt.Errorf("set uid: %s", err)
+		}
+
+		if err := cap.SetGroups(gid); err != nil {
+			return fmt.Errorf("set gid: %s", err)
+		}
+
+		return unix.Access("/sys/fs/bpf", unix.X_OK)
+	})
+	if errors.Is(err, unix.EACCES) {
+		t.Skip("Skipping since /sys/fs/bpf is not accessible:", err)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	t.Run("group read-write", func(t *testing.T) {
 		err := testutil.WithCapabilities(func() (err error) {
 			if err := cap.SetUID(uid); err != nil {

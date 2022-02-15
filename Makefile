@@ -29,8 +29,9 @@ $(NAME)_$(VERSION)_%.deb: clean all
 	TARGET_ARCH=$* VERSION="$(VERSION)" nfpm package -p deb -f nfpm.yaml
 
 .PHONY: test
+test: RUNNER=$(GO) test -exec sudo
 test:
-	GO=$(GO) ./run-tests.sh 5.10.8 -coverpkg=./... -coverprofile=coverage.out -count 1 $(TESTFLAGS) ./...
+	$(RUNNER) -coverpkg=./... -coverprofile=coverage.out -count 1 $(TESTFLAGS) ./...
 
 .PHONY: cover
 cover:

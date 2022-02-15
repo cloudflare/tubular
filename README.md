@@ -9,6 +9,8 @@ flexible than traditional BSD `bind` semantics:
 * You can bind to a subnet instead of an IP
 * You can bind to all ports on a subnet
 
+__Note:__ Requires at least Linux v5.10.
+
 Quickstart
 ---
 
@@ -57,13 +59,12 @@ and UDP echo server.**
 Testing
 ---
 
-`tubular` requires some bleeding edge Linux features and therefore runs tests
-in a VM. You will need QEMU and [virtme][2] installed.
+`tubular` requires at least Linux v5.10 with unprivileged bpf enabled.
 
 ```sh
+$ sysctl kernel.unprivileged_bpf_disabled
+kernel.unprivileged_bpf_disabled = 0 # must be zero
 $ make test
-# Without the vm, only works if your kernel is recent enough.
-$ go test -exec sudo ./...
 ```
 
 [1]: https://en.wikipedia.org/wiki/Series_of_tubes

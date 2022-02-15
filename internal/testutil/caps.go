@@ -27,7 +27,9 @@ func EnterUnprivilegedMode() {
 		panic(fmt.Errorf("set securebits: %s", err.Error()))
 	}
 
-	ChangeEffectiveCaps()
+	// We need DAC_OVERRIDE since otherwise the go test runner is unable to
+	// write out code coverage.
+	ChangeEffectiveCaps(cap.DAC_OVERRIDE)
 }
 
 // ChangeEffectiveCaps modifies the effective capabilities to the given list
