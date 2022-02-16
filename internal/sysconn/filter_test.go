@@ -8,8 +8,8 @@ import (
 	"syscall"
 	"testing"
 
+	"code.cfops.it/sys/tubular/internal/sysconn"
 	"code.cfops.it/sys/tubular/internal/testutil"
-	"code.cfops.it/sys/tubular/pkg/sysconn"
 
 	"github.com/google/go-cmp/cmp"
 	"inet.af/netaddr"
