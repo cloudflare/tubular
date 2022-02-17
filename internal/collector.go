@@ -3,7 +3,7 @@ package internal
 import (
 	"fmt"
 
-	"code.cfops.it/sys/tubular/internal/log"
+	"github.com/cloudflare/tubular/internal/log"
 	"github.com/prometheus/client_golang/prometheus"
 )
 

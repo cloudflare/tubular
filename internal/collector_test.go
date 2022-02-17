@@ -4,8 +4,8 @@ import (
 	"net"
 	"testing"
 
-	"code.cfops.it/sys/tubular/internal/log"
-	"code.cfops.it/sys/tubular/internal/testutil"
+	"github.com/cloudflare/tubular/internal/log"
+	"github.com/cloudflare/tubular/internal/testutil"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus"

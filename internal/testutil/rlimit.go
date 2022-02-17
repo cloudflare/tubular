@@ -5,7 +5,7 @@ import (
 	"math"
 	"os"
 
-	"code.cfops.it/sys/tubular/internal/rlimit"
+	"github.com/cloudflare/tubular/internal/rlimit"
 	"kernel.org/pub/linux/libs/security/libcap/cap"
 )
 

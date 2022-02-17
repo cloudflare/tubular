@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"testing"
 
-	"code.cfops.it/sys/tubular/internal/sysconn"
+	"github.com/cloudflare/tubular/internal/sysconn"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/asm"

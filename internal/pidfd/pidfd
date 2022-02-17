@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"code.cfops.it/sys/tubular/internal/sysconn"
+	"github.com/cloudflare/tubular/internal/sysconn"
 
 	"golang.org/x/sys/unix"
 )

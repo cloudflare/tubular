@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"code.cfops.it/sys/tubular/internal"
-	"code.cfops.it/sys/tubular/internal/testutil"
+	"github.com/cloudflare/tubular/internal"
+	"github.com/cloudflare/tubular/internal/testutil"
 )
 
 func TestStatus(t *testing.T) {

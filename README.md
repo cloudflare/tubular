@@ -16,7 +16,7 @@ Quickstart
 
 ```sh
 # Install and load tubular
-$ go install code.cfops.it/sys/tubular/cmd/tubectl@latest
+$ go install github.com/cloudflare/tubular/cmd/tubectl@latest
 $ sudo tubectl load
 
 # Send port 4321 traffic on all loopback IPs to the foo label.

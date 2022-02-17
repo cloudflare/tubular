@@ -1,7 +1,7 @@
 package main
 
 import (
-	"code.cfops.it/sys/tubular/internal"
+	"github.com/cloudflare/tubular/internal"
 )
 
 func unregister(e *env, args ...string) error {

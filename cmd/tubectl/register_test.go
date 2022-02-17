@@ -10,9 +10,9 @@ import (
 	"syscall"
 	"testing"
 
-	"code.cfops.it/sys/tubular/internal"
-	"code.cfops.it/sys/tubular/internal/sysconn"
-	"code.cfops.it/sys/tubular/internal/testutil"
+	"github.com/cloudflare/tubular/internal"
+	"github.com/cloudflare/tubular/internal/sysconn"
+	"github.com/cloudflare/tubular/internal/testutil"
 
 	"github.com/containernetworking/plugins/pkg/ns"
 	"golang.org/x/sys/unix"

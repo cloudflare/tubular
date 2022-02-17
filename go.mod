@@ -1,4 +1,4 @@
-module code.cfops.it/sys/tubular
+module github.com/cloudflare/tubular
 
 go 1.17
 

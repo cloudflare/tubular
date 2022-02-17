@@ -19,9 +19,9 @@ import (
 	"testing"
 	"time"
 
-	"code.cfops.it/sys/tubular/internal/lock"
-	"code.cfops.it/sys/tubular/internal/log"
-	"code.cfops.it/sys/tubular/internal/testutil"
+	"github.com/cloudflare/tubular/internal/lock"
+	"github.com/cloudflare/tubular/internal/log"
+	"github.com/cloudflare/tubular/internal/testutil"
 	"golang.org/x/sys/unix"
 	"inet.af/netaddr"
 

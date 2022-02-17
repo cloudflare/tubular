@@ -8,7 +8,7 @@ import (
 	"strings"
 	"syscall"
 
-	"code.cfops.it/sys/tubular/internal/sysconn"
+	"github.com/cloudflare/tubular/internal/sysconn"
 
 	"github.com/cilium/ebpf"
 	"golang.org/x/sys/unix"

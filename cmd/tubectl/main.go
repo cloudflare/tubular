@@ -10,9 +10,9 @@ import (
 	"os"
 	"syscall"
 
-	"code.cfops.it/sys/tubular/internal"
-	"code.cfops.it/sys/tubular/internal/log"
-	"code.cfops.it/sys/tubular/internal/rlimit"
+	"github.com/cloudflare/tubular/internal"
+	"github.com/cloudflare/tubular/internal/log"
+	"github.com/cloudflare/tubular/internal/rlimit"
 
 	"golang.org/x/sys/unix"
 	"kernel.org/pub/linux/libs/security/libcap/cap"

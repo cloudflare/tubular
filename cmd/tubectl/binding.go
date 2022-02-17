@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"text/tabwriter"
 
-	"code.cfops.it/sys/tubular/internal"
+	"github.com/cloudflare/tubular/internal"
 	"inet.af/netaddr"
 )
 
