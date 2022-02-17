@@ -175,4 +175,4 @@ int dispatcher(struct bpf_sk_lookup *ctx)
 	return SK_PASS;
 }
 
-SEC("license") const char __license[] = "Proprietary";
+SEC("license") const char __license[] = "BSD-3-Clause";
