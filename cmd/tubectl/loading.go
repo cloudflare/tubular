@@ -3,7 +3,7 @@ package main
 import (
 	"errors"
 
-	"code.cfops.it/sys/tubular/internal"
+	"github.com/cloudflare/tubular/internal"
 )
 
 func load(e *env, args ...string) error {

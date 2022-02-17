@@ -9,7 +9,7 @@ import (
 	"os/signal"
 	"time"
 
-	"code.cfops.it/sys/tubular/internal/sysconn"
+	"github.com/cloudflare/tubular/internal/sysconn"
 
 	"golang.org/x/sys/unix"
 )

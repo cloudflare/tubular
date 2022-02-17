@@ -9,9 +9,9 @@ import (
 	"strings"
 	"syscall"
 
-	"code.cfops.it/sys/tubular/internal"
-	"code.cfops.it/sys/tubular/internal/pidfd"
-	"code.cfops.it/sys/tubular/internal/sysconn"
+	"github.com/cloudflare/tubular/internal"
+	"github.com/cloudflare/tubular/internal/pidfd"
+	"github.com/cloudflare/tubular/internal/sysconn"
 
 	"golang.org/x/sys/unix"
 	"inet.af/netaddr"

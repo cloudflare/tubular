@@ -11,7 +11,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"code.cfops.it/sys/tubular/internal"
+	"github.com/cloudflare/tubular/internal"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
