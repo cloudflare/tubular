@@ -1,0 +1,32 @@
+name: Go
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Set up Go
+      uses: actions/setup-go@v2
+      with:
+        go-version: 1.17
+
+    - name: Install prerequisites
+      run: |
+        sudo ./.github/llvm.sh 13
+        sudo apt-get -y --no-install-recommends install build-essential qemu-system-x86 python3-pip wget
+        sudo pip3 install https://github.com/amluto/virtme/archive/beb85146cd91de37ae455eccb6ab67c393e6e290.zip
+
+    - name: Build
+      run: make
+
+    - name: Test
+      run: |
+        sudo sysctl -w kernel.unprivileged_bpf_disabled=0
+        make test
