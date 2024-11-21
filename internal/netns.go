@@ -14,7 +14,7 @@ import (
 func openNetNS(path, bpfFsPath string) (ns.NetNS, string, error) {
 	var fs unix.Statfs_t
 	err := unix.Statfs(bpfFsPath, &fs)
-	if err != nil || fs.Type != unix.BPF_FS_MAGIC {
+	if err != nil || uint64(fs.Type) != unix.BPF_FS_MAGIC {
 		return nil, "", fmt.Errorf("invalid BPF filesystem path: %s", bpfFsPath)
 	}
 
