@@ -102,7 +102,7 @@ to find the TCP socket bound to 127.0.0.1 port 8080 in the nginx process and
 register it under the "foo" label:
 
 ```
-$ sudo tubectl register-pid "foo" $(pidof nginx) tcp 127.0.0.1 8080
+$ sudo tubectl register-pid $(pidof nginx) "foo" tcp 127.0.0.1 8080
 ```
 
 It's easy to wire this up using systemd's [ExecStartPost][] if the need arises.
